@@ -103,6 +103,14 @@ def test_project_continuous_moving_train_uses_project_span_geometry() -> None:
         result.envelope.span_envelopes[1].max_sagging_moment_knm,
         rel=1e-10,
     )
+    assert result.envelope.max_abs_displacement_m > 0.0
+    assert result.envelope.span_envelopes[0].max_abs_displacement_m == pytest.approx(
+        result.envelope.span_envelopes[1].max_abs_displacement_m,
+        rel=1e-10,
+    )
+    assert 0 <= result.envelope.max_abs_displacement_span_index < 2
+    assert 0.0 <= result.envelope.max_abs_displacement_global_position_m <= 20.0
+    assert 0.0 <= result.envelope.max_abs_displacement_lead_position_m <= 20.0
 
 
 def test_project_continuous_moving_train_rejects_span_count_mismatch() -> None:
