@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from itertools import pairwise
 
 from rc_bridge.design.eurocode_cracking import CrackWidthResult
 
@@ -46,7 +47,7 @@ def _validated_layers(
     tolerance = 1e-9
     if abs(ordered[0].start_depth_m) > tolerance:
         raise ValueError("Layered section must start at the compression face (depth 0).")
-    for previous, current in zip(ordered, ordered[1:]):
+    for previous, current in pairwise(ordered):
         if abs(previous.end_depth_m - current.start_depth_m) > tolerance:
             raise ValueError("Layered section strips must be contiguous and non-overlapping.")
     if abs(ordered[-1].end_depth_m - total_depth_m) > tolerance:
