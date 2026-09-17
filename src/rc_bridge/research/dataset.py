@@ -6,11 +6,13 @@ from dataclasses import asdict, dataclass
 
 @dataclass(frozen=True)
 class TrainingRecord:
+    solver_profile: str
     span_m: float
     girder_spacing_m: float
     girder_depth_m: float
     deck_thickness_m: float
-    fck_mpa: float
+    fck_mpa: float | None
+    fcu_mpa: float | None
     fyk_mpa: float
     steel_area_mm2: float
     permanent_moment_knm: float
@@ -19,9 +21,11 @@ class TrainingRecord:
     resistance_moment_knm: float
     g_flexure_knm: float
 
-    def to_dict(self) -> dict[str, float]:
+    def to_dict(self) -> dict[str, float | str | None]:
         return asdict(self)
 
 
-def records_to_rows(records: Iterable[TrainingRecord]) -> list[dict[str, float]]:
+def records_to_rows(
+    records: Iterable[TrainingRecord],
+) -> list[dict[str, float | str | None]]:
     return [record.to_dict() for record in records]
