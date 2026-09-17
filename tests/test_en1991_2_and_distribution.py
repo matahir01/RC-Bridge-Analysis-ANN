@@ -1,4 +1,5 @@
 import pytest
+
 from rc_bridge.analysis.transverse import (
     apply_distribution,
     equal_distribution,
