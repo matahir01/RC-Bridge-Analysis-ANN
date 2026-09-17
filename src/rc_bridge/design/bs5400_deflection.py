@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
 from collections.abc import Sequence
+from dataclasses import dataclass
 
 from rc_bridge.analysis.elastic_deflection import simply_supported_midspan_deflection_mm
 from rc_bridge.analysis.loads import PointLoad
