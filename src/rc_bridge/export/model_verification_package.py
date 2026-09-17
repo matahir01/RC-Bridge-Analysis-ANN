@@ -158,12 +158,7 @@ def _exported_loads_csv(model: VerificationModel) -> str:
 
 
 def _result_requests_csv(model: VerificationModel) -> str:
-    """Describe the external results needed for a later normalized comparison.
-
-    Member force rows use semantic components rather than MIDAS/STAAD local-axis
-    labels. The external-results adapter must map the software's local components
-    after confirming the member orientation from the supplied endpoint coordinates.
-    """
+    """Describe the external results needed for a later normalized comparison."""
     stream = StringIO()
     writer = csv.writer(stream, lineterminator="\n")
     writer.writerow(
@@ -236,8 +231,8 @@ def _result_requests_csv(model: VerificationModel) -> str:
                         component,
                         unit,
                         (
-                            "Map the external local-axis component only after confirming member "
-                            "local axes from the exported element orientation."
+                            "STAAD: use GLOBAL member-end vectors and project by member geometry. "
+                            "MIDAS: use ECS forces only through the horizontal beta-zero profile."
                         ),
                     ]
                 )
@@ -327,8 +322,9 @@ def build_model_verification_export_package(
             "imported and compared independently before transverse-distribution verification."
         ),
         "result_mapping_note": (
-            "Global reactions/displacements can be mapped directly. Member vertical shear, "
-            "vertical bending and torsion require explicit confirmation of MIDAS/STAAD local axes."
+            "STAAD .std files request GLOBAL member forces; the ANL adapter projects those "
+            "global vectors onto each horizontal member basis. MIDAS beam forces remain ECS "
+            "results and are mapped automatically only for horizontal beta-zero members."
         ),
     }
     return ModelVerificationExportPackage(
