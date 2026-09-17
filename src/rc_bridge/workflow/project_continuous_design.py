@@ -8,13 +8,13 @@ from rc_bridge.core.models import (
     RectangularGirderProfile,
     TGirderProfile,
 )
-from rc_bridge.design.eurocode_demand import (
-    FlexuralDemandResult,
-    ShearDemandResult,
-    check_flexure_t_section,
-    check_shear,
-)
+from rc_bridge.design.eurocode_demand import FlexuralDemandResult, check_flexure_t_section
 from rc_bridge.design.eurocode_support_flexure import NegativeBendingFlexureResult
+from rc_bridge.workflow.continuous_shear_design import (
+    ContinuousShearDesignCheck,
+    ContinuousShearDesignInput as CanonicalContinuousShearDesignInput,
+    check_continuous_section_shear,
+)
 from rc_bridge.workflow.continuous_support_design import (
     ContinuousSupportFlangedFlexureInput,
     ContinuousSupportFlexureInput,
@@ -61,14 +61,25 @@ class ContinuousShearDesignInput:
     web_width_m: float
     effective_depth_m: float
     longitudinal_steel_area_mm2: float
+    provided_asw_per_s_mm2_per_m: float | None = None
     cot_theta: float = 2.0
+
+    def __post_init__(self) -> None:
+        if min(
+            self.web_width_m,
+            self.effective_depth_m,
+            self.longitudinal_steel_area_mm2,
+        ) <= 0.0:
+            raise ValueError("Shear geometry and longitudinal reinforcement must be positive.")
+        if self.provided_asw_per_s_mm2_per_m is not None and self.provided_asw_per_s_mm2_per_m < 0.0:
+            raise ValueError("Provided A_sw/s cannot be negative.")
 
 
 @dataclass(frozen=True)
 class ContinuousEurocodeULSDesignResult:
     positive_flexure: FlexuralDemandResult
     negative_flexure: NegativeBendingFlexureResult
-    shear: ShearDemandResult
+    shear: ContinuousShearDesignCheck
     positive_station: ContinuousDesignEnvelopeStation
     negative_station: ContinuousDesignEnvelopeStation
     shear_station: ContinuousDesignEnvelopeStation
@@ -151,6 +162,23 @@ def _canonical_support_input(
     )
 
 
+def _canonical_shear_input(
+    shear_section: ContinuousShearDesignInput,
+    *,
+    fck_mpa: float,
+    fyk_mpa: float,
+) -> CanonicalContinuousShearDesignInput:
+    return CanonicalContinuousShearDesignInput(
+        web_width_m=shear_section.web_width_m,
+        effective_depth_m=shear_section.effective_depth_m,
+        longitudinal_steel_area_mm2=shear_section.longitudinal_steel_area_mm2,
+        fck_mpa=fck_mpa,
+        fyk_mpa=fyk_mpa,
+        provided_asw_per_s_mm2_per_m=shear_section.provided_asw_per_s_mm2_per_m,
+        cot_theta=shear_section.cot_theta,
+    )
+
+
 def run_continuous_eurocode_uls_design(
     envelope: ContinuousDesignEnvelopeResult,
     *,
@@ -163,17 +191,17 @@ def run_continuous_eurocode_uls_design(
     """Design the governing continuous-girder ULS sections from an LM1 envelope.
 
     Sagging resistance uses the composite top flange. Hogging is delegated to the
-    canonical signed support-design workflow at the governing negative-moment
-    station, so the deck is never reused as a compression flange. Web/stem and
-    physical bottom-flange compression models therefore share one support path.
+    canonical signed support-design workflow. Shear is delegated to the canonical
+    signed-section shear workflow, which distinguishes required reinforcement from
+    actual supplied links instead of treating a calculated requirement as provided.
     """
     if fck_mpa <= 0.0 or fyk_mpa <= 0.0:
         raise ValueError("Concrete and reinforcement strengths must be positive.")
 
     positive_moment = max(0.0, envelope.max_positive_uls_moment_knm)
-    design_shear = envelope.max_abs_uls_shear_kn
     positive_station = envelope.max_positive_moment_station
     negative_station = envelope.min_negative_moment_station
+    shear_station = envelope.max_abs_shear_station
 
     positive = check_flexure_t_section(
         med_knm=positive_moment,
@@ -196,14 +224,13 @@ def run_continuous_eurocode_uls_design(
     )
     negative = support_check.flexure
 
-    shear = check_shear(
-        ved_kn=design_shear,
-        web_width_m=shear_section.web_width_m,
-        effective_depth_m=shear_section.effective_depth_m,
-        longitudinal_steel_area_mm2=shear_section.longitudinal_steel_area_mm2,
-        fck_mpa=fck_mpa,
-        fyk_mpa=fyk_mpa,
-        cot_theta=shear_section.cot_theta,
+    shear = check_continuous_section_shear(
+        shear_station.shear_combinations,
+        _canonical_shear_input(
+            shear_section,
+            fck_mpa=fck_mpa,
+            fyk_mpa=fyk_mpa,
+        ),
     )
 
     return ContinuousEurocodeULSDesignResult(
@@ -212,13 +239,13 @@ def run_continuous_eurocode_uls_design(
         shear=shear,
         positive_station=positive_station,
         negative_station=negative_station,
-        shear_station=envelope.max_abs_shear_station,
+        shear_station=shear_station,
         positive_design_moment_knm=positive_moment,
         negative_design_moment_knm=negative.design_moment_magnitude_knm,
-        design_shear_kn=design_shear,
+        design_shear_kn=shear.design_shear_kn,
         status=(
             "Governing continuous Eurocode ULS design: composite T-section for sagging, "
-            "canonical signed support workflow for hogging, and web shear check. "
+            "canonical signed support workflow for hogging, and canonical signed shear workflow. "
             "Ductility, support-face shear location and continuous-region SLS remain separate."
         ),
     )
