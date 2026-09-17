@@ -11,6 +11,11 @@ from rc_bridge.analysis.continuous_beam import (
     member_span_envelope,
     solve_continuous_beam,
 )
+from rc_bridge.analysis.continuous_moving_loads import (
+    ContinuousMovingLoadEnvelopeResult,
+    moving_train_continuous_envelope,
+)
+from rc_bridge.analysis.moving_loads import AxleTrain
 from rc_bridge.core.models import ProjectInput, SupportSystem
 
 
@@ -49,6 +54,31 @@ class ProjectContinuousLoadCase:
 
 
 @dataclass(frozen=True)
+class ProjectContinuousMovingLoadCase:
+    train: AxleTrain
+    ei_kn_m2_by_span: tuple[float, ...]
+    udl_kn_m_by_span: tuple[float, ...] | None = None
+    movement_steps: int = 601
+    section_stations: int = 201
+    name: str = "continuous moving axle-train load case"
+
+    def __post_init__(self) -> None:
+        if not self.ei_kn_m2_by_span:
+            raise ValueError("At least one span EI is required.")
+        if any(value <= 0.0 for value in self.ei_kn_m2_by_span):
+            raise ValueError("All span EI values must be positive.")
+        if self.udl_kn_m_by_span is not None:
+            if len(self.udl_kn_m_by_span) != len(self.ei_kn_m2_by_span):
+                raise ValueError("Moving-load EI and UDL vectors must have equal lengths.")
+            if any(value < 0.0 for value in self.udl_kn_m_by_span):
+                raise ValueError("Span UDL values cannot be negative.")
+        if self.movement_steps < 2:
+            raise ValueError("At least two movement steps are required.")
+        if self.section_stations < 2:
+            raise ValueError("At least two section stations are required.")
+
+
+@dataclass(frozen=True)
 class ProjectContinuousAnalysisResult:
     load_case_name: str
     solution: ContinuousBeamResult
@@ -56,6 +86,22 @@ class ProjectContinuousAnalysisResult:
     total_applied_vertical_load_kn: float
     total_vertical_reaction_kn: float
     status: str
+
+
+@dataclass(frozen=True)
+class ProjectContinuousMovingAnalysisResult:
+    load_case_name: str
+    envelope: ContinuousMovingLoadEnvelopeResult
+    status: str
+
+
+def _project_continuous_span_lengths(project: ProjectInput) -> tuple[float, ...]:
+    if project.geometry.support_system != SupportSystem.CONTINUOUS:
+        raise ValueError("Continuous workflow requires a CONTINUOUS project.")
+    span_lengths = tuple(float(value) for value in project.geometry.span_lengths_m)
+    if len(span_lengths) < 2:
+        raise ValueError("Continuous bridge analysis requires at least two spans.")
+    return span_lengths
 
 
 def _map_global_point_loads_to_spans(
@@ -99,12 +145,7 @@ def run_project_continuous_load_case(
     section as the same stiffness. Global traffic/point loads are mapped to span
     local coordinates before assembly.
     """
-    if project.geometry.support_system != SupportSystem.CONTINUOUS:
-        raise ValueError("Continuous load-case workflow requires a CONTINUOUS project.")
-
-    span_lengths = tuple(float(value) for value in project.geometry.span_lengths_m)
-    if len(span_lengths) < 2:
-        raise ValueError("Continuous bridge analysis requires at least two spans.")
+    span_lengths = _project_continuous_span_lengths(project)
     if len(load_case.ei_kn_m2_by_span) != len(span_lengths):
         raise ValueError("Load-case EI vector must match the project span count.")
     if len(load_case.udl_kn_m_by_span) != len(span_lengths):
@@ -145,5 +186,49 @@ def run_project_continuous_load_case(
         status=(
             "Continuous longitudinal beam load case solved with explicit span EI; "
             "transverse distribution and code-specific load generation remain separate"
+        ),
+    )
+
+
+def run_project_continuous_moving_train(
+    project: ProjectInput,
+    load_case: ProjectContinuousMovingLoadCase,
+) -> ProjectContinuousMovingAnalysisResult:
+    """Move one code-neutral axle train across a continuous project geometry.
+
+    The project supplies span lengths and support continuity. Span EI remains an
+    explicit load-case input so the workflow does not invent gross/composite or
+    cracked stiffness. Optional static UDLs are superimposed at every train position.
+    """
+    span_lengths = _project_continuous_span_lengths(project)
+    if len(load_case.ei_kn_m2_by_span) != len(span_lengths):
+        raise ValueError("Moving-load EI vector must match the project span count.")
+
+    udls = load_case.udl_kn_m_by_span
+    if udls is None:
+        udls = tuple(0.0 for _ in span_lengths)
+    if len(udls) != len(span_lengths):
+        raise ValueError("Moving-load UDL vector must match the project span count.")
+
+    spans = tuple(
+        BeamSpan(
+            length_m=length,
+            ei_kn_m2=load_case.ei_kn_m2_by_span[index],
+            udl_kn_m=udls[index],
+        )
+        for index, length in enumerate(span_lengths)
+    )
+    envelope = moving_train_continuous_envelope(
+        spans,
+        load_case.train,
+        movement_steps=load_case.movement_steps,
+        section_stations=load_case.section_stations,
+    )
+    return ProjectContinuousMovingAnalysisResult(
+        load_case_name=load_case.name,
+        envelope=envelope,
+        status=(
+            "Continuous project moving axle-train envelope solved with explicit span EI; "
+            "traffic-code definitions and transverse distribution remain separate"
         ),
     )
