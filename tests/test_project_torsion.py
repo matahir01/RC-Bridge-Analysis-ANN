@@ -11,7 +11,6 @@ from rc_bridge.workflow.project_bridge import project_internal_girder_combinatio
 from rc_bridge.workflow.project_grillage import project_internal_girder_combinations_from_grillage
 from rc_bridge.workflow.project_torsion import TorsionCellInput, check_project_shear_torsion
 
-
 GRILLAGE_CSV = """girder_index,moment_knm,shear_kn,torsion_knm
 1,420.0,180.0,22.0
 2,510.0,205.0,18.0
