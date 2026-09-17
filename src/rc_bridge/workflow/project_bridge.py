@@ -1,16 +1,49 @@
 from __future__ import annotations
 
+from dataclasses import dataclass
+
 from rc_bridge.analysis.lane_distribution import (
     equal_lane_distribution,
     equal_remaining_area_distribution,
 )
 from rc_bridge.analysis.loads import deck_self_weight_per_girder_kn_m
+from rc_bridge.analysis.simple_span import udl_simple_span
+from rc_bridge.codes.common import LoadEffects
 from rc_bridge.codes.eurocode.en1991_2 import notional_lane_layout
 from rc_bridge.core.models import DesignCode, ProjectInput, SupportSystem
 from rc_bridge.workflow.eurocode_bridge_traffic import (
     BridgeLM1TrafficResult,
     run_simple_span_lm1_bridge_traffic,
 )
+
+
+@dataclass(frozen=True)
+class UniformPermanentLoadInput:
+    """Explicit additional characteristic permanent line loads on one girder."""
+
+    girder_self_weight_kn_m: float = 0.0
+    surfacing_and_finishes_kn_m: float = 0.0
+    assigned_barrier_and_services_kn_m: float = 0.0
+    other_kn_m: float = 0.0
+
+    def __post_init__(self) -> None:
+        values = (
+            self.girder_self_weight_kn_m,
+            self.surfacing_and_finishes_kn_m,
+            self.assigned_barrier_and_services_kn_m,
+            self.other_kn_m,
+        )
+        if any(value < 0.0 for value in values):
+            raise ValueError("Permanent line-load components cannot be negative.")
+
+    @property
+    def total_additional_kn_m(self) -> float:
+        return (
+            self.girder_self_weight_kn_m
+            + self.surfacing_and_finishes_kn_m
+            + self.assigned_barrier_and_services_kn_m
+            + self.other_kn_m
+        )
 
 
 def internal_girder_deck_self_weight_kn_m(project: ProjectInput) -> float:
@@ -25,6 +58,34 @@ def internal_girder_deck_self_weight_kn_m(project: ProjectInput) -> float:
         deck_thickness_m=geometry.physical_deck_depth_m,
         girder_spacing_m=float(geometry.girder_spacing_m),
         concrete_density_kn_m3=float(project.materials.concrete_density_kn_m3),
+    )
+
+
+def internal_girder_characteristic_permanent_effects(
+    project: ProjectInput,
+    *,
+    span_index: int = 0,
+    additional: UniformPermanentLoadInput | None = None,
+) -> LoadEffects:
+    """Return simple-span characteristic G effects for an internal girder.
+
+    Deck self-weight is derived from the physical deck build-up. Girder own
+    weight, surfacing, barriers/services, and other permanent loads are explicit
+    inputs until the corresponding section/load models are defined. Edge-girder
+    deck tributary width must be handled separately.
+    """
+    if project.geometry.support_system != SupportSystem.SIMPLY_SUPPORTED:
+        raise ValueError("This permanent-load adapter currently supports simple spans only.")
+    if not 0 <= span_index < len(project.geometry.span_lengths_m):
+        raise IndexError("span_index is outside the project span list.")
+
+    span_m = float(project.geometry.span_lengths_m[span_index])
+    deck_kn_m = internal_girder_deck_self_weight_kn_m(project)
+    extra_kn_m = (additional or UniformPermanentLoadInput()).total_additional_kn_m
+    result = udl_simple_span(span_m, deck_kn_m + extra_kn_m)
+    return LoadEffects(
+        moment_knm=result.max_moment_knm,
+        shear_kn=result.max_shear_kn,
     )
 
 
