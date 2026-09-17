@@ -13,7 +13,6 @@ from rc_bridge.workflow.project_grillage import (
     run_project_internal_t_girder_from_grillage,
 )
 
-
 GRILLAGE_CSV = """girder_index,moment_knm,shear_kn,torsion_knm
 1,420.0,180.0,22.0
 2,510.0,205.0,18.0
