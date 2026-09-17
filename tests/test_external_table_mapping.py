@@ -11,8 +11,42 @@ from rc_bridge.export.table_mapping import (
     ReactionTableMapping,
     TableFilter,
     midas_civil_global_profile,
+    midas_civil_horizontal_grillage_profile,
     normalize_external_result_tables,
 )
+from rc_bridge.export.verification_model import (
+    VerificationBeam,
+    VerificationLoadCase,
+    VerificationMaterial,
+    VerificationModel,
+    VerificationNode,
+    VerificationSection,
+    VerificationSupport,
+)
+
+
+def _midas_model(*, beta_deg: float = 0.0, node_2_z_m: float = 0.0) -> VerificationModel:
+    return VerificationModel(
+        name="MIDAS table mapping",
+        nodes=(
+            VerificationNode(1, 0.0, 0.0, 0.0),
+            VerificationNode(2, 10.0, 0.0, node_2_z_m),
+        ),
+        materials=(VerificationMaterial(1, "Concrete", 30.0e6),),
+        sections=(
+            VerificationSection(
+                1,
+                "Test section",
+                area_m2=0.5,
+                torsion_constant_m4=0.04,
+                iy_m4=0.03,
+                iz_m4=0.08,
+            ),
+        ),
+        beams=(VerificationBeam(10, 1, 2, 1, 1, beta_angle_deg=beta_deg),),
+        supports=(VerificationSupport(1),),
+        load_cases=(VerificationLoadCase(1, "LM1"),),
+    )
 
 
 def test_midas_global_profile_filters_load_case_and_normalizes_reaction_displacement() -> None:
@@ -75,6 +109,45 @@ def test_explicit_member_force_mapping_normalizes_i_j_ends_and_components() -> N
     assert values[("J", "V_VERTICAL")] == pytest.approx(-39.0)
     assert values[("J", "M_VERTICAL")] == pytest.approx(-170.0)
     assert values[("J", "T")] == pytest.approx(-11.5)
+
+
+def test_verified_midas_horizontal_grillage_profile_normalizes_full_result_set() -> None:
+    profile = midas_civil_horizontal_grillage_profile(_midas_model(), load_case="LM1")
+    reaction_table = "Node,Load,FZ\n1,LM1,100.0\n1,OTHER,999.0\n"
+    displacement_table = "Node,Load,DZ\n1,LM1,0.0\n2,LM1,-0.011\n"
+    member_table = (
+        "Elem,Load,Part,Shear-z,Moment-y,Torsion\n"
+        "10,LM1,I[1],42.5,180.0,12.0\n"
+        "10,LM1,J[2],-39.0,-170.0,-11.5\n"
+    )
+
+    normalized = normalize_external_result_tables(
+        profile,
+        reaction_table=reaction_table,
+        displacement_table=displacement_table,
+        member_force_table=member_table,
+    )
+    records = parse_verification_results_csv(normalized)
+    values = {
+        (item.result_type, item.object_id, item.position_m, item.component): item.value
+        for item in records
+    }
+
+    assert values[("support_reaction", "1", "", "FZ")] == pytest.approx(100.0)
+    assert values[("node_displacement", "2", "", "DZ")] == pytest.approx(-0.011)
+    assert values[("member_end_force", "10", "I", "V_VERTICAL")] == pytest.approx(42.5)
+    assert values[("member_end_force", "10", "I", "M_VERTICAL")] == pytest.approx(180.0)
+    assert values[("member_end_force", "10", "J", "T")] == pytest.approx(-11.5)
+
+
+def test_verified_midas_grillage_profile_rejects_nonzero_beta() -> None:
+    with pytest.raises(ValueError, match="beta_angle_deg=0"):
+        midas_civil_horizontal_grillage_profile(_midas_model(beta_deg=15.0))
+
+
+def test_verified_midas_grillage_profile_rejects_nonhorizontal_member() -> None:
+    with pytest.raises(ValueError, match="every beam to be horizontal"):
+        midas_civil_horizontal_grillage_profile(_midas_model(node_2_z_m=0.25))
 
 
 def test_unit_scaling_converts_external_mm_displacement_to_m() -> None:
