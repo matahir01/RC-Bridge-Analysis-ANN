@@ -53,9 +53,32 @@ class GrillagePointLoad:
 
 
 @dataclass(frozen=True)
+class GrillageAreaLoad:
+    """Uniform downward pressure over one rectangular deck patch."""
+
+    x_start_m: float
+    x_end_m: float
+    y_start_m: float
+    y_end_m: float
+    pressure_kn_m2: float
+    label: str = "area load"
+
+    def __post_init__(self) -> None:
+        if self.x_end_m <= self.x_start_m:
+            raise ValueError("Area-load x bounds must define a positive loaded length.")
+        if self.y_end_m <= self.y_start_m:
+            raise ValueError("Area-load y bounds must define a positive loaded width.")
+        if self.pressure_kn_m2 < 0.0:
+            raise ValueError("Area-load pressure cannot be negative.")
+        if not self.label.strip():
+            raise ValueError("Area-load label cannot be empty.")
+
+
+@dataclass(frozen=True)
 class GrillageVerificationLoadCase:
     name: str
     point_loads: tuple[GrillagePointLoad, ...] = ()
+    area_loads: tuple[GrillageAreaLoad, ...] = ()
     longitudinal_udl_kn_m_by_girder: tuple[float, ...] | None = None
 
     def __post_init__(self) -> None:
@@ -98,14 +121,20 @@ def _station_grid(
     project: ProjectInput,
     transverse_stations_m: tuple[float, ...],
     point_loads: tuple[GrillagePointLoad, ...],
+    area_loads: tuple[GrillageAreaLoad, ...],
 ) -> tuple[float, ...]:
     support_stations = _support_stations(project)
     total_length = support_stations[-1]
     supplied = tuple(float(value) for value in transverse_stations_m)
-    load_positions = tuple(float(load.x_m) for load in point_loads)
-    all_positions = (*supplied, *load_positions)
+    point_positions = tuple(float(load.x_m) for load in point_loads)
+    patch_boundaries = tuple(
+        coordinate
+        for load in area_loads
+        for coordinate in (float(load.x_start_m), float(load.x_end_m))
+    )
+    all_positions = (*supplied, *point_positions, *patch_boundaries)
     if any(value < -1e-9 or value > total_length + 1e-9 for value in all_positions):
-        raise ValueError("A grillage transverse station or point load lies outside the bridge length.")
+        raise ValueError("A grillage station or load boundary lies outside the bridge length.")
     return _merge_coordinates((*support_stations, *all_positions))
 
 
@@ -118,9 +147,19 @@ def _girder_y_coordinates(project: ProjectInput) -> tuple[float, ...]:
     return tuple(first + index * spacing for index in range(count))
 
 
-def _transverse_y_coordinates(project: ProjectInput) -> tuple[float, ...]:
+def _transverse_y_coordinates(
+    project: ProjectInput,
+    area_loads: tuple[GrillageAreaLoad, ...],
+) -> tuple[float, ...]:
     half_width = float(project.geometry.deck_width_m) / 2.0
-    return _merge_coordinates((-half_width, *_girder_y_coordinates(project), half_width))
+    patch_boundaries = tuple(
+        coordinate
+        for load in area_loads
+        for coordinate in (float(load.y_start_m), float(load.y_end_m))
+    )
+    if any(value < -half_width - 1e-9 or value > half_width + 1e-9 for value in patch_boundaries):
+        raise ValueError("An area-load transverse boundary lies outside the physical deck width.")
+    return _merge_coordinates((-half_width, *_girder_y_coordinates(project), *patch_boundaries, half_width))
 
 
 def _span_index_at_x(project: ProjectInput, x_m: float) -> int:
@@ -150,9 +189,9 @@ def build_project_grillage_verification_model(
     """Build a full bridge beam-grillage model for independent software verification.
 
     Longitudinal and transverse section properties are explicit inputs. Every point-load
-    x-coordinate is inserted as an exact transverse station. The transverse grid extends
-    to the physical deck edges, so loads on deck overhangs are transferred through the
-    transverse cantilever strips rather than being rejected or artificially moved inward.
+    x-coordinate and every area-load boundary is inserted as an exact grid line. The
+    transverse grid extends to the physical deck edges, so loads on deck overhangs are
+    transferred through transverse cantilever strips rather than moved inward.
     """
     span_count = len(project.geometry.span_lengths_m)
     girder_count = int(project.geometry.girder_count)
@@ -163,9 +202,14 @@ def build_project_grillage_verification_model(
     ) != girder_count:
         raise ValueError("Longitudinal grillage UDL vector must match the girder count.")
 
-    x_stations = _station_grid(project, transverse_stations_m, load_case.point_loads)
+    x_stations = _station_grid(
+        project,
+        transverse_stations_m,
+        load_case.point_loads,
+        load_case.area_loads,
+    )
     y_girders = _girder_y_coordinates(project)
-    y_lines = _transverse_y_coordinates(project)
+    y_lines = _transverse_y_coordinates(project, load_case.area_loads)
     y_line_count = len(y_lines)
     girder_y_indices = tuple(_coordinate_index(y_lines, value) for value in y_girders)
     e_kn_m2 = _elastic_modulus_mpa(project) * 1000.0
@@ -273,7 +317,7 @@ def build_project_grillage_verification_model(
             )
 
     point_loads: list[VerificationPointLoad] = []
-    nodal_loads: list[VerificationNodalLoad] = []
+    nodal_force_by_node: dict[int, float] = {}
     half_deck_width = float(project.geometry.deck_width_m) / 2.0
     for point in load_case.point_loads:
         if point.y_m < -half_deck_width - 1e-9 or point.y_m > half_deck_width + 1e-9:
@@ -284,11 +328,9 @@ def build_project_grillage_verification_model(
             None,
         )
         if exact_y_index is not None:
-            nodal_loads.append(
-                VerificationNodalLoad(
-                    node_id=node_id(x_index, exact_y_index),
-                    fz_kn=-point.magnitude_kn,
-                )
+            current_node_id = node_id(x_index, exact_y_index)
+            nodal_force_by_node[current_node_id] = (
+                nodal_force_by_node.get(current_node_id, 0.0) - point.magnitude_kn
             )
             continue
         segment_index = next(
@@ -310,12 +352,42 @@ def build_project_grillage_verification_model(
             )
         )
 
+    total_length = _support_stations(project)[-1]
+    for patch in load_case.area_loads:
+        if patch.x_start_m < -1e-9 or patch.x_end_m > total_length + 1e-9:
+            raise ValueError("Area load lies outside the bridge length.")
+        if patch.y_start_m < -half_deck_width - 1e-9 or patch.y_end_m > half_deck_width + 1e-9:
+            raise ValueError("Area load lies outside the physical deck width.")
+        x_start = _coordinate_index(x_stations, patch.x_start_m)
+        x_end = _coordinate_index(x_stations, patch.x_end_m)
+        y_start = _coordinate_index(y_lines, patch.y_start_m)
+        y_end = _coordinate_index(y_lines, patch.y_end_m)
+        for x_index in range(x_start, x_end):
+            dx = x_stations[x_index + 1] - x_stations[x_index]
+            for y_index in range(y_start, y_end):
+                dy = y_lines[y_index + 1] - y_lines[y_index]
+                corner_force = patch.pressure_kn_m2 * dx * dy / 4.0
+                for current_node_id in (
+                    node_id(x_index, y_index),
+                    node_id(x_index + 1, y_index),
+                    node_id(x_index, y_index + 1),
+                    node_id(x_index + 1, y_index + 1),
+                ):
+                    nodal_force_by_node[current_node_id] = (
+                        nodal_force_by_node.get(current_node_id, 0.0) - corner_force
+                    )
+
+    nodal_loads = tuple(
+        VerificationNodalLoad(node_id=current_node_id, fz_kn=fz_kn)
+        for current_node_id, fz_kn in sorted(nodal_force_by_node.items())
+        if abs(fz_kn) > 1e-12
+    )
     verification_case = VerificationLoadCase(
         load_case_id=1,
         name=load_case.name,
         uniform_loads=tuple(uniform_loads),
         point_loads=tuple(point_loads),
-        nodal_loads=tuple(nodal_loads),
+        nodal_loads=nodal_loads,
     )
     model = VerificationModel(
         name=f"{project.name} - full grillage - {load_case.name}",
@@ -337,6 +409,7 @@ def build_project_grillage_verification_model(
             "transverse_stiffness_basis": "explicit caller-supplied A, J, Iy and Iz",
             "longitudinal_stiffness_basis": "explicit caller-supplied A, J, Iy and Iz per span",
             "point_load_mapping": "exact x station; exact nodal or transverse-member y position",
+            "area_load_mapping": "exact patch boundaries; uniform cell pressure lumped q*A/4 to each corner",
             "deck_overhang_model": "transverse cantilever strip from exterior girder to physical deck edge",
             "longitudinal_udl_basis": "explicit caller-supplied line load per girder",
             "self_weight_basis": "not activated unless included in supplied longitudinal line loads",
