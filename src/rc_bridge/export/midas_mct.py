@@ -49,19 +49,31 @@ def export_midas_mct(model: VerificationModel) -> str:
 
     lines.append("*SECTION")
     for section in model.sections:
-        width, depth = _equivalent_display_dimensions(section.area_m2, max(section.iy_m4, section.iz_m4))
+        width, depth = _equivalent_display_dimensions(
+            section.area_m2,
+            max(section.iy_m4, section.iz_m4),
+        )
         asy = section.shear_area_y_m2 or section.area_m2
         asz = section.shear_area_z_m2 or section.area_m2
         perimeter = 2.0 * (width + depth)
+        section_header = (
+            f"{section.section_id}, VALUE, {_safe_name(section.name)}, CC, SB, Built, "
+            f"{width:.12g}, {depth:.12g}, 0, 0, 0, 0"
+        )
+        section_properties = (
+            f"{section.area_m2:.12g}, {asy:.12g}, {asz:.12g}, "
+            f"{section.torsion_constant_m4:.12g}, {section.iy_m4:.12g}, {section.iz_m4:.12g}"
+        )
+        section_geometry = (
+            f"{width / 2.0:.12g}, {width / 2.0:.12g}, {depth / 2.0:.12g}, "
+            f"{depth / 2.0:.12g}, 0, 0, {perimeter:.12g}, 0, "
+            f"{width / 2.0:.12g}, {depth / 2.0:.12g}"
+        )
         lines.extend(
             [
-                f"{section.section_id}, VALUE, {_safe_name(section.name)}, CC, SB, Built, "
-                f"{width:.12g}, {depth:.12g}, 0, 0, 0, 0",
-                f"{section.area_m2:.12g}, {asy:.12g}, {asz:.12g}, "
-                f"{section.torsion_constant_m4:.12g}, {section.iy_m4:.12g}, {section.iz_m4:.12g}",
-                f"{width / 2.0:.12g}, {width / 2.0:.12g}, {depth / 2.0:.12g}, "
-                f"{depth / 2.0:.12g}, 0, 0, {perimeter:.12g}, 0, "
-                f"{width / 2.0:.12g}, {depth / 2.0:.12g}",
+                section_header,
+                section_properties,
+                section_geometry,
                 "0, 0, 0, 0, 0, 0, 0, 0",
             ]
         )
