@@ -1,9 +1,12 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from itertools import permutations
+from itertools import permutations, product
 
-from rc_bridge.analysis.grillage_effects import NativeGrillageEnvelopeResult, native_grillage_traffic_envelope
+from rc_bridge.analysis.grillage_effects import (
+    NativeGrillageEnvelopeResult,
+    native_grillage_traffic_envelope,
+)
 from rc_bridge.analysis.grillage_solver import GrillageAnalysisResult, solve_vertical_grillage
 from rc_bridge.codes.eurocode.en1991_2 import (
     LM1AdjustmentFactors,
@@ -27,12 +30,29 @@ from rc_bridge.workflow.lm1_grillage_verification import (
 
 @dataclass(frozen=True)
 class LM1SearchPlacement:
-    """One automatically generated LM1 placement evaluated by the native grillage solver."""
+    """One automatically generated LM1 placement evaluated by the native solver."""
 
     case_id: int
-    tandem_lead_x_m: float
+    tandem_lead_x_m: float | None
     lane_placements: tuple[LM1LaneVerificationPlacement, ...]
     remaining_area_placements: tuple[LM1RemainingAreaVerificationPlacement, ...]
+
+    @property
+    def tandem_lead_positions_m(self) -> tuple[tuple[int, float | None], ...]:
+        """Return the independently positioned tandem lead coordinate for each lane."""
+        return tuple(
+            (lane.lane_number, lane.tandem_lead_x_m)
+            for lane in sorted(self.lane_placements, key=lambda item: item.lane_number)
+        )
+
+    @property
+    def common_udl_regions(self) -> tuple[LM1LongitudinalRegion, ...]:
+        """Return the common span-wise UDL pattern used by this generated case."""
+        if self.lane_placements:
+            return self.lane_placements[0].udl_regions
+        if self.remaining_area_placements:
+            return self.remaining_area_placements[0].udl_regions
+        return ()
 
 
 @dataclass(frozen=True)
@@ -69,16 +89,24 @@ class LM1GirderGoverningEnvelope:
 class ProjectNativeLM1GrillageSearchResult:
     """Discrete LM1 placement search across one native grillage definition.
 
-    Moment, shear and torsion are enveloped independently for every girder. The
-    first implementation uses edge-based EN 1991-2 notional-lane arrangements,
-    all lane-number permutations, full-length UDL, and a common tandem lead
-    position scanned longitudinally. It therefore removes equal-share traffic
-    distribution from this path while keeping the search assumptions explicit.
+    Moment, shear and torsion are enveloped independently for every girder.
+    Tandem systems are positioned independently by notional lane whenever the
+    complete Cartesian grid is within the configured limit. Wider carriageways
+    use a deterministic reduced search that retains common-position cases,
+    one-lane sweeps and a lane-1/lane-2 pair sweep.
+
+    For continuous bridges, non-empty span-wise UDL patterns are generated.
+    Each generated case currently applies one common longitudinal UDL pattern
+    to all LM1 UDL strips; the snapshot API still supports lane-specific regions.
     """
 
     cases: tuple[LM1SearchCaseResult, ...]
     girders: tuple[LM1GirderGoverningEnvelope, ...]
     longitudinal_step_m: float
+    search_strategy: str
+    tandem_combinations_exhaustive: bool
+    theoretical_tandem_combinations_per_transverse_layout: int
+    udl_pattern_count: int
 
     @property
     def evaluated_case_count(self) -> int:
@@ -94,7 +122,20 @@ class ProjectNativeLM1GrillageSearchResult:
         return tuple(sorted(case_ids))
 
 
-def _merge_coordinates(values: list[float], *, tolerance: float = 1.0e-9) -> tuple[float, ...]:
+@dataclass(frozen=True)
+class _LM1SearchPlan:
+    placements: tuple[LM1SearchPlacement, ...]
+    tandem_combinations_exhaustive: bool
+    theoretical_tandem_combinations_per_transverse_layout: int
+    udl_pattern_count: int
+    strategy: str
+
+
+def _merge_coordinates(
+    values: list[float],
+    *,
+    tolerance: float = 1.0e-9,
+) -> tuple[float, ...]:
     merged: list[float] = []
     for value in sorted(values):
         if not merged or abs(value - merged[-1]) > tolerance:
@@ -117,6 +158,116 @@ def _tandem_lead_positions(total_length_m: float, step_m: float) -> tuple[float,
     )
 
 
+def _seed_positions(
+    positions: tuple[float, ...],
+    *,
+    maximum_count: int = 5,
+) -> tuple[float, ...]:
+    if len(positions) <= maximum_count:
+        return positions
+    indices = {
+        round(index * (len(positions) - 1) / (maximum_count - 1))
+        for index in range(maximum_count)
+    }
+    return tuple(positions[index] for index in sorted(indices))
+
+
+def _tandem_position_vectors(
+    *,
+    lane_count: int,
+    positions: tuple[float, ...],
+    max_exhaustive_combinations: int,
+) -> tuple[tuple[tuple[float, ...], ...], bool, int]:
+    if lane_count < 1:
+        raise ValueError("LM1 search requires at least one notional lane.")
+    if max_exhaustive_combinations < 1:
+        raise ValueError("max_exhaustive_tandem_combinations must be positive.")
+
+    theoretical = len(positions) ** lane_count
+    if theoretical <= max_exhaustive_combinations:
+        return tuple(product(positions, repeat=lane_count)), True, theoretical
+
+    candidates: list[tuple[float, ...]] = []
+    seen: set[tuple[float, ...]] = set()
+
+    def add(values: tuple[float, ...]) -> None:
+        if values not in seen:
+            seen.add(values)
+            candidates.append(values)
+
+    for position in positions:
+        add((position,) * lane_count)
+
+    seeds = _seed_positions(positions)
+    for seed in seeds:
+        base = [seed] * lane_count
+        for lane_index in range(lane_count):
+            for position in positions:
+                trial = base.copy()
+                trial[lane_index] = position
+                add(tuple(trial))
+
+    if lane_count >= 2:
+        middle = positions[len(positions) // 2]
+        base = [middle] * lane_count
+        pair_count = len(positions) ** 2
+        if pair_count <= max_exhaustive_combinations:
+            for lane_1_position in positions:
+                for lane_2_position in positions:
+                    trial = base.copy()
+                    trial[0] = lane_1_position
+                    trial[1] = lane_2_position
+                    add(tuple(trial))
+
+    return tuple(candidates), False, theoretical
+
+
+def _span_regions(project: ProjectInput) -> tuple[LM1LongitudinalRegion, ...]:
+    regions: list[LM1LongitudinalRegion] = []
+    x = 0.0
+    for span_length in project.geometry.span_lengths_m:
+        x_next = x + float(span_length)
+        regions.append(LM1LongitudinalRegion(x, x_next))
+        x = x_next
+    return tuple(regions)
+
+
+def _udl_region_patterns(
+    project: ProjectInput,
+    *,
+    include_spanwise_patterns: bool,
+) -> tuple[tuple[LM1LongitudinalRegion, ...], ...]:
+    spans = _span_regions(project)
+    if not spans:
+        raise ValueError("LM1 UDL search requires at least one physical span.")
+    if not include_spanwise_patterns or len(spans) == 1:
+        return (spans,)
+
+    patterns: list[tuple[LM1LongitudinalRegion, ...]] = []
+    seen: set[tuple[tuple[float, float], ...]] = set()
+
+    def add(regions: tuple[LM1LongitudinalRegion, ...]) -> None:
+        signature = tuple((item.x_start_m, item.x_end_m) for item in regions)
+        if signature and signature not in seen:
+            seen.add(signature)
+            patterns.append(regions)
+
+    span_count = len(spans)
+    if span_count <= 4:
+        for mask in range(1, 1 << span_count):
+            add(tuple(spans[index] for index in range(span_count) if mask & (1 << index)))
+    else:
+        add(spans)
+        for region in spans:
+            add((region,))
+        add(tuple(spans[::2]))
+        add(tuple(spans[1::2]))
+        for index in range(span_count - 1):
+            add((spans[index], spans[index + 1]))
+
+    return tuple(patterns)
+
+
 def _edge_based_transverse_layouts(
     project: ProjectInput,
 ) -> tuple[
@@ -126,7 +277,7 @@ def _edge_based_transverse_layouts(
     ],
     ...,
 ]:
-    """Return lane-numbered strips and remaining-area strips for both carriageway edges."""
+    """Return lane-numbered strips and remaining-area strips for both edges."""
     geometry = project.geometry
     layout = notional_lane_layout(float(geometry.carriageway_width_m))
     left = float(geometry.carriageway_left_edge_m)
@@ -177,55 +328,110 @@ def _edge_based_transverse_layouts(
     return tuple(generated)
 
 
-def generate_lm1_search_placements(
+def _generate_lm1_search_plan(
     project: ProjectInput,
     *,
-    longitudinal_step_m: float = 0.5,
-) -> tuple[LM1SearchPlacement, ...]:
-    """Generate the first automated LM1 native-grillage search grid.
-
-    UDL is applied over the complete bridge length in every notional lane and
-    remaining-area strip. Tandem systems in all active lanes share a scanned lead
-    x-coordinate in this first search generation. Both carriageway-edge origins
-    and all lane-number permutations are included.
-    """
+    longitudinal_step_m: float,
+    max_exhaustive_tandem_combinations: int,
+    include_spanwise_udl_patterns: bool,
+) -> _LM1SearchPlan:
     total_length = sum(float(value) for value in project.geometry.span_lengths_m)
-    full_length = (LM1LongitudinalRegion(0.0, total_length),)
     positions = _tandem_lead_positions(total_length, longitudinal_step_m)
     transverse_layouts = _edge_based_transverse_layouts(project)
+    lane_count = notional_lane_layout(float(project.geometry.carriageway_width_m)).lane_count
+    tandem_vectors, exhaustive, theoretical = _tandem_position_vectors(
+        lane_count=lane_count,
+        positions=positions,
+        max_exhaustive_combinations=max_exhaustive_tandem_combinations,
+    )
+    udl_patterns = _udl_region_patterns(
+        project,
+        include_spanwise_patterns=include_spanwise_udl_patterns,
+    )
 
     placements: list[LM1SearchPlacement] = []
     case_id = 1
     for lanes, remaining in transverse_layouts:
-        for lead_x in positions:
-            lane_placements = tuple(
-                LM1LaneVerificationPlacement(
-                    lane_number=lane_number,
-                    y_start_m=y_start,
-                    y_end_m=y_end,
-                    udl_regions=full_length,
-                    tandem_lead_x_m=lead_x,
+        for udl_regions in udl_patterns:
+            for tandem_vector in tandem_vectors:
+                tandem_by_lane = {
+                    lane_number: tandem_vector[lane_number - 1]
+                    for lane_number in range(1, lane_count + 1)
+                }
+                lane_placements = tuple(
+                    LM1LaneVerificationPlacement(
+                        lane_number=lane_number,
+                        y_start_m=y_start,
+                        y_end_m=y_end,
+                        udl_regions=udl_regions,
+                        tandem_lead_x_m=tandem_by_lane[lane_number],
+                    )
+                    for lane_number, y_start, y_end in lanes
                 )
-                for lane_number, y_start, y_end in lanes
-            )
-            remaining_placements = tuple(
-                LM1RemainingAreaVerificationPlacement(
-                    y_start_m=y_start,
-                    y_end_m=y_end,
-                    udl_regions=full_length,
+                remaining_placements = tuple(
+                    LM1RemainingAreaVerificationPlacement(
+                        y_start_m=y_start,
+                        y_end_m=y_end,
+                        udl_regions=udl_regions,
+                    )
+                    for y_start, y_end in remaining
                 )
-                for y_start, y_end in remaining
-            )
-            placements.append(
-                LM1SearchPlacement(
-                    case_id=case_id,
-                    tandem_lead_x_m=lead_x,
-                    lane_placements=lane_placements,
-                    remaining_area_placements=remaining_placements,
+                common_tandem = (
+                    tandem_vector[0]
+                    if all(
+                        abs(value - tandem_vector[0]) <= 1.0e-12
+                        for value in tandem_vector
+                    )
+                    else None
                 )
-            )
-            case_id += 1
-    return tuple(placements)
+                placements.append(
+                    LM1SearchPlacement(
+                        case_id=case_id,
+                        tandem_lead_x_m=common_tandem,
+                        lane_placements=lane_placements,
+                        remaining_area_placements=remaining_placements,
+                    )
+                )
+                case_id += 1
+
+    tandem_strategy = (
+        "exhaustive-independent-tandem"
+        if exhaustive
+        else "reduced-independent-tandem"
+    )
+    udl_strategy = (
+        "span-pattern-udl"
+        if include_spanwise_udl_patterns and len(project.geometry.span_lengths_m) > 1
+        else "full-length-udl"
+    )
+    return _LM1SearchPlan(
+        placements=tuple(placements),
+        tandem_combinations_exhaustive=exhaustive,
+        theoretical_tandem_combinations_per_transverse_layout=theoretical,
+        udl_pattern_count=len(udl_patterns),
+        strategy=f"{tandem_strategy}+{udl_strategy}",
+    )
+
+
+def generate_lm1_search_placements(
+    project: ProjectInput,
+    *,
+    longitudinal_step_m: float = 0.5,
+    max_exhaustive_tandem_combinations: int = 5000,
+    include_spanwise_udl_patterns: bool = True,
+) -> tuple[LM1SearchPlacement, ...]:
+    """Generate automated LM1 native-grillage search cases.
+
+    Tandem lead positions are independent by lane. The full Cartesian search is
+    used when it is small enough; otherwise a deterministic reduced search is
+    used. Continuous bridges also receive non-empty span-wise UDL patterns.
+    """
+    return _generate_lm1_search_plan(
+        project,
+        longitudinal_step_m=longitudinal_step_m,
+        max_exhaustive_tandem_combinations=max_exhaustive_tandem_combinations,
+        include_spanwise_udl_patterns=include_spanwise_udl_patterns,
+    ).placements
 
 
 def run_project_native_lm1_grillage_search(
@@ -236,18 +442,22 @@ def run_project_native_lm1_grillage_search(
     transverse_stations_m: tuple[float, ...],
     factors: LM1AdjustmentFactors | None = None,
     longitudinal_step_m: float = 0.5,
+    max_exhaustive_tandem_combinations: int = 5000,
+    include_spanwise_udl_patterns: bool = True,
     name: str = "EN 1991-2 LM1 native grillage automated search",
 ) -> ProjectNativeLM1GrillageSearchResult:
-    """Run a discrete automated LM1 search and envelope M/V/T independently by girder."""
-    placements = generate_lm1_search_placements(
+    """Run automated LM1 placement search and envelope M/V/T by girder."""
+    plan = _generate_lm1_search_plan(
         project,
         longitudinal_step_m=longitudinal_step_m,
+        max_exhaustive_tandem_combinations=max_exhaustive_tandem_combinations,
+        include_spanwise_udl_patterns=include_spanwise_udl_patterns,
     )
-    if not placements:
+    if not plan.placements:
         raise ValueError("Automated LM1 search generated no candidate placements.")
 
     cases: list[LM1SearchCaseResult] = []
-    for placement in placements:
+    for placement in plan.placements:
         case_name = f"{name} case {placement.case_id}"
         model = build_project_lm1_grillage_verification_model(
             project,
@@ -316,13 +526,19 @@ def run_project_native_lm1_grillage_search(
         cases=tuple(cases),
         girders=tuple(governing),
         longitudinal_step_m=longitudinal_step_m,
+        search_strategy=plan.strategy,
+        tandem_combinations_exhaustive=plan.tandem_combinations_exhaustive,
+        theoretical_tandem_combinations_per_transverse_layout=(
+            plan.theoretical_tandem_combinations_per_transverse_layout
+        ),
+        udl_pattern_count=plan.udl_pattern_count,
     )
 
 
 def build_governing_lm1_search_verification_packages(
     result: ProjectNativeLM1GrillageSearchResult,
 ) -> dict[int, ModelVerificationExportPackage]:
-    """Export only the unique governing search cases for direct MIDAS/STAAD benchmarking."""
+    """Export unique governing search cases for direct MIDAS/STAAD benchmarking."""
     by_id = {case.placement.case_id: case for case in result.cases}
     return {
         case_id: build_model_verification_export_package(by_id[case_id].model)
