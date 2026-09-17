@@ -203,9 +203,7 @@ def bs5400_multilimit_record_from_project(
 
     return MultiLimitTrainingRecord(
         solver_profile=SolverProfile.BS5400_BD37_01.value,
-        girder_index=result.uls.traffic.girder_effects[0].girder_index
-        if len(result.uls.traffic.girder_effects) == 1
-        else result.uls.design.uls_combination.effects.moment_knm * 0 + 4,
+        girder_index=result.girder_index,
         span_m=span_m,
         girder_spacing_m=float(project.geometry.girder_spacing_m),
         girder_depth_m=float(project.geometry.girder_depth_m),
