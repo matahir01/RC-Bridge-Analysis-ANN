@@ -1,8 +1,8 @@
 from __future__ import annotations
 
-from bisect import bisect_right
-from dataclasses import dataclass
-from typing import Literal
+import bisect
+import dataclasses
+import typing
 
 from rc_bridge.analysis.continuous_beam import (
     BeamSpan,
@@ -12,10 +12,10 @@ from rc_bridge.analysis.continuous_beam import (
 )
 from rc_bridge.analysis.moving_loads import AxleTrain, positioned_axles
 
-InfluenceResponseKind = Literal["moment", "shear"]
+InfluenceResponseKind = typing.Literal["moment", "shear"]
 
 
-@dataclass(frozen=True)
+@dataclasses.dataclass(frozen=True)
 class ContinuousSectionInfluenceLine:
     response_kind: InfluenceResponseKind
     response_span_index: int
@@ -27,7 +27,7 @@ class ContinuousSectionInfluenceLine:
     status: str
 
 
-@dataclass(frozen=True)
+@dataclasses.dataclass(frozen=True)
 class AdverseUDLEffect:
     line_load_kn_m: float
     maximum_positive_effect: float
@@ -38,7 +38,7 @@ class AdverseUDLEffect:
     status: str
 
 
-@dataclass(frozen=True)
+@dataclasses.dataclass(frozen=True)
 class MovingTrainInfluenceEffect:
     maximum_positive_effect: float
     maximum_positive_lead_position_m: float
@@ -68,7 +68,7 @@ def _unit_load_spans(
         loaded_span_index = len(spans) - 1
         local_position = spans[-1].length_m
     else:
-        loaded_span_index = max(0, bisect_right(boundaries, global_position_m) - 1)
+        loaded_span_index = max(0, bisect.bisect_right(boundaries, global_position_m) - 1)
         loaded_span_index = min(loaded_span_index, len(spans) - 1)
         local_position = global_position_m - boundaries[loaded_span_index]
 
@@ -154,7 +154,7 @@ def _interpolated_ordinate(
     if not 0.0 <= global_position_m <= influence_line.bridge_length_m:
         raise ValueError("Influence-line interpolation position lies outside the bridge.")
 
-    index = bisect_right(positions, global_position_m) - 1
+    index = bisect.bisect_right(positions, global_position_m) - 1
     if index < 0:
         return ordinates[0]
     if index >= len(positions) - 1:
