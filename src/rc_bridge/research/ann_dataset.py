@@ -1,13 +1,12 @@
 from __future__ import annotations
 
-from math import isfinite
 from dataclasses import dataclass
+from math import isfinite
 
 import numpy as np
 
 from rc_bridge.research.multilimit_records import MultiLimitTrainingRecord
 from rc_bridge.research.verification import SolverProfile
-
 
 TARGET_NAMES = (
     "g_flexure_knm",
