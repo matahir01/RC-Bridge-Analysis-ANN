@@ -1,8 +1,8 @@
 from __future__ import annotations
 
 import csv
-from dataclasses import dataclass
-from io import StringIO
+import dataclasses
+import io
 
 from rc_bridge.research.benchmarking import (
     BenchmarkComparison,
@@ -22,7 +22,7 @@ _RESULT_COLUMNS = (
 )
 
 
-@dataclass(frozen=True)
+@dataclasses.dataclass(frozen=True)
 class VerificationResultValue:
     result_type: str
     object_id: str
@@ -44,7 +44,7 @@ class VerificationResultValue:
         )
 
 
-@dataclass(frozen=True)
+@dataclasses.dataclass(frozen=True)
 class ExternalResultComparisonReport:
     source_name: str
     comparisons: tuple[BenchmarkComparison, ...]
@@ -66,7 +66,7 @@ class ExternalResultComparisonReport:
 
 def parse_verification_results_csv(text: str) -> tuple[VerificationResultValue, ...]:
     """Parse the normalized verification-result table used by the export package."""
-    reader = csv.DictReader(StringIO(text))
+    reader = csv.DictReader(io.StringIO(text))
     if tuple(reader.fieldnames or ()) != _RESULT_COLUMNS:
         raise ValueError(
             "Verification result CSV must use the exact columns: " + ",".join(_RESULT_COLUMNS)
