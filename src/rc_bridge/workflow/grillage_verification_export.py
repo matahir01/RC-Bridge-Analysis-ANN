@@ -12,6 +12,7 @@ from rc_bridge.export.verification_model import (
     VerificationModel,
     VerificationNodalLoad,
     VerificationNode,
+    VerificationPointLoad,
     VerificationSection,
     VerificationSupport,
     VerificationUniformLoad,
@@ -85,16 +86,27 @@ def _support_stations(project: ProjectInput) -> tuple[float, ...]:
     return tuple(stations)
 
 
+def _merge_coordinates(values: tuple[float, ...], *, tolerance: float = 1.0e-9) -> tuple[float, ...]:
+    merged: list[float] = []
+    for value in sorted(values):
+        if not merged or abs(value - merged[-1]) > tolerance:
+            merged.append(value)
+    return tuple(merged)
+
+
 def _station_grid(
     project: ProjectInput,
     transverse_stations_m: tuple[float, ...],
+    point_loads: tuple[GrillagePointLoad, ...],
 ) -> tuple[float, ...]:
     support_stations = _support_stations(project)
     total_length = support_stations[-1]
     supplied = tuple(float(value) for value in transverse_stations_m)
-    if any(value < -1e-9 or value > total_length + 1e-9 for value in supplied):
-        raise ValueError("A grillage transverse station lies outside the bridge length.")
-    return tuple(sorted({*support_stations, *supplied}))
+    load_positions = tuple(float(load.x_m) for load in point_loads)
+    all_positions = (*supplied, *load_positions)
+    if any(value < -1e-9 or value > total_length + 1e-9 for value in all_positions):
+        raise ValueError("A grillage transverse station or point load lies outside the bridge length.")
+    return _merge_coordinates((*support_stations, *all_positions))
 
 
 def _girder_y_coordinates(project: ProjectInput) -> tuple[float, ...]:
@@ -106,6 +118,11 @@ def _girder_y_coordinates(project: ProjectInput) -> tuple[float, ...]:
     return tuple(first + index * spacing for index in range(count))
 
 
+def _transverse_y_coordinates(project: ProjectInput) -> tuple[float, ...]:
+    half_width = float(project.geometry.deck_width_m) / 2.0
+    return _merge_coordinates((-half_width, *_girder_y_coordinates(project), half_width))
+
+
 def _span_index_at_x(project: ProjectInput, x_m: float) -> int:
     boundaries = _support_stations(project)
     if x_m < boundaries[0] - 1e-9 or x_m > boundaries[-1] + 1e-9:
@@ -115,35 +132,11 @@ def _span_index_at_x(project: ProjectInput, x_m: float) -> int:
     return min(max(bisect_right(boundaries, x_m) - 1, 0), len(boundaries) - 2)
 
 
-def _bracket(values: tuple[float, ...], value: float) -> tuple[int, int, float]:
-    if value < values[0] - 1e-9 or value > values[-1] + 1e-9:
-        raise ValueError("Point load lies outside the grillage node envelope.")
+def _coordinate_index(values: tuple[float, ...], value: float) -> int:
     for index, coordinate in enumerate(values):
         if abs(value - coordinate) <= 1e-9:
-            return index, index, 0.0
-    upper = bisect_right(values, value)
-    lower = upper - 1
-    ratio = (value - values[lower]) / (values[upper] - values[lower])
-    return lower, upper, ratio
-
-
-def _point_load_node_weights(
-    x_stations_m: tuple[float, ...],
-    y_girders_m: tuple[float, ...],
-    load: GrillagePointLoad,
-    girder_count: int,
-) -> dict[int, float]:
-    xi, xj, tx = _bracket(x_stations_m, load.x_m)
-    yi, yj, ty = _bracket(y_girders_m, load.y_m)
-
-    x_weights = ((xi, 1.0),) if xi == xj else ((xi, 1.0 - tx), (xj, tx))
-    y_weights = ((yi, 1.0),) if yi == yj else ((yi, 1.0 - ty), (yj, ty))
-    weights: dict[int, float] = {}
-    for x_index, wx in x_weights:
-        for y_index, wy in y_weights:
-            node_id = x_index * girder_count + y_index + 1
-            weights[node_id] = weights.get(node_id, 0.0) + wx * wy
-    return weights
+            return index
+    raise ValueError("Required grillage coordinate was not generated.")
 
 
 def build_project_grillage_verification_model(
@@ -156,10 +149,10 @@ def build_project_grillage_verification_model(
 ) -> VerificationModel:
     """Build a full bridge beam-grillage model for independent software verification.
 
-    Longitudinal and transverse section properties are explicit inputs. Point loads
-    are mapped to adjacent grillage nodes by bilinear geometric interpolation; this
-    preserves force and plan position but is not itself a production transverse-
-    distribution method. Longitudinal UDLs, when supplied, are explicit per girder.
+    Longitudinal and transverse section properties are explicit inputs. Every point-load
+    x-coordinate is inserted as an exact transverse station. The transverse grid extends
+    to the physical deck edges, so loads on deck overhangs are transferred through the
+    transverse cantilever strips rather than being rejected or artificially moved inward.
     """
     span_count = len(project.geometry.span_lengths_m)
     girder_count = int(project.geometry.girder_count)
@@ -170,8 +163,11 @@ def build_project_grillage_verification_model(
     ) != girder_count:
         raise ValueError("Longitudinal grillage UDL vector must match the girder count.")
 
-    x_stations = _station_grid(project, transverse_stations_m)
+    x_stations = _station_grid(project, transverse_stations_m, load_case.point_loads)
     y_girders = _girder_y_coordinates(project)
+    y_lines = _transverse_y_coordinates(project)
+    y_line_count = len(y_lines)
+    girder_y_indices = tuple(_coordinate_index(y_lines, value) for value in y_girders)
     e_kn_m2 = _elastic_modulus_mpa(project) * 1000.0
     material = VerificationMaterial(
         material_id=1,
@@ -202,31 +198,33 @@ def build_project_grillage_verification_model(
         iz_m4=transverse_section.iz_m4,
     )
 
+    def node_id(x_index: int, y_index: int) -> int:
+        return x_index * y_line_count + y_index + 1
+
     nodes = tuple(
         VerificationNode(
-            node_id=x_index * girder_count + girder_index + 1,
+            node_id=node_id(x_index, y_index),
             x_m=x,
             y_m=y,
             z_m=0.0,
         )
         for x_index, x in enumerate(x_stations)
-        for girder_index, y in enumerate(y_girders)
+        for y_index, y in enumerate(y_lines)
     )
 
     beams: list[VerificationBeam] = []
     longitudinal_member_ids: list[list[int]] = [[] for _ in range(girder_count)]
+    transverse_member_ids: dict[tuple[int, int], int] = {}
     member_id = 1
     for x_index in range(len(x_stations) - 1):
         midpoint = (x_stations[x_index] + x_stations[x_index + 1]) / 2.0
         span_index = _span_index_at_x(project, midpoint)
-        for girder_index in range(girder_count):
-            node_i = x_index * girder_count + girder_index + 1
-            node_j = (x_index + 1) * girder_count + girder_index + 1
+        for girder_index, y_index in enumerate(girder_y_indices):
             beams.append(
                 VerificationBeam(
                     member_id=member_id,
-                    node_i=node_i,
-                    node_j=node_j,
+                    node_i=node_id(x_index, y_index),
+                    node_j=node_id(x_index + 1, y_index),
                     material_id=1,
                     section_id=span_index + 1,
                 )
@@ -235,14 +233,13 @@ def build_project_grillage_verification_model(
             member_id += 1
 
     for x_index in range(len(x_stations)):
-        for girder_index in range(girder_count - 1):
-            node_i = x_index * girder_count + girder_index + 1
-            node_j = node_i + 1
+        for y_index in range(y_line_count - 1):
+            transverse_member_ids[(x_index, y_index)] = member_id
             beams.append(
                 VerificationBeam(
                     member_id=member_id,
-                    node_i=node_i,
-                    node_j=node_j,
+                    node_i=node_id(x_index, y_index),
+                    node_j=node_id(x_index, y_index + 1),
                     material_id=1,
                     section_id=transverse_section_id,
                 )
@@ -255,11 +252,11 @@ def build_project_grillage_verification_model(
     ]
     supports: list[VerificationSupport] = []
     for x_index in support_station_indices:
-        for girder_index in range(girder_count):
-            node_id = x_index * girder_count + girder_index + 1
-            ux = x_index == support_station_indices[0] and girder_index in {0, girder_count - 1}
+        for girder_index, y_index in enumerate(girder_y_indices):
+            current_node_id = node_id(x_index, y_index)
+            ux = x_index == support_station_indices[0]
             uy = x_index == support_station_indices[0] and girder_index == 0
-            supports.append(VerificationSupport(node_id=node_id, ux=ux, uy=uy, uz=True))
+            supports.append(VerificationSupport(node_id=current_node_id, ux=ux, uy=uy, uz=True))
 
     uniform_loads: list[VerificationUniformLoad] = []
     if load_case.longitudinal_udl_kn_m_by_girder is not None:
@@ -275,24 +272,52 @@ def build_project_grillage_verification_model(
                 for current_member_id in longitudinal_member_ids[girder_index]
             )
 
-    nodal_forces: dict[int, float] = {}
+    point_loads: list[VerificationPointLoad] = []
+    nodal_loads: list[VerificationNodalLoad] = []
+    half_deck_width = float(project.geometry.deck_width_m) / 2.0
     for point in load_case.point_loads:
-        weights = _point_load_node_weights(x_stations, y_girders, point, girder_count)
-        for node_id, weight in weights.items():
-            nodal_forces[node_id] = nodal_forces.get(node_id, 0.0) - point.magnitude_kn * weight
-    nodal_loads = tuple(
-        VerificationNodalLoad(node_id=node_id, fz_kn=fz)
-        for node_id, fz in sorted(nodal_forces.items())
-        if abs(fz) > 1e-12
-    )
+        if point.y_m < -half_deck_width - 1e-9 or point.y_m > half_deck_width + 1e-9:
+            raise ValueError("Point load lies outside the physical deck width.")
+        x_index = _coordinate_index(x_stations, point.x_m)
+        exact_y_index = next(
+            (index for index, coordinate in enumerate(y_lines) if abs(point.y_m - coordinate) <= 1e-9),
+            None,
+        )
+        if exact_y_index is not None:
+            nodal_loads.append(
+                VerificationNodalLoad(
+                    node_id=node_id(x_index, exact_y_index),
+                    fz_kn=-point.magnitude_kn,
+                )
+            )
+            continue
+        segment_index = next(
+            (
+                index
+                for index in range(y_line_count - 1)
+                if y_lines[index] < point.y_m < y_lines[index + 1]
+            ),
+            None,
+        )
+        if segment_index is None:
+            raise ValueError("Point load could not be mapped to the transverse grillage.")
+        point_loads.append(
+            VerificationPointLoad(
+                member_id=transverse_member_ids[(x_index, segment_index)],
+                direction="GZ",
+                magnitude_kn=-point.magnitude_kn,
+                distance_from_i_m=point.y_m - y_lines[segment_index],
+            )
+        )
 
     verification_case = VerificationLoadCase(
         load_case_id=1,
         name=load_case.name,
         uniform_loads=tuple(uniform_loads),
-        nodal_loads=nodal_loads,
+        point_loads=tuple(point_loads),
+        nodal_loads=tuple(nodal_loads),
     )
-    return VerificationModel(
+    model = VerificationModel(
         name=f"{project.name} - full grillage - {load_case.name}",
         nodes=nodes,
         materials=(material,),
@@ -305,14 +330,17 @@ def build_project_grillage_verification_model(
             "purpose": "full_bridge_grillage_verification",
             "design_code": project.design_code.value,
             "girder_count": str(girder_count),
+            "girder_spacing_m": f"{float(project.geometry.girder_spacing_m):.12g}",
+            "deck_width_m": f"{float(project.geometry.deck_width_m):.12g}",
+            "edge_overhang_m": f"{project.geometry.nominal_edge_overhang_m:.12g}",
             "station_count": str(len(x_stations)),
             "transverse_stiffness_basis": "explicit caller-supplied A, J, Iy and Iz",
             "longitudinal_stiffness_basis": "explicit caller-supplied A, J, Iy and Iz per span",
-            "point_load_mapping": "bilinear geometric interpolation to adjacent grillage nodes",
-            "point_load_mapping_scope": (
-                "equilibrium-preserving export mapping only; not a production transverse-distribution model"
-            ),
+            "point_load_mapping": "exact x station; exact nodal or transverse-member y position",
+            "deck_overhang_model": "transverse cantilever strip from exterior girder to physical deck edge",
             "longitudinal_udl_basis": "explicit caller-supplied line load per girder",
             "self_weight_basis": "not activated unless included in supplied longitudinal line loads",
         },
     )
+    model.validate_load_positions()
+    return model
