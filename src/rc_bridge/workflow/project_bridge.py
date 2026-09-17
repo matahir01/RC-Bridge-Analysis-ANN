@@ -8,7 +8,15 @@ from rc_bridge.analysis.lane_distribution import (
 )
 from rc_bridge.analysis.loads import deck_self_weight_per_girder_kn_m
 from rc_bridge.analysis.simple_span import udl_simple_span
-from rc_bridge.codes.common import LoadEffects
+from rc_bridge.codes.common import FactoredCombination, LoadEffects
+from rc_bridge.codes.eurocode.combinations import (
+    EurocodeFactors,
+    ServiceabilityPsiFactors,
+    characteristic_sls,
+    frequent_sls,
+    persistent_uls,
+    quasi_permanent_sls,
+)
 from rc_bridge.codes.eurocode.en1991_2 import notional_lane_layout
 from rc_bridge.codes.eurocode.materials import concrete_properties_ec2
 from rc_bridge.core.models import DesignCode, ProjectInput, SupportSystem
@@ -46,6 +54,18 @@ class UniformPermanentLoadInput:
             + self.assigned_barrier_and_services_kn_m
             + self.other_kn_m
         )
+
+
+@dataclass(frozen=True)
+class ProjectGirderCombinationSet:
+    girder_index: int
+    permanent_characteristic: LoadEffects
+    traffic_characteristic: LoadEffects
+    persistent_uls: FactoredCombination
+    characteristic_sls: FactoredCombination
+    frequent_sls: FactoredCombination
+    quasi_permanent_sls: FactoredCombination
+    traffic_distribution_method: str
 
 
 def project_eurocode_material_input(
@@ -170,4 +190,57 @@ def run_project_lm1_equal_share_verification(
         remaining_area_distribution=remaining_distribution,
         movement_steps=movement_steps,
         section_stations=section_stations,
+    )
+
+
+def project_internal_girder_combinations_verification(
+    project: ProjectInput,
+    *,
+    girder_index: int,
+    sls_factors: ServiceabilityPsiFactors,
+    span_index: int = 0,
+    additional_permanent: UniformPermanentLoadInput | None = None,
+    uls_factors: EurocodeFactors | None = None,
+    movement_steps: int = 81,
+    section_stations: int = 101,
+) -> ProjectGirderCombinationSet:
+    """Assemble Gk/Qk and Eurocode ULS/SLS effects for an internal girder.
+
+    The traffic branch intentionally uses the equal-share verification model.
+    Production design must replace it with validated analytical or imported
+    grillage distribution before the solver is marked verified for ANN use.
+    """
+    girder_count = int(project.geometry.girder_count)
+    if not 2 <= girder_index <= girder_count - 1:
+        raise ValueError(
+            "This helper is for internal girders only; edge-girder permanent-load "
+            "tributary widths must be modelled separately."
+        )
+
+    permanent = internal_girder_characteristic_permanent_effects(
+        project,
+        span_index=span_index,
+        additional=additional_permanent,
+    )
+    traffic_result = run_project_lm1_equal_share_verification(
+        project,
+        span_index=span_index,
+        movement_steps=movement_steps,
+        section_stations=section_stations,
+    )
+    traffic_item = traffic_result.girder_effects[girder_index - 1]
+    traffic = LoadEffects(
+        moment_knm=traffic_item.moment_knm,
+        shear_kn=traffic_item.shear_kn,
+    )
+
+    return ProjectGirderCombinationSet(
+        girder_index=girder_index,
+        permanent_characteristic=permanent,
+        traffic_characteristic=traffic,
+        persistent_uls=persistent_uls(permanent, traffic, uls_factors),
+        characteristic_sls=characteristic_sls(permanent, traffic),
+        frequent_sls=frequent_sls(permanent, traffic, sls_factors),
+        quasi_permanent_sls=quasi_permanent_sls(permanent, traffic, sls_factors),
+        traffic_distribution_method=traffic_item.method,
     )
