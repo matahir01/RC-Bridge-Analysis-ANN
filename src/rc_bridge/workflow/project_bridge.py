@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from enum import Enum
 
 from rc_bridge.analysis.lane_distribution import (
     equal_lane_distribution,
@@ -24,7 +25,13 @@ from rc_bridge.workflow.eurocode_bridge_traffic import (
     BridgeLM1TrafficResult,
     run_simple_span_lm1_bridge_traffic,
 )
-from rc_bridge.workflow.eurocode_girder import EurocodeMaterialInput
+from rc_bridge.workflow.eurocode_girder import (
+    EurocodeMaterialInput,
+    EurocodeServiceabilityInput,
+    EurocodeTGirderWorkflowResult,
+    TGirderDesignInput,
+    run_eurocode_t_girder_case,
+)
 
 
 @dataclass(frozen=True)
@@ -66,6 +73,28 @@ class ProjectGirderCombinationSet:
     frequent_sls: FactoredCombination
     quasi_permanent_sls: FactoredCombination
     traffic_distribution_method: str
+
+
+class SLSCombinationChoice(str, Enum):
+    CHARACTERISTIC = "characteristic"
+    FREQUENT = "frequent"
+    QUASI_PERMANENT = "quasi_permanent"
+
+
+@dataclass(frozen=True)
+class ProjectServiceabilitySelection:
+    input: EurocodeServiceabilityInput
+    crack_combination_name: str
+    deflection_combination_name: str
+    deflection_method: str = "equivalent full-span UDL from selected SLS maximum moment"
+
+
+@dataclass(frozen=True)
+class ProjectTGirderVerificationResult:
+    combinations: ProjectGirderCombinationSet
+    serviceability: ProjectServiceabilitySelection
+    materials: EurocodeMaterialInput
+    design: EurocodeTGirderWorkflowResult
 
 
 def project_eurocode_material_input(
@@ -243,4 +272,147 @@ def project_internal_girder_combinations_verification(
         frequent_sls=frequent_sls(permanent, traffic, sls_factors),
         quasi_permanent_sls=quasi_permanent_sls(permanent, traffic, sls_factors),
         traffic_distribution_method=traffic_item.method,
+    )
+
+
+def _select_sls_combination(
+    combinations: ProjectGirderCombinationSet,
+    choice: SLSCombinationChoice,
+) -> FactoredCombination:
+    if choice == SLSCombinationChoice.CHARACTERISTIC:
+        return combinations.characteristic_sls
+    if choice == SLSCombinationChoice.FREQUENT:
+        return combinations.frequent_sls
+    if choice == SLSCombinationChoice.QUASI_PERMANENT:
+        return combinations.quasi_permanent_sls
+    raise ValueError(f"Unsupported SLS combination choice: {choice}")
+
+
+def project_serviceability_from_combinations(
+    combinations: ProjectGirderCombinationSet,
+    *,
+    span_m: float,
+    crack_combination: SLSCombinationChoice,
+    deflection_combination: SLSCombinationChoice,
+    crack_limit_mm: float,
+    allowable_deflection_mm: float,
+    creep_coefficient: float = 0.0,
+    deflection_beta: float = 0.5,
+    crack_kt: float = 0.4,
+) -> ProjectServiceabilitySelection:
+    """Build current SLS inputs from explicitly selected EN 1990 combinations.
+
+    Deflection still uses the current solver's equivalent full-span UDL model.
+    The equivalent line load is back-calculated from the selected SLS maximum
+    sagging moment as w_eq = 8M/L^2. This approximation remains visible in the
+    returned method label and will later be replaced by curvature integration.
+    """
+    if span_m <= 0.0:
+        raise ValueError("span_m must be positive.")
+    if crack_limit_mm <= 0.0 or allowable_deflection_mm <= 0.0:
+        raise ValueError("SLS limits must be positive.")
+
+    crack_case = _select_sls_combination(combinations, crack_combination)
+    deflection_case = _select_sls_combination(combinations, deflection_combination)
+    equivalent_udl_kn_m = 8.0 * deflection_case.effects.moment_knm / span_m**2
+
+    return ProjectServiceabilitySelection(
+        input=EurocodeServiceabilityInput(
+            service_moment_knm=crack_case.effects.moment_knm,
+            equivalent_full_span_udl_kn_m=equivalent_udl_kn_m,
+            crack_limit_mm=crack_limit_mm,
+            allowable_deflection_mm=allowable_deflection_mm,
+            creep_coefficient=creep_coefficient,
+            deflection_beta=deflection_beta,
+            crack_kt=crack_kt,
+        ),
+        crack_combination_name=crack_case.name,
+        deflection_combination_name=deflection_case.name,
+    )
+
+
+def run_project_internal_t_girder_verification(
+    project: ProjectInput,
+    *,
+    girder_index: int,
+    section: TGirderDesignInput,
+    sls_factors: ServiceabilityPsiFactors,
+    crack_combination: SLSCombinationChoice,
+    deflection_combination: SLSCombinationChoice,
+    crack_limit_mm: float,
+    allowable_deflection_mm: float,
+    span_index: int = 0,
+    additional_permanent: UniformPermanentLoadInput | None = None,
+    uls_factors: EurocodeFactors | None = None,
+    fct_eff_mpa: float | None = None,
+    es_mpa: float = 200000.0,
+    creep_coefficient: float = 0.0,
+    deflection_beta: float = 0.5,
+    crack_kt: float = 0.4,
+    cot_theta: float = 2.0,
+    movement_steps: int = 81,
+    section_stations: int = 101,
+) -> ProjectTGirderVerificationResult:
+    """Run the current project-to-design path for an internal T-girder.
+
+    This remains a verification workflow because traffic is still distributed
+    equally between girders. It is suitable for plumbing and hand-check
+    validation, not for production bridge design or ANN data generation until
+    transverse distribution is replaced and independently verified.
+    """
+    if not 0 <= span_index < len(project.geometry.span_lengths_m):
+        raise IndexError("span_index is outside the project span list.")
+
+    span_m = float(project.geometry.span_lengths_m[span_index])
+    expected_total_depth_m = (
+        float(project.geometry.girder_depth_m) + project.geometry.physical_deck_depth_m
+    )
+    if abs(section.total_depth_m - expected_total_depth_m) > 1e-9:
+        raise ValueError(
+            "T-girder total depth must match project girder depth plus physical deck depth."
+        )
+
+    combinations = project_internal_girder_combinations_verification(
+        project,
+        girder_index=girder_index,
+        sls_factors=sls_factors,
+        span_index=span_index,
+        additional_permanent=additional_permanent,
+        uls_factors=uls_factors,
+        movement_steps=movement_steps,
+        section_stations=section_stations,
+    )
+    materials = project_eurocode_material_input(
+        project,
+        fct_eff_mpa=fct_eff_mpa,
+        es_mpa=es_mpa,
+    )
+    serviceability = project_serviceability_from_combinations(
+        combinations,
+        span_m=span_m,
+        crack_combination=crack_combination,
+        deflection_combination=deflection_combination,
+        crack_limit_mm=crack_limit_mm,
+        allowable_deflection_mm=allowable_deflection_mm,
+        creep_coefficient=creep_coefficient,
+        deflection_beta=deflection_beta,
+        crack_kt=crack_kt,
+    )
+    design = run_eurocode_t_girder_case(
+        girder_index=girder_index,
+        span_m=span_m,
+        permanent_effects=combinations.permanent_characteristic,
+        traffic_effects=combinations.traffic_characteristic,
+        section=section,
+        materials=materials,
+        serviceability=serviceability.input,
+        uls_factors=uls_factors,
+        cot_theta=cot_theta,
+    )
+
+    return ProjectTGirderVerificationResult(
+        combinations=combinations,
+        serviceability=serviceability,
+        materials=materials,
+        design=design,
     )
