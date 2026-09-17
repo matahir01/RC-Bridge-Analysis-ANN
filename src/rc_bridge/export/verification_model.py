@@ -94,7 +94,10 @@ class VerificationSupport:
 
     @property
     def restraint_code(self) -> str:
-        return "".join("1" if value else "0" for value in (self.ux, self.uy, self.uz, self.rx, self.ry, self.rz))
+        return "".join(
+            "1" if value else "0"
+            for value in (self.ux, self.uy, self.uz, self.rx, self.ry, self.rz)
+        )
 
 
 @dataclass(frozen=True)
@@ -112,9 +115,11 @@ class VerificationUniformLoad:
             raise ValueError("Unsupported uniform-load direction.")
         if (self.start_m is None) != (self.end_m is None):
             raise ValueError("Partial UDL requires both start_m and end_m.")
-        if self.start_m is not None:
-            if self.start_m < 0.0 or self.end_m is None or self.end_m <= self.start_m:
-                raise ValueError("Partial UDL distances are invalid.")
+        if (
+            self.start_m is not None
+            and (self.start_m < 0.0 or self.end_m is None or self.end_m <= self.start_m)
+        ):
+            raise ValueError("Partial UDL distances are invalid.")
 
 
 @dataclass(frozen=True)
@@ -228,7 +233,10 @@ class VerificationModel:
     def validate_load_positions(self) -> None:
         for case in self.load_cases:
             for load in case.uniform_loads:
-                if load.end_m is not None and load.end_m > self.member_length_m(load.member_id) + 1e-9:
+                if (
+                    load.end_m is not None
+                    and load.end_m > self.member_length_m(load.member_id) + 1e-9
+                ):
                     raise ValueError("Partial UDL extends beyond its member length.")
             for load in case.point_loads:
                 if load.distance_from_i_m > self.member_length_m(load.member_id) + 1e-9:
