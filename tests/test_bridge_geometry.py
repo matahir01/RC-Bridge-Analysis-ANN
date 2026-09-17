@@ -28,6 +28,28 @@ def test_reference_girder_layout_matches_11m_deck() -> None:
     assert geometry.nominal_edge_overhang_m == pytest.approx(0.4)
 
 
+def test_girder_count_and_spacing_are_independently_editable() -> None:
+    geometry = BridgeGeometry(
+        deck_width_m=11.0,
+        girder_count=8,
+        girder_spacing_m=1.40,
+    )
+
+    assert geometry.girder_count == 8
+    assert geometry.girder_spacing_m == pytest.approx(1.40)
+    assert geometry.girder_line_width_m == pytest.approx(9.80)
+    assert geometry.nominal_edge_overhang_m == pytest.approx(0.60)
+
+
+def test_editable_girder_count_and_spacing_still_respect_deck_width() -> None:
+    with pytest.raises(ValueError, match="outside the deck width"):
+        BridgeGeometry(
+            deck_width_m=11.0,
+            girder_count=8,
+            girder_spacing_m=1.70,
+        )
+
+
 def test_girder_layout_cannot_extend_beyond_deck_width() -> None:
     with pytest.raises(ValueError, match="outside the deck width"):
         BridgeGeometry(
