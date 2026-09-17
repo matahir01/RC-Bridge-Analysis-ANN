@@ -1,6 +1,9 @@
 import pytest
-
-from rc_bridge.analysis.transverse import apply_distribution, equal_distribution, normalize_distribution
+from rc_bridge.analysis.transverse import (
+    apply_distribution,
+    equal_distribution,
+    normalize_distribution,
+)
 from rc_bridge.codes.eurocode.en1991_2 import (
     lm1_characteristic_lane_load,
     lm1_remaining_area_udl_kn_m2,
