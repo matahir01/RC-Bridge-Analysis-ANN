@@ -105,8 +105,8 @@ def test_line_external_ry_is_opposite_internal_upward_slope_theta() -> None:
         if row["result_type"] == "support_rotation"
     }
     assert rotations.keys() == internal_theta.keys()
-    for node_id in rotations:
-        assert rotations[node_id] == pytest.approx(-internal_theta[node_id])
+    for node_id, rotation in rotations.items():
+        assert rotation == pytest.approx(-internal_theta[node_id])
 
 
 def test_first_stage_line_package_rejects_uncalibrated_member_force_requirement() -> None:
