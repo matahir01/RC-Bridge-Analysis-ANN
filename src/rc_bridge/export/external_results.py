@@ -10,7 +10,6 @@ from rc_bridge.research.benchmarking import (
     compare_benchmark_value,
 )
 
-
 _RESULT_COLUMNS = (
     "result_type",
     "object_id",
