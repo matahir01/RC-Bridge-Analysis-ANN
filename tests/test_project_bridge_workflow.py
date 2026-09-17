@@ -2,14 +2,32 @@ import pytest
 
 from rc_bridge.codes.eurocode.combinations import ServiceabilityPsiFactors
 from rc_bridge.core.models import MaterialProperties, ProjectInput, SupportSystem
+from rc_bridge.workflow.eurocode_girder import TGirderDesignInput
 from rc_bridge.workflow.project_bridge import (
+    SLSCombinationChoice,
     UniformPermanentLoadInput,
     internal_girder_characteristic_permanent_effects,
     internal_girder_deck_self_weight_kn_m,
     project_eurocode_material_input,
     project_internal_girder_combinations_verification,
+    project_serviceability_from_combinations,
+    run_project_internal_t_girder_verification,
     run_project_lm1_equal_share_verification,
 )
+
+
+def _reference_t_section() -> TGirderDesignInput:
+    return TGirderDesignInput(
+        effective_flange_width_m=1.70,
+        flange_thickness_m=0.175,
+        web_width_m=0.30,
+        total_depth_m=1.20,
+        effective_depth_m=1.10,
+        steel_area_mm2=6500.0,
+        bar_diameter_mm=32.0,
+        bar_spacing_mm=150.0,
+        cover_mm=50.0,
+    )
 
 
 def test_reference_project_material_input_uses_ec2_c35_45_properties() -> None:
@@ -107,6 +125,94 @@ def test_selected_internal_girder_combination_set_is_consistent() -> None:
     )
     assert result.persistent_uls.effects.moment_knm > result.characteristic_sls.effects.moment_knm
     assert "verification_only" in result.traffic_distribution_method
+
+
+def test_project_serviceability_selection_tracks_explicit_combinations() -> None:
+    project = ProjectInput()
+    factors = ServiceabilityPsiFactors(psi1_traffic=0.75, psi2_traffic=0.30)
+    combinations = project_internal_girder_combinations_verification(
+        project,
+        girder_index=4,
+        sls_factors=factors,
+        movement_steps=21,
+        section_stations=31,
+    )
+    selection = project_serviceability_from_combinations(
+        combinations,
+        span_m=15.0,
+        crack_combination=SLSCombinationChoice.FREQUENT,
+        deflection_combination=SLSCombinationChoice.QUASI_PERMANENT,
+        crack_limit_mm=0.30,
+        allowable_deflection_mm=60.0,
+    )
+
+    assert selection.crack_combination_name == "EN 1990 frequent SLS"
+    assert selection.deflection_combination_name == "EN 1990 quasi-permanent SLS"
+    assert selection.input.service_moment_knm == pytest.approx(
+        combinations.frequent_sls.effects.moment_knm
+    )
+    expected_udl = 8.0 * combinations.quasi_permanent_sls.effects.moment_knm / 15.0**2
+    assert selection.input.equivalent_full_span_udl_kn_m == pytest.approx(expected_udl)
+    assert "equivalent full-span UDL" in selection.deflection_method
+
+
+def test_project_t_girder_verification_runs_end_to_end() -> None:
+    project = ProjectInput()
+    factors = ServiceabilityPsiFactors(psi1_traffic=0.75, psi2_traffic=0.30)
+    result = run_project_internal_t_girder_verification(
+        project,
+        girder_index=4,
+        section=_reference_t_section(),
+        sls_factors=factors,
+        crack_combination=SLSCombinationChoice.FREQUENT,
+        deflection_combination=SLSCombinationChoice.QUASI_PERMANENT,
+        crack_limit_mm=0.30,
+        allowable_deflection_mm=60.0,
+        movement_steps=21,
+        section_stations=31,
+    )
+
+    assert "verification_only" in result.combinations.traffic_distribution_method
+    assert result.materials.ecm_mpa > 0.0
+    assert result.design.uls_combination.effects.moment_knm == pytest.approx(
+        result.combinations.persistent_uls.effects.moment_knm
+    )
+    assert result.design.uls_combination.effects.shear_kn == pytest.approx(
+        result.combinations.persistent_uls.effects.shear_kn
+    )
+    assert result.design.uls_design.flexure.resistance_knm > 0.0
+    assert result.design.uls_design.shear.design_shear_kn > 0.0
+    assert result.design.crack.crack_width_mm >= 0.0
+    assert result.design.deflection.interpolated_deflection_mm >= 0.0
+
+
+def test_project_t_girder_verification_rejects_depth_inconsistent_with_project() -> None:
+    project = ProjectInput()
+    factors = ServiceabilityPsiFactors(psi1_traffic=0.75, psi2_traffic=0.30)
+    section = TGirderDesignInput(
+        effective_flange_width_m=1.70,
+        flange_thickness_m=0.175,
+        web_width_m=0.30,
+        total_depth_m=1.15,
+        effective_depth_m=1.05,
+        steel_area_mm2=6500.0,
+        bar_diameter_mm=32.0,
+        bar_spacing_mm=150.0,
+        cover_mm=50.0,
+    )
+    with pytest.raises(ValueError, match="total depth"):
+        run_project_internal_t_girder_verification(
+            project,
+            girder_index=4,
+            section=section,
+            sls_factors=factors,
+            crack_combination=SLSCombinationChoice.FREQUENT,
+            deflection_combination=SLSCombinationChoice.QUASI_PERMANENT,
+            crack_limit_mm=0.30,
+            allowable_deflection_mm=60.0,
+            movement_steps=11,
+            section_stations=21,
+        )
 
 
 def test_selected_girder_combination_helper_rejects_edge_girders() -> None:
