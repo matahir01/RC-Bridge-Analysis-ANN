@@ -1,0 +1,62 @@
+import pytest
+
+from rc_bridge.codes.common import LoadEffects
+from rc_bridge.workflow.eurocode_girder import (
+    EurocodeMaterialInput,
+    EurocodeServiceabilityInput,
+    TGirderDesignInput,
+    run_eurocode_t_girder_case,
+)
+
+
+def test_integrated_eurocode_t_girder_workflow_returns_all_limit_states() -> None:
+    result = run_eurocode_t_girder_case(
+        girder_index=4,
+        span_m=15.0,
+        permanent_effects=LoadEffects(moment_knm=650.0, shear_kn=180.0),
+        traffic_effects=LoadEffects(moment_knm=550.0, shear_kn=220.0),
+        section=TGirderDesignInput(
+            effective_flange_width_m=1.70,
+            flange_thickness_m=0.25,
+            web_width_m=0.30,
+            total_depth_m=1.20,
+            effective_depth_m=1.10,
+            steel_area_mm2=6500.0,
+            bar_diameter_mm=32.0,
+            bar_spacing_mm=150.0,
+            cover_mm=50.0,
+        ),
+        materials=EurocodeMaterialInput(
+            fck_mpa=35.0,
+            fyk_mpa=500.0,
+            ecm_mpa=34000.0,
+            fct_eff_mpa=3.2,
+        ),
+        serviceability=EurocodeServiceabilityInput(
+            service_moment_knm=1050.0,
+            equivalent_full_span_udl_kn_m=25.0,
+            crack_limit_mm=0.30,
+            allowable_deflection_mm=30.0,
+        ),
+    )
+
+    assert result.uls_combination.effects.moment_knm == pytest.approx(
+        1.35 * 650.0 + 1.50 * 550.0
+    )
+    assert result.uls_design.flexure.resistance_knm > 0.0
+    assert result.uls_design.shear.design_shear_kn > 0.0
+    assert result.uncracked_sls.cracking_moment_knm > 0.0
+    assert result.cracked_sls.second_moment_mm4 > 0.0
+    assert result.crack.crack_width_mm >= 0.0
+    assert result.deflection.interpolated_deflection_mm >= 0.0
+    assert result.g_flexure_knm == pytest.approx(
+        result.uls_design.flexure.resistance_knm
+        - result.uls_combination.effects.moment_knm
+    )
+    assert result.g_crack_mm == pytest.approx(
+        result.crack.crack_limit_mm - result.crack.crack_width_mm
+    )
+    assert result.g_deflection_mm == pytest.approx(
+        result.deflection.allowable_deflection_mm
+        - result.deflection.interpolated_deflection_mm
+    )
