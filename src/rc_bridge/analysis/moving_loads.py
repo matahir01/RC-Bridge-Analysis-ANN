@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from .loads import PointLoad
-from .point_loads import moment_envelope
+from .point_loads import moment_envelope, simply_supported_reactions
 
 
 @dataclass(frozen=True)
@@ -71,3 +71,42 @@ def moving_train_max_moment(
             best_section = x
             best_lead = lead
     return best_m, best_section, best_lead
+
+
+def moving_train_max_support_reaction(
+    span_m: float,
+    train: AxleTrain,
+    movement_steps: int = 1201,
+) -> tuple[float, str, float]:
+    """Numerically return the largest support reaction from a moving axle train.
+
+    For a simply supported beam this is the support-shear envelope immediately
+    inside the bearing. The returned tuple is ``(reaction_kN, side, lead_x_m)``.
+    """
+    if span_m <= 0.0:
+        raise ValueError("Span must be positive.")
+    if movement_steps < 2:
+        raise ValueError("At least two movement steps are required.")
+
+    start = 0.0
+    end = span_m + train.train_length_m
+    best_reaction = 0.0
+    best_side = "left"
+    best_lead = 0.0
+
+    for i in range(movement_steps):
+        lead = start + (end - start) * i / (movement_steps - 1)
+        loads = positioned_axles(train, lead, span_m)
+        if not loads:
+            continue
+        left, right = simply_supported_reactions(span_m, loads)
+        if left > best_reaction:
+            best_reaction = left
+            best_side = "left"
+            best_lead = lead
+        if right > best_reaction:
+            best_reaction = right
+            best_side = "right"
+            best_lead = lead
+
+    return best_reaction, best_side, best_lead
