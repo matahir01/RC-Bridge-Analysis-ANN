@@ -149,6 +149,7 @@ class BridgeGeometry(BaseModel):
     span_lengths_m: list[PositiveFloat] = Field(default_factory=lambda: [15.0])
     deck_width_m: PositiveFloat = 11.0
     carriageway_width_m: PositiveFloat = 7.0
+    carriageway_offset_m: float = 0.0
     girder_count: PositiveInt = 7
     girder_spacing_m: PositiveFloat = 1.70
     girder_depth_m: PositiveFloat = 0.95
@@ -162,6 +163,14 @@ class BridgeGeometry(BaseModel):
     def validate_bridge_widths_and_deck_build_up(self) -> BridgeGeometry:
         if self.carriageway_width_m > self.deck_width_m:
             raise ValueError("Carriageway width cannot exceed total deck width.")
+        if (
+            self.carriageway_left_edge_m < -float(self.deck_width_m) / 2.0 - 1e-9
+            or self.carriageway_right_edge_m > float(self.deck_width_m) / 2.0 + 1e-9
+        ):
+            raise ValueError(
+                "Carriageway width and transverse offset place part of the carriageway "
+                "outside the physical deck width."
+            )
         layout = self.girder_layout
         if not layout.fits_deck:
             max_spacing = layout.maximum_spacing_m_for_current_deck
@@ -199,6 +208,14 @@ class BridgeGeometry(BaseModel):
     @property
     def composite_flange_depth_m(self) -> float:
         return self.deck_construction.composite_flange_depth_m
+
+    @property
+    def carriageway_left_edge_m(self) -> float:
+        return float(self.carriageway_offset_m) - float(self.carriageway_width_m) / 2.0
+
+    @property
+    def carriageway_right_edge_m(self) -> float:
+        return float(self.carriageway_offset_m) + float(self.carriageway_width_m) / 2.0
 
     @property
     def girder_layout(self) -> GirderLayoutEvaluation:
