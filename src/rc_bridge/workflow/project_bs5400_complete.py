@@ -24,6 +24,7 @@ from rc_bridge.workflow.project_bs5400_deflection import (
 class ProjectBS5400CompleteVerificationResult:
     """Consolidated BS 5400 verification result for one internal T-girder."""
 
+    girder_index: int
     uls: ProjectBS5400TGirderVerificationResult
     cracking: ProjectBS5400TGirderSLSResult
     deflection: ProjectBS5400DeflectionVerificationResult
@@ -86,6 +87,7 @@ def run_project_internal_bs5400_complete_verification(
     method = methods.pop()
 
     return ProjectBS5400CompleteVerificationResult(
+        girder_index=girder_index,
         uls=uls,
         cracking=cracking,
         deflection=deflection_result,
