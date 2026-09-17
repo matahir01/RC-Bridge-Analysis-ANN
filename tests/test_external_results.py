@@ -1,5 +1,5 @@
 import csv
-from io import StringIO
+import io
 
 from rc_bridge.export.external_results import (
     compare_external_results_csv,
@@ -15,12 +15,12 @@ span_deflection,1,0,5,DZ_max_abs,0.012,m
 
 
 def _replace_value(text: str, *, component: str, value: float) -> str:
-    source = StringIO(text)
+    source = io.StringIO(text)
     rows = list(csv.DictReader(source))
     for row in rows:
         if row["component"] == component:
             row["value"] = str(value)
-    out = StringIO()
+    out = io.StringIO()
     writer = csv.DictWriter(out, fieldnames=rows[0].keys(), lineterminator="\n")
     writer.writeheader()
     writer.writerows(rows)
