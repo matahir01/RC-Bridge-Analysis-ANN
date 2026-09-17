@@ -3,6 +3,14 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from rc_bridge.analysis.combined_effects import combined_udl_point_envelope
+from rc_bridge.analysis.continuous_beam import BeamSpan
+from rc_bridge.analysis.continuous_influence import (
+    AdverseUDLEffect,
+    InfluenceResponseKind,
+    adverse_udl_effect,
+    moving_train_influence_effect,
+    section_influence_line,
+)
 from rc_bridge.analysis.moving_loads import positioned_axles
 from rc_bridge.analysis.simple_span import udl_simple_span
 from rc_bridge.codes.eurocode.en1991_2 import (
@@ -32,6 +40,24 @@ class LM1RemainingAreaEnvelope:
     line_load_kn_m: float
     max_moment_knm: float
     max_abs_shear_kn: float
+
+
+@dataclass(frozen=True)
+class LM1ContinuousSectionEffect:
+    lane_number: int
+    response_kind: InfluenceResponseKind
+    response_span_index: int
+    response_position_m: float
+    line_load_kn_m: float
+    tandem_maximum_positive_effect: float
+    tandem_minimum_negative_effect: float
+    tandem_positive_lead_position_m: float
+    tandem_negative_lead_position_m: float
+    udl_maximum_positive_effect: float
+    udl_minimum_negative_effect: float
+    combined_maximum_positive_effect: float
+    combined_minimum_negative_effect: float
+    status: str
 
 
 def lane_udl_line_load_kn_m(
@@ -144,3 +170,90 @@ def lm1_carriageway_simple_span_envelopes(
         )
         for i in range(1, layout.lane_count + 1)
     ]
+
+
+def lm1_lane_continuous_section_effect(
+    spans: tuple[BeamSpan, ...],
+    *,
+    lane_number: int,
+    response_span_index: int,
+    response_position_m: float,
+    response_kind: InfluenceResponseKind = "moment",
+    lane_width_m: float = 3.0,
+    factors: LM1AdjustmentFactors | None = None,
+    influence_positions: int = 801,
+    movement_steps: int = 1201,
+) -> LM1ContinuousSectionEffect:
+    """Return LM1 tandem + adverse lane-UDL effects at one continuous-beam section.
+
+    The function is longitudinal only. It deliberately does not assign a notional
+    lane to a physical girder or perform transverse distribution. Positive and
+    negative influence regions are loaded separately so both sagging and hogging
+    effects remain available to the bridge-level distribution/combination layer.
+    """
+    if lane_number < 1:
+        raise ValueError("lane_number must be positive.")
+    if lane_width_m <= 0.0:
+        raise ValueError("lane_width_m must be positive.")
+
+    influence = section_influence_line(
+        spans,
+        response_span_index=response_span_index,
+        response_position_m=response_position_m,
+        response_kind=response_kind,
+        load_positions=influence_positions,
+    )
+    tandem = moving_train_influence_effect(
+        influence,
+        lm1_tandem_train(lane_number, factors),
+        movement_steps=movement_steps,
+    )
+    line_load = lane_udl_line_load_kn_m(lane_number, lane_width_m, factors)
+    udl = adverse_udl_effect(influence, line_load)
+
+    return LM1ContinuousSectionEffect(
+        lane_number=lane_number,
+        response_kind=response_kind,
+        response_span_index=response_span_index,
+        response_position_m=response_position_m,
+        line_load_kn_m=line_load,
+        tandem_maximum_positive_effect=tandem.maximum_positive_effect,
+        tandem_minimum_negative_effect=tandem.minimum_negative_effect,
+        tandem_positive_lead_position_m=tandem.maximum_positive_lead_position_m,
+        tandem_negative_lead_position_m=tandem.minimum_negative_lead_position_m,
+        udl_maximum_positive_effect=udl.maximum_positive_effect,
+        udl_minimum_negative_effect=udl.minimum_negative_effect,
+        combined_maximum_positive_effect=(
+            tandem.maximum_positive_effect + udl.maximum_positive_effect
+        ),
+        combined_minimum_negative_effect=(
+            tandem.minimum_negative_effect + udl.minimum_negative_effect
+        ),
+        status=(
+            "EN 1991-2 LM1 longitudinal section effect from tandem-system placement and "
+            "adverse lane-UDL influence regions; transverse distribution is not applied"
+        ),
+    )
+
+
+def lm1_remaining_area_continuous_section_effect(
+    spans: tuple[BeamSpan, ...],
+    *,
+    carriageway_width_m: float,
+    response_span_index: int,
+    response_position_m: float,
+    response_kind: InfluenceResponseKind = "moment",
+    factors: LM1AdjustmentFactors | None = None,
+    influence_positions: int = 801,
+) -> AdverseUDLEffect:
+    """Return adverse longitudinal LM1 remaining-area UDL effect at one section."""
+    layout = notional_lane_layout(carriageway_width_m)
+    line_load = lm1_remaining_area_udl_kn_m2(factors) * layout.remaining_width_m
+    influence = section_influence_line(
+        spans,
+        response_span_index=response_span_index,
+        response_position_m=response_position_m,
+        response_kind=response_kind,
+        load_positions=influence_positions,
+    )
+    return adverse_udl_effect(influence, line_load)
