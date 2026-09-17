@@ -5,16 +5,16 @@ from rc_bridge.design.eurocode_cracking import cracked_t_section_sls
 
 
 def test_code_neutral_cracked_t_section_matches_existing_solver() -> None:
-    kwargs = dict(
-        effective_flange_width_m=1.70,
-        flange_thickness_m=0.175,
-        web_width_m=0.30,
-        total_depth_m=1.20,
-        steel_area_mm2=6500.0,
-        steel_depth_m=1.10,
-        modular_ratio=6.25,
-        service_moment_knm=1400.0,
-    )
+    kwargs = {
+        "effective_flange_width_m": 1.70,
+        "flange_thickness_m": 0.175,
+        "web_width_m": 0.30,
+        "total_depth_m": 1.20,
+        "steel_area_mm2": 6500.0,
+        "steel_depth_m": 1.10,
+        "modular_ratio": 6.25,
+        "service_moment_knm": 1400.0,
+    }
     neutral = cracked_t_section_properties(**kwargs)
     existing = cracked_t_section_sls(**kwargs)
 
