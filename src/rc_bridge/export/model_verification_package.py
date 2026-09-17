@@ -16,15 +16,17 @@ from rc_bridge.export.verification_model import VerificationModel
 class ModelVerificationExportPackage:
     """External-model package when no independent internal result set exists yet.
 
-    This package intentionally contains model definitions and the exact exported
-    loads only. It does not fabricate expected structural results for analysis
-    capabilities that the internal deterministic solver does not yet provide.
+    This package intentionally contains model definitions, the exact exported
+    loads, and an explicit result-request map. It does not fabricate expected
+    structural results for analysis capabilities that the internal deterministic
+    solver does not yet provide.
     """
 
     midas_mct: str
     staad_std: str
     manifest_json: str
     exported_loads_csv: str
+    result_requests_csv: str
 
     def files(self, base_name: str = "bridge_model_verification") -> dict[str, str]:
         stem = re.sub(r"[^A-Za-z0-9_-]", "_", base_name.strip()).strip("_")
@@ -35,6 +37,7 @@ class ModelVerificationExportPackage:
             f"{stem}.std": self.staad_std,
             f"{stem}_manifest.json": self.manifest_json,
             f"{stem}_exported_loads.csv": self.exported_loads_csv,
+            f"{stem}_result_requests.csv": self.result_requests_csv,
         }
 
 
@@ -152,14 +155,103 @@ def _exported_loads_csv(model: VerificationModel) -> str:
     return stream.getvalue()
 
 
+def _result_requests_csv(model: VerificationModel) -> str:
+    """Describe the external results needed for a later normalized comparison.
+
+    Member force rows use semantic components rather than MIDAS/STAAD local-axis
+    labels. The external-results adapter must map the software's local components
+    after confirming the member orientation from the supplied endpoint coordinates.
+    """
+    stream = StringIO()
+    writer = csv.writer(stream, lineterminator="\n")
+    writer.writerow(
+        [
+            "result_type",
+            "object_id",
+            "end",
+            "node_id",
+            "x_m",
+            "y_m",
+            "z_m",
+            "semantic_component",
+            "unit",
+            "mapping_note",
+        ]
+    )
+    nodes = {node.node_id: node for node in model.nodes}
+
+    for support in model.supports:
+        node = nodes[support.node_id]
+        writer.writerow(
+            [
+                "support_reaction",
+                support.node_id,
+                "",
+                support.node_id,
+                _format_float(node.x_m),
+                _format_float(node.y_m),
+                _format_float(node.z_m),
+                "global_vertical_reaction_FZ",
+                "kN",
+                "Use the external program global vertical support reaction.",
+            ]
+        )
+
+    for node in model.nodes:
+        writer.writerow(
+            [
+                "node_displacement",
+                node.node_id,
+                "",
+                node.node_id,
+                _format_float(node.x_m),
+                _format_float(node.y_m),
+                _format_float(node.z_m),
+                "global_vertical_displacement_DZ",
+                "m",
+                "Use the external program global vertical nodal displacement.",
+            ]
+        )
+
+    force_requests = (
+        ("vertical_plane_shear", "kN"),
+        ("vertical_plane_bending_moment", "kNm"),
+        ("member_torsion", "kNm"),
+    )
+    for beam in model.beams:
+        for end_label, current_node_id in (("I", beam.node_i), ("J", beam.node_j)):
+            node = nodes[current_node_id]
+            for component, unit in force_requests:
+                writer.writerow(
+                    [
+                        "member_end_force",
+                        beam.member_id,
+                        end_label,
+                        current_node_id,
+                        _format_float(node.x_m),
+                        _format_float(node.y_m),
+                        _format_float(node.z_m),
+                        component,
+                        unit,
+                        (
+                            "Map the external local-axis component only after confirming member "
+                            "local axes from the exported element orientation."
+                        ),
+                    ]
+                )
+
+    return stream.getvalue()
+
+
 def build_model_verification_export_package(
     model: VerificationModel,
 ) -> ModelVerificationExportPackage:
-    """Build MIDAS/STAAD model files plus a traceable exported-load manifest."""
+    """Build MIDAS/STAAD model files plus traceable load/result-request manifests."""
     model.validate_load_positions()
     midas = export_midas_mct(model)
     staad = export_staad_std(model)
     loads = _exported_loads_csv(model)
+    requests = _result_requests_csv(model)
     manifest = {
         "schema_version": 1,
         "package_type": "external_model_verification",
@@ -175,11 +267,16 @@ def build_model_verification_export_package(
             "midas_mct": {"sha256": _sha256(midas), "extension": ".mct"},
             "staad_std": {"sha256": _sha256(staad), "extension": ".std"},
             "exported_loads_csv": {"sha256": _sha256(loads), "extension": ".csv"},
+            "result_requests_csv": {"sha256": _sha256(requests), "extension": ".csv"},
         },
         "verification_boundary": (
             "This package verifies the exported structural model and loading definition. "
             "It contains no fabricated expected grillage results. External results must be "
             "imported and compared independently before transverse-distribution verification."
+        ),
+        "result_mapping_note": (
+            "Global reactions/displacements can be mapped directly. Member vertical shear, "
+            "vertical bending and torsion require explicit confirmation of MIDAS/STAAD local axes."
         ),
     }
     return ModelVerificationExportPackage(
@@ -187,4 +284,5 @@ def build_model_verification_export_package(
         staad_std=staad,
         manifest_json=json.dumps(manifest, indent=2, sort_keys=True),
         exported_loads_csv=loads,
+        result_requests_csv=requests,
     )
