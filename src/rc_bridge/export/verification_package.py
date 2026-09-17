@@ -3,6 +3,7 @@ from __future__ import annotations
 import csv
 import hashlib
 import json
+import re
 from dataclasses import dataclass
 from io import StringIO
 
@@ -18,6 +19,18 @@ class VerificationExportPackage:
     staad_std: str
     manifest_json: str
     expected_results_csv: str
+
+    def files(self, base_name: str = "bridge_verification") -> dict[str, str]:
+        """Return user-facing filenames and UTF-8 file contents for one export action."""
+        stem = re.sub(r"[^A-Za-z0-9_-]", "_", base_name.strip()).strip("_")
+        if not stem:
+            raise ValueError("Verification package base_name cannot be empty.")
+        return {
+            f"{stem}.mct": self.midas_mct,
+            f"{stem}.std": self.staad_std,
+            f"{stem}_manifest.json": self.manifest_json,
+            f"{stem}_expected_results.csv": self.expected_results_csv,
+        }
 
 
 def _sha256(text: str) -> str:
@@ -65,18 +78,24 @@ def _expected_results_csv(analysis: ProjectContinuousAnalysisResult) -> str:
 
     for member in analysis.solution.members:
         member_id = member.span_index + 1
-        writer.writerow(
-            ["member_end_force", member_id, member.span_index, 0.0, "V_i", f"{member.left_shear_kn:.12g}", "kN"]
+        member_rows = (
+            (0.0, "V_i", member.left_shear_kn, "kN"),
+            (0.0, "M_i", member.left_moment_knm, "kNm"),
+            ("J", "V_j", member.right_shear_kn, "kN"),
+            ("J", "M_j", member.right_moment_knm, "kNm"),
         )
-        writer.writerow(
-            ["member_end_force", member_id, member.span_index, 0.0, "M_i", f"{member.left_moment_knm:.12g}", "kNm"]
-        )
-        writer.writerow(
-            ["member_end_force", member_id, member.span_index, "J", "V_j", f"{member.right_shear_kn:.12g}", "kN"]
-        )
-        writer.writerow(
-            ["member_end_force", member_id, member.span_index, "J", "M_j", f"{member.right_moment_knm:.12g}", "kNm"]
-        )
+        for position, component, value, unit in member_rows:
+            writer.writerow(
+                [
+                    "member_end_force",
+                    member_id,
+                    member.span_index,
+                    position,
+                    component,
+                    f"{value:.12g}",
+                    unit,
+                ]
+            )
 
     for envelope in analysis.span_envelopes:
         member_id = envelope.span_index + 1
@@ -158,6 +177,11 @@ def build_verification_export_package(
     analysis: ProjectContinuousAnalysisResult,
 ) -> VerificationExportPackage:
     """Build model files plus traceable expected results for independent checking."""
+    if len(model.load_cases) == 1 and model.load_cases[0].name != analysis.load_case_name:
+        raise ValueError(
+            "Verification model and expected analysis must refer to the same load-case name."
+        )
+
     midas = export_midas_mct(model)
     staad = export_staad_std(model)
     expected = _expected_results_csv(analysis)
@@ -172,11 +196,15 @@ def build_verification_export_package(
         "files": {
             "midas_mct": {"sha256": _sha256(midas), "extension": ".mct"},
             "staad_std": {"sha256": _sha256(staad), "extension": ".std"},
-            "expected_results_csv": {"sha256": _sha256(expected), "extension": ".csv"},
+            "expected_results_csv": {
+                "sha256": _sha256(expected),
+                "extension": ".csv",
+            },
         },
         "comparison_note": (
-            "Expected results come from the internal deterministic solver. External software results "
-            "remain independent evidence and must be compared before verification status is changed."
+            "Expected results come from the internal deterministic solver. External software "
+            "results remain independent evidence and must be compared before verification "
+            "status is changed."
         ),
     }
     return VerificationExportPackage(
