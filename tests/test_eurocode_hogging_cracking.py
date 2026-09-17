@@ -44,18 +44,18 @@ def test_hogging_cracked_rectangular_mirror_matches_existing_positive_solver() -
 
 
 def test_hogging_crack_width_mirror_matches_existing_rectangular_case() -> None:
-    common = dict(
-        steel_area_mm2=4000.0,
-        bar_diameter_mm=25.0,
-        bar_spacing_mm=150.0,
-        cover_mm=40.0,
-        service_moment_knm=500.0,
-        cracking_moment_knm=150.0,
-        es_mpa=200000.0,
-        ecm_mpa=34000.0,
-        fct_eff_mpa=3.2,
-        crack_limit_mm=0.30,
-    )
+    common = {
+        "steel_area_mm2": 4000.0,
+        "bar_diameter_mm": 25.0,
+        "bar_spacing_mm": 150.0,
+        "cover_mm": 40.0,
+        "service_moment_knm": 500.0,
+        "cracking_moment_knm": 150.0,
+        "es_mpa": 200000.0,
+        "ecm_mpa": 34000.0,
+        "fct_eff_mpa": 3.2,
+        "crack_limit_mm": 0.30,
+    }
     positive = crack_width_ec2_t_section(
         effective_flange_width_m=0.30,
         flange_thickness_m=0.20,
