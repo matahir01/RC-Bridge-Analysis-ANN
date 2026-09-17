@@ -1,13 +1,12 @@
 from __future__ import annotations
 
 import csv
-from dataclasses import dataclass
 import io
 import math
 import re
+from dataclasses import dataclass
 
 from rc_bridge.export.verification_model import VerificationBeam, VerificationModel
-
 
 _RESULT_COLUMNS = (
     "result_type",
