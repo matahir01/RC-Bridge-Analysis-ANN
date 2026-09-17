@@ -1,7 +1,7 @@
 from __future__ import annotations
 
+from collections.abc import Callable, Iterable
 from dataclasses import dataclass
-from typing import Callable, Iterable
 
 from .dataset import TrainingRecord
 from .sampling import VariableRange, latin_hypercube_samples
