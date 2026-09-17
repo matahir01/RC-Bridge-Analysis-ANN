@@ -10,6 +10,7 @@ from rc_bridge.workflow.lm1_grillage_verification import (
     LM1LongitudinalRegion,
     LM1RemainingAreaVerificationPlacement,
     build_project_lm1_grillage_verification_model,
+    build_project_lm1_grillage_verification_package,
 )
 
 
@@ -23,7 +24,7 @@ def _section(name: str) -> GrillageSectionProperties:
     )
 
 
-def _lm1_model():
+def _package_inputs():
     project = ProjectInput(
         name="LM1 Package Bridge",
         geometry=BridgeGeometry(
@@ -35,18 +36,25 @@ def _lm1_model():
         ),
     )
     full_span = (LM1LongitudinalRegion(0.0, 15.0),)
+    lanes = (
+        LM1LaneVerificationPlacement(1, -3.5, -0.5, full_span, 5.0),
+        LM1LaneVerificationPlacement(2, -0.5, 2.5, full_span, 8.0),
+    )
+    remaining = (
+        LM1RemainingAreaVerificationPlacement(2.5, 3.5, full_span),
+    )
+    return project, lanes, remaining
+
+
+def _lm1_model():
+    project, lanes, remaining = _package_inputs()
     return build_project_lm1_grillage_verification_model(
         project,
         longitudinal_sections_by_span=(_section("Longitudinal"),),
         transverse_section=_section("Transverse"),
         transverse_stations_m=(7.5,),
-        lane_placements=(
-            LM1LaneVerificationPlacement(1, -3.5, -0.5, full_span, 5.0),
-            LM1LaneVerificationPlacement(2, -0.5, 2.5, full_span, 8.0),
-        ),
-        remaining_area_placements=(
-            LM1RemainingAreaVerificationPlacement(2.5, 3.5, full_span),
-        ),
+        lane_placements=lanes,
+        remaining_area_placements=remaining,
     )
 
 
@@ -71,6 +79,32 @@ def test_model_verification_package_contains_midas_staad_manifest_and_exact_load
     assert manifest["metadata"]["traffic_model"].startswith("EN 1991-2 LM1")
     assert "no fabricated expected grillage results" in manifest["verification_boundary"]
     assert "expected_results_csv" not in manifest["files"]
+
+
+def test_one_call_lm1_package_preserves_source_traffic_placement_metadata() -> None:
+    project, lanes, remaining = _package_inputs()
+    package = build_project_lm1_grillage_verification_package(
+        project,
+        longitudinal_sections_by_span=(_section("Longitudinal"),),
+        transverse_section=_section("Transverse"),
+        transverse_stations_m=(7.5,),
+        lane_placements=lanes,
+        remaining_area_placements=remaining,
+    )
+
+    manifest = json.loads(package.manifest_json)
+    metadata = manifest["metadata"]
+    assert metadata["lm1_lane_strips"] == "lane1:-3.5:-0.5|lane2:-0.5:2.5"
+    assert metadata["lm1_tandem_lead_positions_m"] == "lane1:5|lane2:8"
+    assert metadata["lm1_lane_udl_regions_m"] == "lane1:0-15|lane2:0-15"
+    assert metadata["lm1_remaining_strips"] == "remaining1:2.5:3.5"
+    assert metadata["lm1_remaining_udl_regions_m"] == "remaining1:0-15"
+    assert set(package.files("lm1_snapshot")) == {
+        "lm1_snapshot.mct",
+        "lm1_snapshot.std",
+        "lm1_snapshot_manifest.json",
+        "lm1_snapshot_exported_loads.csv",
+    }
 
 
 def test_model_verification_load_csv_matches_final_exported_load_objects() -> None:
