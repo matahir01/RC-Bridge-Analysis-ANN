@@ -5,7 +5,6 @@ from rc_bridge.analysis.grillage_import import (
     parse_grillage_effects_csv,
 )
 
-
 SEVEN_GIRDER_CSV = """girder_index,moment_knm,shear_kn,torsion_knm
 1,420.0,180.0,22.0
 2,510.0,205.0,18.0
