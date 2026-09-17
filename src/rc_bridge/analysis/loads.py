@@ -26,6 +26,16 @@ class PointLoad:
             raise ValueError("Point-load position cannot be negative.")
 
 
+def section_self_weight_kn_m(
+    area_m2: float,
+    concrete_density_kn_m3: float = 25.0,
+) -> float:
+    """Self-weight line load from the physical concrete section area."""
+    if area_m2 <= 0.0 or concrete_density_kn_m3 <= 0.0:
+        raise ValueError("Section area and concrete density must be positive.")
+    return area_m2 * concrete_density_kn_m3
+
+
 def deck_self_weight_per_girder_kn_m(
     deck_thickness_m: float,
     girder_spacing_m: float,
