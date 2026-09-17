@@ -5,6 +5,8 @@ from typing import Literal
 
 from pydantic import BaseModel, Field, PositiveFloat, PositiveInt, model_validator
 
+from rc_bridge.core.girder_layout import GirderLayoutEvaluation, evaluate_girder_layout
+
 
 class DesignCode(str, Enum):
     EUROCODE = "eurocode"
@@ -160,9 +162,21 @@ class BridgeGeometry(BaseModel):
     def validate_bridge_widths_and_deck_build_up(self) -> BridgeGeometry:
         if self.carriageway_width_m > self.deck_width_m:
             raise ValueError("Carriageway width cannot exceed total deck width.")
-        if self.girder_line_width_m > float(self.deck_width_m) + 1e-9:
+        layout = self.girder_layout
+        if not layout.fits_deck:
+            max_spacing = layout.maximum_spacing_m_for_current_deck
+            spacing_guidance = (
+                f"reduce girder_spacing_m to at most {max_spacing:.3f} m"
+                if max_spacing is not None
+                else "review the girder layout"
+            )
             raise ValueError(
-                "Girder count and spacing place the exterior girder lines outside the deck width."
+                "Girder count and spacing place the exterior girder lines outside the deck width. "
+                f"Current {int(self.girder_count)}-girder layout at "
+                f"{float(self.girder_spacing_m):.3f} m spacing requires at least "
+                f"{layout.minimum_deck_width_m:.3f} m deck width with zero edge overhang. "
+                f"Either increase deck_width_m or {spacing_guidance}; deck width, girder count, "
+                "and girder spacing are independently editable inputs."
             )
         if abs(float(self.deck_structural_depth_m) - self.deck_construction.physical_depth_m) > 1e-9:
             raise ValueError(
@@ -187,13 +201,34 @@ class BridgeGeometry(BaseModel):
         return self.deck_construction.composite_flange_depth_m
 
     @property
+    def girder_layout(self) -> GirderLayoutEvaluation:
+        """Return linked consequences of the three independently editable layout inputs."""
+        return evaluate_girder_layout(
+            deck_width_m=float(self.deck_width_m),
+            girder_count=int(self.girder_count),
+            girder_spacing_m=float(self.girder_spacing_m),
+        )
+
+    @property
     def girder_line_width_m(self) -> float:
-        return (int(self.girder_count) - 1) * float(self.girder_spacing_m)
+        return self.girder_layout.girder_line_width_m
 
     @property
     def nominal_edge_overhang_m(self) -> float:
         """Symmetric edge overhang implied by deck width, count, and spacing."""
-        return (float(self.deck_width_m) - self.girder_line_width_m) / 2.0
+        return self.girder_layout.implied_edge_overhang_m
+
+    @property
+    def maximum_spacing_m_for_current_deck(self) -> float | None:
+        return self.girder_layout.maximum_spacing_m_for_current_deck
+
+    @property
+    def maximum_girder_count_for_current_spacing(self) -> int:
+        return self.girder_layout.maximum_girder_count_for_current_spacing
+
+    @property
+    def minimum_deck_width_m_for_current_layout(self) -> float:
+        return self.girder_layout.minimum_deck_width_m
 
     @property
     def girder_profile_area_m2(self) -> float | None:
