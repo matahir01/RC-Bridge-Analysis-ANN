@@ -8,6 +8,7 @@ class SolverProfile(str, Enum):
     """Deterministic code/loading profile that produced ANN ground truth."""
 
     EUROCODE_1G = "eurocode_1g_en1990_en1991_2_en1992_2"
+    EUROCODE_CONTINUOUS = "eurocode_continuous_en1990_en1991_2_en1992_2"
     BS5400_BD37_01 = "bs5400_part4_bd37_01"
 
 
@@ -15,9 +16,10 @@ class SolverProfile(str, Enum):
 class DeterministicSolverVerification:
     """Named verification milestones required before ANN ground-truth export.
 
-    Verification is tied to one solver profile. A verified Eurocode path cannot
-    certify BS 5400 records (or vice versa). Torsion remains conditional because
-    some sampled/design cases may legitimately have no torsional requirement.
+    Verification is tied to one solver profile. A verified simple-span Eurocode
+    path cannot certify the continuous Eurocode solver, and neither can certify
+    BS 5400 records. Torsion remains conditional because some sampled/design cases
+    may legitimately have no torsional requirement.
     """
 
     solver_profile: SolverProfile
