@@ -1,4 +1,5 @@
 import pytest
+
 from rc_bridge.codes.common import LoadEffects
 from rc_bridge.codes.eurocode.effective_width import effective_flange_width_ec2
 from rc_bridge.design.eurocode_flanged_flexure import (
