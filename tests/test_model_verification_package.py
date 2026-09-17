@@ -65,6 +65,7 @@ def _expected_file_names(stem: str) -> set[str]:
         f"{stem}_manifest.json",
         f"{stem}_exported_loads.csv",
         f"{stem}_result_requests.csv",
+        f"{stem}_external_results_template.csv",
     }
 
 
@@ -85,6 +86,7 @@ def test_model_verification_package_contains_midas_staad_manifest_and_exact_load
     assert "no fabricated expected grillage results" in manifest["verification_boundary"]
     assert "expected_results_csv" not in manifest["files"]
     assert "result_requests_csv" in manifest["files"]
+    assert "external_results_template_csv" in manifest["files"]
 
 
 def test_one_call_lm1_package_preserves_source_traffic_placement_metadata() -> None:
@@ -158,3 +160,34 @@ def test_result_request_map_covers_reactions_displacements_and_member_end_forces
         "member_torsion",
     }
     assert {row["end"] for row in member_rows} == {"I", "J"}
+
+
+def test_external_results_template_is_normalized_and_ready_for_values() -> None:
+    model = _lm1_model()
+    package = build_model_verification_export_package(model)
+    rows = list(csv.DictReader(StringIO(package.external_results_template_csv)))
+
+    assert rows
+    assert set(rows[0]) == {
+        "result_type",
+        "object_id",
+        "span_index",
+        "position_m",
+        "component",
+        "value",
+        "unit",
+    }
+    assert all(row["value"] == "" for row in rows)
+    assert any(
+        row["result_type"] == "support_reaction" and row["component"] == "FZ"
+        for row in rows
+    )
+    assert any(
+        row["result_type"] == "node_displacement" and row["component"] == "DZ"
+        for row in rows
+    )
+    assert {row["component"] for row in rows if row["result_type"] == "member_end_force"} == {
+        "V_VERTICAL",
+        "M_VERTICAL",
+        "T",
+    }
