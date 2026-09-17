@@ -2,7 +2,10 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from rc_bridge.analysis.grillage_effects import NativeGrillageEnvelopeResult, native_grillage_traffic_envelope
+from rc_bridge.analysis.grillage_effects import (
+    NativeGrillageEnvelopeResult,
+    native_grillage_traffic_envelope,
+)
 from rc_bridge.analysis.grillage_solver import GrillageAnalysisResult, solve_vertical_grillage
 from rc_bridge.codes.eurocode.en1991_2 import LM1AdjustmentFactors
 from rc_bridge.core.models import ProjectInput
