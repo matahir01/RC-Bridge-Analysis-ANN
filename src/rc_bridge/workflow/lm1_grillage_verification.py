@@ -126,7 +126,7 @@ def _validate_transverse_coverage(
         raise ValueError("LM1 transverse snapshot contains no loaded carriageway strips.")
     if abs(strips[0][0] - left_edge) > 1e-9 or abs(strips[-1][1] - right_edge) > 1e-9:
         raise ValueError("LM1 lane and remaining-area strips must span the complete carriageway width.")
-    for previous, current in zip(strips, strips[1:], strict=True):
+    for previous, current in zip(strips, strips[1:]):
         if abs(previous[1] - current[0]) > 1e-9:
             raise ValueError("LM1 transverse strips must be contiguous without gaps or overlaps.")
 
