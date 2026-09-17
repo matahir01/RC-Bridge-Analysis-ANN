@@ -10,11 +10,13 @@ from rc_bridge.analysis.loads import deck_self_weight_per_girder_kn_m
 from rc_bridge.analysis.simple_span import udl_simple_span
 from rc_bridge.codes.common import LoadEffects
 from rc_bridge.codes.eurocode.en1991_2 import notional_lane_layout
+from rc_bridge.codes.eurocode.materials import concrete_properties_ec2
 from rc_bridge.core.models import DesignCode, ProjectInput, SupportSystem
 from rc_bridge.workflow.eurocode_bridge_traffic import (
     BridgeLM1TrafficResult,
     run_simple_span_lm1_bridge_traffic,
 )
+from rc_bridge.workflow.eurocode_girder import EurocodeMaterialInput
 
 
 @dataclass(frozen=True)
@@ -44,6 +46,42 @@ class UniformPermanentLoadInput:
             + self.assigned_barrier_and_services_kn_m
             + self.other_kn_m
         )
+
+
+def project_eurocode_material_input(
+    project: ProjectInput,
+    *,
+    fct_eff_mpa: float | None = None,
+    es_mpa: float = 200000.0,
+) -> EurocodeMaterialInput:
+    """Build the girder-workflow material input from project properties.
+
+    Ecm and the default fct,eff are derived from first-generation EC2 concrete
+    properties. Supply ``fct_eff_mpa`` explicitly for early-age cracking or any
+    other stage where the effective tensile strength differs from 28-day fctm.
+    A project elastic-modulus override takes precedence over the EC2 estimate.
+    """
+    if project.design_code != DesignCode.EUROCODE:
+        raise ValueError("Eurocode material derivation requires a Eurocode project.")
+    if fct_eff_mpa is not None and fct_eff_mpa <= 0.0:
+        raise ValueError("fct_eff_mpa must be positive when supplied.")
+    if es_mpa <= 0.0:
+        raise ValueError("es_mpa must be positive.")
+
+    fck_mpa = float(project.materials.fck_mpa)
+    properties = concrete_properties_ec2(fck_mpa)
+    ecm_mpa = (
+        float(project.materials.elastic_modulus_mpa)
+        if project.materials.elastic_modulus_mpa is not None
+        else properties.ecm_mpa
+    )
+    return EurocodeMaterialInput(
+        fck_mpa=fck_mpa,
+        fyk_mpa=float(project.materials.fyk_mpa),
+        ecm_mpa=ecm_mpa,
+        fct_eff_mpa=fct_eff_mpa or properties.fctm_mpa,
+        es_mpa=es_mpa,
+    )
 
 
 def internal_girder_deck_self_weight_kn_m(project: ProjectInput) -> float:
