@@ -1,12 +1,37 @@
 import pytest
 
-from rc_bridge.core.models import ProjectInput, SupportSystem
+from rc_bridge.core.models import MaterialProperties, ProjectInput, SupportSystem
 from rc_bridge.workflow.project_bridge import (
     UniformPermanentLoadInput,
     internal_girder_characteristic_permanent_effects,
     internal_girder_deck_self_weight_kn_m,
+    project_eurocode_material_input,
     run_project_lm1_equal_share_verification,
 )
+
+
+def test_reference_project_material_input_uses_ec2_c35_45_properties() -> None:
+    project = ProjectInput()
+    materials = project_eurocode_material_input(project)
+    assert materials.fck_mpa == pytest.approx(35.0)
+    assert materials.fyk_mpa == pytest.approx(500.0)
+    assert materials.ecm_mpa == pytest.approx(34077.1461992)
+    assert materials.fct_eff_mpa == pytest.approx(3.2099624417)
+    assert materials.es_mpa == pytest.approx(200000.0)
+
+
+def test_project_material_input_respects_explicit_modulus_and_fct_eff() -> None:
+    project = ProjectInput(
+        materials=MaterialProperties(
+            fck_mpa=35.0,
+            fyk_mpa=500.0,
+            concrete_density_kn_m3=25.0,
+            elastic_modulus_mpa=32000.0,
+        )
+    )
+    materials = project_eurocode_material_input(project, fct_eff_mpa=2.5)
+    assert materials.ecm_mpa == pytest.approx(32000.0)
+    assert materials.fct_eff_mpa == pytest.approx(2.5)
 
 
 def test_reference_project_internal_girder_deck_self_weight() -> None:
