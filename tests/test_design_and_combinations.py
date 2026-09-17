@@ -1,7 +1,14 @@
 import math
 
 from rc_bridge.codes.common import LoadEffects
-from rc_bridge.codes.eurocode.combinations import EurocodeFactors, persistent_uls
+from rc_bridge.codes.eurocode.combinations import (
+    EurocodeFactors,
+    ServiceabilityPsiFactors,
+    characteristic_sls,
+    frequent_sls,
+    persistent_uls,
+    quasi_permanent_sls,
+)
 from rc_bridge.design.eurocode_flexure import rectangular_singly_reinforced_resistance
 from rc_bridge.research.dataset import TrainingRecord
 
@@ -13,6 +20,32 @@ def test_eurocode_combination_is_transparent() -> None:
     assert math.isclose(combo.effects.moment_knm, 210.0)
     assert math.isclose(combo.effects.shear_kn, 42.0)
     assert combo.factors == {"G": 1.35, "Q_traffic": 1.50}
+
+
+def test_characteristic_sls_uses_unity_factors_for_single_leading_traffic_action() -> None:
+    permanent = LoadEffects(moment_knm=100.0, shear_kn=50.0)
+    traffic = LoadEffects(moment_knm=40.0, shear_kn=20.0)
+    combo = characteristic_sls(permanent, traffic)
+    assert math.isclose(combo.effects.moment_knm, 140.0)
+    assert math.isclose(combo.effects.shear_kn, 70.0)
+    assert combo.factors == {"G": 1.0, "Q_traffic": 1.0}
+
+
+def test_frequent_and_quasi_permanent_sls_use_explicit_psi_factors() -> None:
+    permanent = LoadEffects(moment_knm=100.0, shear_kn=50.0)
+    traffic = LoadEffects(moment_knm=40.0, shear_kn=20.0)
+    factors = ServiceabilityPsiFactors(psi1_traffic=0.75, psi2_traffic=0.30)
+
+    frequent = frequent_sls(permanent, traffic, factors)
+    quasi = quasi_permanent_sls(permanent, traffic, factors)
+
+    assert math.isclose(frequent.effects.moment_knm, 130.0)
+    assert math.isclose(frequent.effects.shear_kn, 65.0)
+    assert frequent.factors == {"G": 1.0, "Q_traffic": 0.75}
+
+    assert math.isclose(quasi.effects.moment_knm, 112.0)
+    assert math.isclose(quasi.effects.shear_kn, 56.0)
+    assert quasi.factors == {"G": 1.0, "Q_traffic": 0.30}
 
 
 def test_preliminary_ec2_flexure_returns_positive_resistance() -> None:
