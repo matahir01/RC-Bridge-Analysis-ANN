@@ -40,6 +40,20 @@ def test_project_two_span_udl_reproduces_continuous_beam_support_moment() -> Non
         140.625,
         rel=1e-4,
     )
+    assert len(result.span_deflection_envelopes) == 2
+    assert result.span_deflection_envelopes[0].max_abs_displacement_m == pytest.approx(
+        result.span_deflection_envelopes[1].max_abs_displacement_m,
+        rel=1e-12,
+    )
+    assert result.span_deflection_envelopes[0].minimum_downward_displacement_m < 0.0
+    assert result.max_abs_vertical_displacement_m == pytest.approx(
+        result.span_deflection_envelopes[0].max_abs_displacement_m,
+        rel=1e-12,
+    )
+    assert result.max_abs_vertical_displacement_span_index == 0
+    assert result.max_abs_vertical_displacement_global_position_m == pytest.approx(
+        result.max_abs_vertical_displacement_local_position_m
+    )
 
 
 def test_project_continuous_global_point_load_mapping_preserves_equilibrium() -> None:
@@ -62,6 +76,8 @@ def test_project_continuous_global_point_load_mapping_preserves_equilibrium() ->
     assert sum(node.vertical_reaction_kn for node in result.solution.nodes) == pytest.approx(
         220.0
     )
+    assert result.max_abs_vertical_displacement_m > 0.0
+    assert 0.0 <= result.max_abs_vertical_displacement_global_position_m <= 20.0
 
 
 def test_project_continuous_moving_train_uses_project_span_geometry() -> None:
