@@ -58,16 +58,21 @@ def _lm1_model():
     )
 
 
+def _expected_file_names(stem: str) -> set[str]:
+    return {
+        f"{stem}.mct",
+        f"{stem}.std",
+        f"{stem}_manifest.json",
+        f"{stem}_exported_loads.csv",
+        f"{stem}_result_requests.csv",
+    }
+
+
 def test_model_verification_package_contains_midas_staad_manifest_and_exact_loads() -> None:
     package = build_model_verification_export_package(_lm1_model())
     files = package.files("lm1_8_girder_check")
 
-    assert set(files) == {
-        "lm1_8_girder_check.mct",
-        "lm1_8_girder_check.std",
-        "lm1_8_girder_check_manifest.json",
-        "lm1_8_girder_check_exported_loads.csv",
-    }
+    assert set(files) == _expected_file_names("lm1_8_girder_check")
     assert "*NODE" in package.midas_mct
     assert "*ELEMENT" in package.midas_mct
     assert "JOINT COORDINATES" in package.staad_std
@@ -79,6 +84,7 @@ def test_model_verification_package_contains_midas_staad_manifest_and_exact_load
     assert manifest["metadata"]["traffic_model"].startswith("EN 1991-2 LM1")
     assert "no fabricated expected grillage results" in manifest["verification_boundary"]
     assert "expected_results_csv" not in manifest["files"]
+    assert "result_requests_csv" in manifest["files"]
 
 
 def test_one_call_lm1_package_preserves_source_traffic_placement_metadata() -> None:
@@ -99,12 +105,7 @@ def test_one_call_lm1_package_preserves_source_traffic_placement_metadata() -> N
     assert metadata["lm1_lane_udl_regions_m"] == "lane1:0-15|lane2:0-15"
     assert metadata["lm1_remaining_strips"] == "remaining1:2.5:3.5"
     assert metadata["lm1_remaining_udl_regions_m"] == "remaining1:0-15"
-    assert set(package.files("lm1_snapshot")) == {
-        "lm1_snapshot.mct",
-        "lm1_snapshot.std",
-        "lm1_snapshot_manifest.json",
-        "lm1_snapshot_exported_loads.csv",
-    }
+    assert set(package.files("lm1_snapshot")) == _expected_file_names("lm1_snapshot")
 
 
 def test_model_verification_load_csv_matches_final_exported_load_objects() -> None:
@@ -131,3 +132,29 @@ def test_model_verification_load_csv_matches_final_exported_load_objects() -> No
         load.fz_kn for load in case.nodal_loads
     )
     assert exported_vertical_force == model_vertical_force
+
+
+def test_result_request_map_covers_reactions_displacements_and_member_end_forces() -> None:
+    model = _lm1_model()
+    package = build_model_verification_export_package(model)
+    rows = list(csv.DictReader(StringIO(package.result_requests_csv)))
+
+    reaction_rows = [row for row in rows if row["result_type"] == "support_reaction"]
+    displacement_rows = [row for row in rows if row["result_type"] == "node_displacement"]
+    member_rows = [row for row in rows if row["result_type"] == "member_end_force"]
+
+    assert len(reaction_rows) == len(model.supports)
+    assert len(displacement_rows) == len(model.nodes)
+    assert len(member_rows) == len(model.beams) * 2 * 3
+    assert {row["semantic_component"] for row in reaction_rows} == {
+        "global_vertical_reaction_FZ"
+    }
+    assert {row["semantic_component"] for row in displacement_rows} == {
+        "global_vertical_displacement_DZ"
+    }
+    assert {row["semantic_component"] for row in member_rows} == {
+        "vertical_plane_shear",
+        "vertical_plane_bending_moment",
+        "member_torsion",
+    }
+    assert {row["end"] for row in member_rows} == {"I", "J"}
