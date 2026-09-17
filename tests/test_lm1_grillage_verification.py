@@ -153,10 +153,10 @@ def test_invalid_lm1_transverse_coverage_is_rejected() -> None:
             project,
             lane_placements=(
                 LM1LaneVerificationPlacement(1, -3.5, -0.5, full_span, 5.0),
-                LM1LaneVerificationPlacement(2, 0.0, 3.0, full_span, 5.0),
+                LM1LaneVerificationPlacement(2, -1.0, 2.0, full_span, 5.0),
             ),
             remaining_area_placements=(
-                LM1RemainingAreaVerificationPlacement(3.0, 4.0, full_span),
+                LM1RemainingAreaVerificationPlacement(2.5, 3.5, full_span),
             ),
         )
 
