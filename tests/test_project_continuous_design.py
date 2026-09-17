@@ -106,7 +106,8 @@ def test_continuous_uls_design_uses_separate_bottom_flange_for_hogging() -> None
     assert result.negative_flexure.required_steel_area_mm2 > 0.0
     assert result.shear.design_shear_kn == pytest.approx(result.design_shear_kn)
     assert result.negative_station.global_position_m == pytest.approx(15.0)
-    assert "compression face" in result.negative_flexure.status
+    assert result.negative_flexure.compression_model == "bottom_flanged"
+    assert result.negative_flexure.signed_resistance_knm < 0.0
 
 
 def test_continuous_uls_design_can_use_web_only_hogging_compression() -> None:
@@ -135,4 +136,5 @@ def test_continuous_uls_design_can_use_web_only_hogging_compression() -> None:
 
     assert result.negative_flexure.required_steel_area_mm2 > 0.0
     assert result.negative_flexure.resistance_knm > 0.0
+    assert result.negative_flexure.compression_model == "rectangular"
     assert result.negative_station.permanent_moment_knm < 0.0
