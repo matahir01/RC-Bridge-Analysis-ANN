@@ -6,6 +6,7 @@ from rc_bridge.analysis.combined_effects import combined_udl_point_envelope
 from rc_bridge.analysis.continuous_beam import BeamSpan
 from rc_bridge.analysis.continuous_influence import (
     AdverseUDLEffect,
+    ContinuousSectionInfluenceLine,
     InfluenceResponseKind,
     adverse_udl_effect,
     moving_train_influence_effect,
@@ -67,6 +68,65 @@ def lane_udl_line_load_kn_m(
 ) -> float:
     lane = lm1_characteristic_lane_load(lane_number, factors)
     return lane.udl_kn_m2 * lane_width_m
+
+
+def lm1_lane_effect_from_influence(
+    influence: ContinuousSectionInfluenceLine,
+    *,
+    lane_number: int,
+    lane_width_m: float,
+    factors: LM1AdjustmentFactors | None = None,
+    movement_steps: int = 1201,
+) -> LM1ContinuousSectionEffect:
+    """Evaluate one LM1 notional lane on a precomputed longitudinal influence line."""
+    if lane_number < 1:
+        raise ValueError("lane_number must be positive.")
+    if lane_width_m <= 0.0:
+        raise ValueError("lane_width_m must be positive.")
+
+    tandem = moving_train_influence_effect(
+        influence,
+        lm1_tandem_train(lane_number, factors),
+        movement_steps=movement_steps,
+    )
+    line_load = lane_udl_line_load_kn_m(lane_number, lane_width_m, factors)
+    udl = adverse_udl_effect(influence, line_load)
+    return LM1ContinuousSectionEffect(
+        lane_number=lane_number,
+        response_kind=influence.response_kind,
+        response_span_index=influence.response_span_index,
+        response_position_m=influence.response_position_m,
+        line_load_kn_m=line_load,
+        tandem_maximum_positive_effect=tandem.maximum_positive_effect,
+        tandem_minimum_negative_effect=tandem.minimum_negative_effect,
+        tandem_positive_lead_position_m=tandem.maximum_positive_lead_position_m,
+        tandem_negative_lead_position_m=tandem.minimum_negative_lead_position_m,
+        udl_maximum_positive_effect=udl.maximum_positive_effect,
+        udl_minimum_negative_effect=udl.minimum_negative_effect,
+        combined_maximum_positive_effect=(
+            tandem.maximum_positive_effect + udl.maximum_positive_effect
+        ),
+        combined_minimum_negative_effect=(
+            tandem.minimum_negative_effect + udl.minimum_negative_effect
+        ),
+        status=(
+            "EN 1991-2 LM1 longitudinal section effect from tandem-system placement and "
+            "adverse lane-UDL influence regions; transverse distribution is not applied"
+        ),
+    )
+
+
+def lm1_remaining_area_effect_from_influence(
+    influence: ContinuousSectionInfluenceLine,
+    *,
+    remaining_width_m: float,
+    factors: LM1AdjustmentFactors | None = None,
+) -> AdverseUDLEffect:
+    """Evaluate the LM1 remaining-area UDL on a precomputed influence line."""
+    if remaining_width_m < 0.0:
+        raise ValueError("remaining_width_m cannot be negative.")
+    line_load = lm1_remaining_area_udl_kn_m2(factors) * remaining_width_m
+    return adverse_udl_effect(influence, line_load)
 
 
 def lm1_lane_simple_span_envelope(
@@ -191,11 +251,6 @@ def lm1_lane_continuous_section_effect(
     negative influence regions are loaded separately so both sagging and hogging
     effects remain available to the bridge-level distribution/combination layer.
     """
-    if lane_number < 1:
-        raise ValueError("lane_number must be positive.")
-    if lane_width_m <= 0.0:
-        raise ValueError("lane_width_m must be positive.")
-
     influence = section_influence_line(
         spans,
         response_span_index=response_span_index,
@@ -203,36 +258,12 @@ def lm1_lane_continuous_section_effect(
         response_kind=response_kind,
         load_positions=influence_positions,
     )
-    tandem = moving_train_influence_effect(
+    return lm1_lane_effect_from_influence(
         influence,
-        lm1_tandem_train(lane_number, factors),
-        movement_steps=movement_steps,
-    )
-    line_load = lane_udl_line_load_kn_m(lane_number, lane_width_m, factors)
-    udl = adverse_udl_effect(influence, line_load)
-
-    return LM1ContinuousSectionEffect(
         lane_number=lane_number,
-        response_kind=response_kind,
-        response_span_index=response_span_index,
-        response_position_m=response_position_m,
-        line_load_kn_m=line_load,
-        tandem_maximum_positive_effect=tandem.maximum_positive_effect,
-        tandem_minimum_negative_effect=tandem.minimum_negative_effect,
-        tandem_positive_lead_position_m=tandem.maximum_positive_lead_position_m,
-        tandem_negative_lead_position_m=tandem.minimum_negative_lead_position_m,
-        udl_maximum_positive_effect=udl.maximum_positive_effect,
-        udl_minimum_negative_effect=udl.minimum_negative_effect,
-        combined_maximum_positive_effect=(
-            tandem.maximum_positive_effect + udl.maximum_positive_effect
-        ),
-        combined_minimum_negative_effect=(
-            tandem.minimum_negative_effect + udl.minimum_negative_effect
-        ),
-        status=(
-            "EN 1991-2 LM1 longitudinal section effect from tandem-system placement and "
-            "adverse lane-UDL influence regions; transverse distribution is not applied"
-        ),
+        lane_width_m=lane_width_m,
+        factors=factors,
+        movement_steps=movement_steps,
     )
 
 
@@ -248,7 +279,6 @@ def lm1_remaining_area_continuous_section_effect(
 ) -> AdverseUDLEffect:
     """Return adverse longitudinal LM1 remaining-area UDL effect at one section."""
     layout = notional_lane_layout(carriageway_width_m)
-    line_load = lm1_remaining_area_udl_kn_m2(factors) * layout.remaining_width_m
     influence = section_influence_line(
         spans,
         response_span_index=response_span_index,
@@ -256,4 +286,8 @@ def lm1_remaining_area_continuous_section_effect(
         response_kind=response_kind,
         load_positions=influence_positions,
     )
-    return adverse_udl_effect(influence, line_load)
+    return lm1_remaining_area_effect_from_influence(
+        influence,
+        remaining_width_m=layout.remaining_width_m,
+        factors=factors,
+    )
