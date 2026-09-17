@@ -1,7 +1,14 @@
 import pytest
 
 from rc_bridge.codes.eurocode.en1991_2 import notional_lane_layout
-from rc_bridge.core.models import BridgeGeometry, DeckConstruction
+from rc_bridge.core.models import (
+    BridgeGeometry,
+    DeckConstruction,
+    IGirderProfile,
+    RectangularGirderProfile,
+    SectionType,
+    TGirderProfile,
+)
 
 
 def test_reference_geometry_separates_deck_and_carriageway_widths() -> None:
@@ -27,6 +34,58 @@ def test_girder_layout_cannot_extend_beyond_deck_width() -> None:
             deck_width_m=10.0,
             girder_count=7,
             girder_spacing_m=1.70,
+        )
+
+
+def test_reference_geometry_does_not_invent_physical_girder_profile() -> None:
+    geometry = BridgeGeometry()
+    assert geometry.girder_profile is None
+    assert geometry.girder_profile_area_m2 is None
+
+
+def test_rectangular_t_and_i_profiles_compute_physical_area() -> None:
+    rectangular = BridgeGeometry(
+        section_type=SectionType.RECTANGULAR,
+        girder_profile=RectangularGirderProfile(width_m=0.30, depth_m=0.95),
+    )
+    assert rectangular.girder_profile_area_m2 == pytest.approx(0.285)
+
+    t_girder = BridgeGeometry(
+        section_type=SectionType.T,
+        girder_profile=TGirderProfile(
+            flange_width_m=0.70,
+            flange_thickness_m=0.15,
+            web_width_m=0.30,
+            total_depth_m=0.95,
+        ),
+    )
+    assert t_girder.girder_profile_area_m2 == pytest.approx(0.345)
+
+    i_girder = BridgeGeometry(
+        section_type=SectionType.I,
+        girder_profile=IGirderProfile(
+            top_flange_width_m=0.60,
+            top_flange_thickness_m=0.15,
+            web_width_m=0.20,
+            web_depth_m=0.65,
+            bottom_flange_width_m=0.50,
+            bottom_flange_thickness_m=0.15,
+        ),
+    )
+    assert i_girder.girder_profile_area_m2 == pytest.approx(0.295)
+
+
+def test_physical_profile_must_match_section_type_and_depth() -> None:
+    with pytest.raises(ValueError, match="shape must match"):
+        BridgeGeometry(
+            section_type=SectionType.T,
+            girder_profile=RectangularGirderProfile(width_m=0.30, depth_m=0.95),
+        )
+
+    with pytest.raises(ValueError, match="profile depth"):
+        BridgeGeometry(
+            section_type=SectionType.RECTANGULAR,
+            girder_profile=RectangularGirderProfile(width_m=0.30, depth_m=0.90),
         )
 
 
