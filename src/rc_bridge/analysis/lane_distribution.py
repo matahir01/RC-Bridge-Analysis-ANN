@@ -2,7 +2,12 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from rc_bridge.codes.eurocode.lm1_effects import LM1Envelope, LM1RemainingAreaEnvelope
+from rc_bridge.analysis.continuous_influence import AdverseUDLEffect
+from rc_bridge.codes.eurocode.lm1_effects import (
+    LM1ContinuousSectionEffect,
+    LM1Envelope,
+    LM1RemainingAreaEnvelope,
+)
 
 
 def _validate_fractions(
@@ -66,6 +71,17 @@ class AggregatedGirderTrafficEffect:
     girder_index: int
     moment_knm: float
     shear_kn: float
+    method: str
+
+
+@dataclass(frozen=True)
+class AggregatedGirderSectionEffect:
+    girder_index: int
+    response_kind: str
+    response_span_index: int
+    response_position_m: float
+    maximum_positive_effect: float
+    minimum_negative_effect: float
     method: str
 
 
@@ -166,6 +182,102 @@ def aggregate_lm1_lane_envelopes(
             girder_index=index + 1,
             moment_knm=moments[index],
             shear_kn=shears[index],
+            method=method_label,
+        )
+        for index in range(girder_count)
+    ]
+
+
+def aggregate_lm1_continuous_section_effects(
+    effects: list[LM1ContinuousSectionEffect],
+    distributions: list[LaneGirderDistribution],
+    *,
+    remaining_area_effect: AdverseUDLEffect | None = None,
+    remaining_area_distribution: RemainingAreaGirderDistribution | None = None,
+) -> list[AggregatedGirderSectionEffect]:
+    """Distribute continuous-span LM1 section envelopes to physical girders.
+
+    All supplied lane effects must refer to the same longitudinal response
+    section and response kind. Moment effects use ``moment_fractions`` while
+    shear effects use ``shear_fractions``. Positive and negative envelopes are
+    retained separately so support hogging/uplift-sensitive cases are not lost.
+    """
+    if not effects:
+        raise ValueError("At least one continuous LM1 lane effect is required.")
+    if not distributions:
+        raise ValueError("Lane distribution factors are required.")
+    if (remaining_area_effect is None) != (remaining_area_distribution is None):
+        raise ValueError(
+            "Remaining-area effect and distribution must either both be supplied or both omitted."
+        )
+
+    first_effect = effects[0]
+    response_kind = first_effect.response_kind
+    response_span_index = first_effect.response_span_index
+    response_position_m = first_effect.response_position_m
+    if any(
+        effect.response_kind != response_kind
+        or effect.response_span_index != response_span_index
+        or abs(effect.response_position_m - response_position_m) > 1e-9
+        for effect in effects
+    ):
+        raise ValueError("Continuous LM1 effects must refer to one common response section.")
+
+    effect_lanes = [effect.lane_number for effect in effects]
+    if len(set(effect_lanes)) != len(effect_lanes):
+        raise ValueError("Duplicate continuous LM1 lane effects are not allowed.")
+
+    by_lane = {item.lane_number: item for item in distributions}
+    if len(by_lane) != len(distributions):
+        raise ValueError("Duplicate lane distribution definitions are not allowed.")
+
+    girder_count = distributions[0].girder_count
+    if any(item.girder_count != girder_count for item in distributions):
+        raise ValueError("All lane distributions must use the same girder count.")
+    if (
+        remaining_area_distribution is not None
+        and remaining_area_distribution.girder_count != girder_count
+    ):
+        raise ValueError("Remaining-area distribution must use the same girder count as lane distributions.")
+
+    positive = [0.0] * girder_count
+    negative = [0.0] * girder_count
+    methods: set[str] = set()
+
+    for effect in effects:
+        distribution = by_lane.get(effect.lane_number)
+        if distribution is None:
+            raise ValueError(f"Missing distribution for LM1 lane {effect.lane_number}.")
+        methods.add(distribution.method)
+        fractions = (
+            distribution.moment_fractions
+            if response_kind == "moment"
+            else distribution.shear_fractions
+        )
+        for index, fraction in enumerate(fractions):
+            positive[index] += effect.combined_maximum_positive_effect * fraction
+            negative[index] += effect.combined_minimum_negative_effect * fraction
+
+    if remaining_area_effect is not None and remaining_area_distribution is not None:
+        methods.add(remaining_area_distribution.method)
+        fractions = (
+            remaining_area_distribution.moment_fractions
+            if response_kind == "moment"
+            else remaining_area_distribution.shear_fractions
+        )
+        for index, fraction in enumerate(fractions):
+            positive[index] += remaining_area_effect.maximum_positive_effect * fraction
+            negative[index] += remaining_area_effect.minimum_negative_effect * fraction
+
+    method_label = "+".join(sorted(methods))
+    return [
+        AggregatedGirderSectionEffect(
+            girder_index=index + 1,
+            response_kind=response_kind,
+            response_span_index=response_span_index,
+            response_position_m=response_position_m,
+            maximum_positive_effect=positive[index],
+            minimum_negative_effect=negative[index],
             method=method_label,
         )
         for index in range(girder_count)
