@@ -3,6 +3,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from math import floor
 
+from rc_bridge.analysis.moving_loads import AxleTrain
+
 
 @dataclass(frozen=True)
 class NotionalLaneLayout:
@@ -45,9 +47,6 @@ def notional_lane_layout(carriageway_width_m: float) -> NotionalLaneLayout:
       * w < 5.4 m: one 3 m notional lane, remaining area w - 3 m
       * 5.4 <= w < 6.0 m: two equal lanes of w / 2, no remaining area
       * w >= 6.0 m: int(w / 3) lanes of 3 m, remainder w - 3*n
-
-    Widths below 3 m are rejected because the standard table assumes the
-    bridge carriageway can accommodate the stated notional lane definition.
     """
     w = float(carriageway_width_m)
     if w < 3.0:
@@ -83,6 +82,19 @@ def lm1_characteristic_lane_load(
     if lane_number == 3:
         return LM1LaneLoad(3, 100.0 * f.alpha_Q3, 2.5 * f.alpha_q3)
     return LM1LaneLoad(lane_number, 0.0, 2.5 * f.alpha_q_other)
+
+
+def lm1_tandem_train(
+    lane_number: int,
+    factors: LM1AdjustmentFactors | None = None,
+) -> AxleTrain:
+    """Build the longitudinal two-axle LM1 tandem for a notional lane."""
+    lane = lm1_characteristic_lane_load(lane_number, factors)
+    return AxleTrain(
+        axle_loads_kn=(lane.axle_load_kn, lane.axle_load_kn),
+        axle_offsets_m=(0.0, 1.2),
+        label=f"EN 1991-2 LM1 lane {lane_number}",
+    )
 
 
 def lm1_remaining_area_udl_kn_m2(
