@@ -11,6 +11,10 @@ from rc_bridge.codes.eurocode.en1991_2 import (
     notional_lane_layout,
 )
 from rc_bridge.core.models import DesignCode, ProjectInput
+from rc_bridge.export.model_verification_package import (
+    ModelVerificationExportPackage,
+    build_model_verification_export_package,
+)
 from rc_bridge.export.verification_model import VerificationModel
 from rc_bridge.workflow.grillage_verification_export import (
     GrillageAreaLoad,
@@ -129,6 +133,44 @@ def _validate_transverse_coverage(
     for previous, current in pairwise(strips):
         if abs(previous[1] - current[0]) > 1e-9:
             raise ValueError("LM1 transverse strips must be contiguous without gaps or overlaps.")
+
+
+def _format_regions(regions: tuple[LM1LongitudinalRegion, ...]) -> str:
+    if not regions:
+        return "none"
+    return ",".join(f"{region.x_start_m:.12g}-{region.x_end_m:.12g}" for region in regions)
+
+
+def _lane_metadata(placements: tuple[LM1LaneVerificationPlacement, ...]) -> tuple[str, str, str]:
+    strips = "|".join(
+        f"lane{item.lane_number}:{item.y_start_m:.12g}:{item.y_end_m:.12g}"
+        for item in placements
+    )
+    tandems = "|".join(
+        f"lane{item.lane_number}:"
+        + ("none" if item.tandem_lead_x_m is None else f"{item.tandem_lead_x_m:.12g}")
+        for item in placements
+    )
+    regions = "|".join(
+        f"lane{item.lane_number}:{_format_regions(item.udl_regions)}" for item in placements
+    )
+    return strips, tandems, regions
+
+
+def _remaining_metadata(
+    placements: tuple[LM1RemainingAreaVerificationPlacement, ...],
+) -> tuple[str, str]:
+    if not placements:
+        return "none", "none"
+    strips = "|".join(
+        f"remaining{index}:{item.y_start_m:.12g}:{item.y_end_m:.12g}"
+        for index, item in enumerate(placements, start=1)
+    )
+    regions = "|".join(
+        f"remaining{index}:{_format_regions(item.udl_regions)}"
+        for index, item in enumerate(placements, start=1)
+    )
+    return strips, regions
 
 
 def build_lm1_grillage_load_case(
@@ -253,11 +295,18 @@ def build_project_lm1_grillage_verification_model(
         transverse_stations_m=transverse_stations_m,
         load_case=load_case,
     )
+    lane_strips, tandem_positions, lane_regions = _lane_metadata(lane_placements)
+    remaining_strips, remaining_regions = _remaining_metadata(remaining_area_placements)
     metadata = dict(model.metadata)
     metadata.update(
         {
             "traffic_model": "EN 1991-2 LM1 first-generation implementation",
             "lane_placement": "explicit transverse strips; lane numbering supplied by caller",
+            "lm1_lane_strips": lane_strips,
+            "lm1_tandem_lead_positions_m": tandem_positions,
+            "lm1_lane_udl_regions_m": lane_regions,
+            "lm1_remaining_strips": remaining_strips,
+            "lm1_remaining_udl_regions_m": remaining_regions,
             "tandem_geometry": "two axles at 1.2 m; each axle split into two wheels 2.0 m apart",
             "udl_placement": "explicit longitudinal regions per lane/remaining-area strip",
             "local_wheel_contact": "wheel-centre point loads; local deck contact patch not represented",
@@ -273,3 +322,28 @@ def build_project_lm1_grillage_verification_model(
         load_cases=model.load_cases,
         metadata=metadata,
     )
+
+
+def build_project_lm1_grillage_verification_package(
+    project: ProjectInput,
+    *,
+    longitudinal_sections_by_span: tuple[GrillageSectionProperties, ...],
+    transverse_section: GrillageSectionProperties,
+    transverse_stations_m: tuple[float, ...],
+    lane_placements: tuple[LM1LaneVerificationPlacement, ...],
+    remaining_area_placements: tuple[LM1RemainingAreaVerificationPlacement, ...] = (),
+    factors: LM1AdjustmentFactors | None = None,
+    name: str = "EN 1991-2 LM1 verification snapshot",
+) -> ModelVerificationExportPackage:
+    """Build the full grillage plus MIDAS/STAAD model-only verification bundle."""
+    model = build_project_lm1_grillage_verification_model(
+        project,
+        longitudinal_sections_by_span=longitudinal_sections_by_span,
+        transverse_section=transverse_section,
+        transverse_stations_m=transverse_stations_m,
+        lane_placements=lane_placements,
+        remaining_area_placements=remaining_area_placements,
+        factors=factors,
+        name=name,
+    )
+    return build_model_verification_export_package(model)
