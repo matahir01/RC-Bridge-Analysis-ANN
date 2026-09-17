@@ -1,11 +1,13 @@
 import pytest
 
+from rc_bridge.codes.eurocode.combinations import ServiceabilityPsiFactors
 from rc_bridge.core.models import MaterialProperties, ProjectInput, SupportSystem
 from rc_bridge.workflow.project_bridge import (
     UniformPermanentLoadInput,
     internal_girder_characteristic_permanent_effects,
     internal_girder_deck_self_weight_kn_m,
     project_eurocode_material_input,
+    project_internal_girder_combinations_verification,
     run_project_lm1_equal_share_verification,
 )
 
@@ -75,6 +77,47 @@ def test_reference_project_lm1_verification_uses_7m_carriageway_and_7_girders() 
     assert result.lane_layout.remaining_width_m == pytest.approx(1.0)
     assert len(result.girder_effects) == 7
     assert all("verification_only" in item.method for item in result.girder_effects)
+
+
+def test_selected_internal_girder_combination_set_is_consistent() -> None:
+    project = ProjectInput()
+    sls_factors = ServiceabilityPsiFactors(psi1_traffic=0.75, psi2_traffic=0.30)
+    result = project_internal_girder_combinations_verification(
+        project,
+        girder_index=4,
+        sls_factors=sls_factors,
+        movement_steps=21,
+        section_stations=31,
+    )
+
+    g = result.permanent_characteristic
+    q = result.traffic_characteristic
+    assert g.moment_knm == pytest.approx(298.828125)
+    assert q.moment_knm > 0.0
+    assert q.shear_kn > 0.0
+
+    assert result.characteristic_sls.effects.moment_knm == pytest.approx(
+        g.moment_knm + q.moment_knm
+    )
+    assert result.frequent_sls.effects.moment_knm == pytest.approx(
+        g.moment_knm + 0.75 * q.moment_knm
+    )
+    assert result.quasi_permanent_sls.effects.moment_knm == pytest.approx(
+        g.moment_knm + 0.30 * q.moment_knm
+    )
+    assert result.persistent_uls.effects.moment_knm > result.characteristic_sls.effects.moment_knm
+    assert "verification_only" in result.traffic_distribution_method
+
+
+def test_selected_girder_combination_helper_rejects_edge_girders() -> None:
+    project = ProjectInput()
+    sls_factors = ServiceabilityPsiFactors(psi1_traffic=0.75, psi2_traffic=0.30)
+    with pytest.raises(ValueError, match="internal girders only"):
+        project_internal_girder_combinations_verification(
+            project,
+            girder_index=1,
+            sls_factors=sls_factors,
+        )
 
 
 def test_project_equal_share_verification_rejects_continuous_system() -> None:
