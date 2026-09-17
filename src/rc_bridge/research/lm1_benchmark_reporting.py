@@ -214,8 +214,10 @@ def _summary_markdown(
         f"| Absolute shear difference | <= {tolerance.absolute_shear_kn:.6g} kN |",
         f"| Absolute torsion difference | <= {tolerance.absolute_torsion_knm:.6g} kNm |",
         "",
-        "A component passes when either its relative or component-specific absolute "
-        "difference is within the stated tolerance.",
+        (
+            "A component passes when either its relative or component-specific absolute "
+            "difference is within the stated tolerance."
+        ),
         "",
         "## Governing LM1 case verification",
         "",
@@ -286,10 +288,12 @@ def _summary_markdown(
     lines.extend(
         [
             "",
-            "This report verifies numerical agreement for the governing LM1 grillage cases "
-            "included in the benchmark suite. Model equivalence, loading equivalence, and "
-            "result-axis interpretation should also be confirmed before treating an external "
-            "comparison as final engineering validation.",
+            (
+                "This report verifies numerical agreement for the governing LM1 grillage cases "
+                "included in the benchmark suite. Model equivalence, loading equivalence, and "
+                "result-axis interpretation should also be confirmed before treating an external "
+                "comparison as final engineering validation."
+            ),
             "",
         ]
     )
