@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
 from math import isfinite
+from dataclasses import dataclass
 
 import numpy as np
 
