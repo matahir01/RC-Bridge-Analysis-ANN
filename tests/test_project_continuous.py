@@ -1,10 +1,13 @@
 import pytest
 
+from rc_bridge.analysis.moving_loads import AxleTrain
 from rc_bridge.core.models import BridgeGeometry, ProjectInput, SupportSystem
 from rc_bridge.workflow.project_continuous import (
     GlobalBeamPointLoad,
     ProjectContinuousLoadCase,
+    ProjectContinuousMovingLoadCase,
     run_project_continuous_load_case,
+    run_project_continuous_moving_train,
 )
 
 
@@ -61,6 +64,41 @@ def test_project_continuous_global_point_load_mapping_preserves_equilibrium() ->
     )
 
 
+def test_project_continuous_moving_train_uses_project_span_geometry() -> None:
+    project = _continuous_project()
+    train = AxleTrain(axle_loads_kn=(100.0,), axle_offsets_m=(0.0,))
+    result = run_project_continuous_moving_train(
+        project,
+        ProjectContinuousMovingLoadCase(
+            train=train,
+            ei_kn_m2_by_span=(1.0e6, 1.0e6),
+            movement_steps=81,
+            section_stations=81,
+            name="single moving axle",
+        ),
+    )
+
+    assert result.load_case_name == "single moving axle"
+    assert result.envelope.lead_start_m == pytest.approx(0.0)
+    assert result.envelope.lead_end_m == pytest.approx(20.0)
+    assert len(result.envelope.span_envelopes) == 2
+    assert len(result.envelope.support_envelopes) == 3
+    assert result.envelope.span_envelopes[0].max_sagging_moment_knm == pytest.approx(
+        result.envelope.span_envelopes[1].max_sagging_moment_knm,
+        rel=1e-10,
+    )
+
+
+def test_project_continuous_moving_train_rejects_span_count_mismatch() -> None:
+    project = _continuous_project()
+    load_case = ProjectContinuousMovingLoadCase(
+        train=AxleTrain(axle_loads_kn=(100.0,), axle_offsets_m=(0.0,)),
+        ei_kn_m2_by_span=(1.0e6,),
+    )
+    with pytest.raises(ValueError, match="span count"):
+        run_project_continuous_moving_train(project, load_case)
+
+
 def test_project_continuous_workflow_rejects_simple_span_project() -> None:
     project = ProjectInput()
     load_case = ProjectContinuousLoadCase(
@@ -69,3 +107,10 @@ def test_project_continuous_workflow_rejects_simple_span_project() -> None:
     )
     with pytest.raises(ValueError, match="CONTINUOUS"):
         run_project_continuous_load_case(project, load_case)
+
+    moving_case = ProjectContinuousMovingLoadCase(
+        train=AxleTrain(axle_loads_kn=(100.0,), axle_offsets_m=(0.0,)),
+        ei_kn_m2_by_span=(1.0e6,),
+    )
+    with pytest.raises(ValueError, match="CONTINUOUS"):
+        run_project_continuous_moving_train(project, moving_case)
