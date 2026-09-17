@@ -9,6 +9,7 @@ from rc_bridge.analysis.continuous_beam import (
     member_span_envelope,
     solve_continuous_beam,
 )
+from rc_bridge.analysis.continuous_deflection import member_span_deflection_envelope
 from rc_bridge.analysis.loads import PointLoad
 from rc_bridge.analysis.moving_loads import AxleTrain, positioned_axles
 
@@ -25,6 +26,15 @@ class ContinuousMovingSpanEnvelope:
     max_abs_shear_kn: float
     max_abs_shear_position_m: float
     max_abs_shear_lead_position_m: float
+    maximum_upward_displacement_m: float
+    maximum_upward_displacement_position_m: float
+    maximum_upward_displacement_lead_position_m: float
+    minimum_downward_displacement_m: float
+    minimum_downward_displacement_position_m: float
+    minimum_downward_displacement_lead_position_m: float
+    max_abs_displacement_m: float
+    max_abs_displacement_position_m: float
+    max_abs_displacement_lead_position_m: float
 
 
 @dataclass(frozen=True)
@@ -40,6 +50,11 @@ class ContinuousMovingSupportEnvelope:
 class ContinuousMovingLoadEnvelopeResult:
     span_envelopes: tuple[ContinuousMovingSpanEnvelope, ...]
     support_envelopes: tuple[ContinuousMovingSupportEnvelope, ...]
+    max_abs_displacement_m: float
+    max_abs_displacement_span_index: int
+    max_abs_displacement_local_position_m: float
+    max_abs_displacement_global_position_m: float
+    max_abs_displacement_lead_position_m: float
     movement_steps: int
     section_stations: int
     lead_start_m: float
@@ -90,9 +105,10 @@ def moving_train_continuous_envelope(
     superimposed on those loads at each lead-axle position. The routine is
     code-neutral: traffic-code axle definitions are supplied through ``AxleTrain``.
 
-    For each physical span it records the largest sagging moment, most negative
-    hogging moment and largest absolute shear. It also records maximum and minimum
-    vertical reaction at every support node, including possible uplift.
+    Each physical span records moment, shear and vertical-displacement extrema.
+    Both upward and downward displacement are retained because loading one span of
+    a continuous bridge can lift a remote span. Support reaction extrema include
+    possible uplift.
     """
     if not spans:
         raise ValueError("At least one span is required for a moving-load envelope.")
@@ -116,6 +132,15 @@ def moving_train_continuous_envelope(
             "max_abs_shear_kn": float("-inf"),
             "max_abs_shear_position_m": 0.0,
             "max_abs_shear_lead_position_m": 0.0,
+            "maximum_upward_displacement_m": float("-inf"),
+            "maximum_upward_displacement_position_m": 0.0,
+            "maximum_upward_displacement_lead_position_m": 0.0,
+            "minimum_downward_displacement_m": float("inf"),
+            "minimum_downward_displacement_position_m": 0.0,
+            "minimum_downward_displacement_lead_position_m": 0.0,
+            "max_abs_displacement_m": float("-inf"),
+            "max_abs_displacement_position_m": 0.0,
+            "max_abs_displacement_lead_position_m": 0.0,
         }
         for _ in spans
     ]
@@ -151,6 +176,12 @@ def moving_train_continuous_envelope(
                 solution.members[index],
                 stations=section_stations,
             )
+            deflection = member_span_deflection_envelope(
+                span,
+                solution.members[index],
+                solution.nodes[index],
+                stations=section_stations,
+            )
             state = span_state[index]
             if envelope.max_sagging_moment_knm > state["max_sagging_moment_knm"]:
                 state["max_sagging_moment_knm"] = envelope.max_sagging_moment_knm
@@ -164,6 +195,32 @@ def moving_train_continuous_envelope(
                 state["max_abs_shear_kn"] = envelope.max_abs_shear_kn
                 state["max_abs_shear_position_m"] = envelope.max_abs_shear_position_m
                 state["max_abs_shear_lead_position_m"] = lead_position
+            if (
+                deflection.maximum_upward_displacement_m
+                > state["maximum_upward_displacement_m"]
+            ):
+                state["maximum_upward_displacement_m"] = (
+                    deflection.maximum_upward_displacement_m
+                )
+                state["maximum_upward_displacement_position_m"] = (
+                    deflection.maximum_upward_position_m
+                )
+                state["maximum_upward_displacement_lead_position_m"] = lead_position
+            if (
+                deflection.minimum_downward_displacement_m
+                < state["minimum_downward_displacement_m"]
+            ):
+                state["minimum_downward_displacement_m"] = (
+                    deflection.minimum_downward_displacement_m
+                )
+                state["minimum_downward_displacement_position_m"] = (
+                    deflection.minimum_downward_position_m
+                )
+                state["minimum_downward_displacement_lead_position_m"] = lead_position
+            if deflection.max_abs_displacement_m > state["max_abs_displacement_m"]:
+                state["max_abs_displacement_m"] = deflection.max_abs_displacement_m
+                state["max_abs_displacement_position_m"] = deflection.max_abs_position_m
+                state["max_abs_displacement_lead_position_m"] = lead_position
 
         for node in solution.nodes:
             state = support_state[node.node_index]
@@ -183,15 +240,34 @@ def moving_train_continuous_envelope(
         ContinuousMovingSupportEnvelope(node_index=index, **state)
         for index, state in enumerate(support_state)
     )
+    displacement_span_index = max(
+        range(len(span_envelopes)),
+        key=lambda index: span_envelopes[index].max_abs_displacement_m,
+    )
+    displacement_span = span_envelopes[displacement_span_index]
+    displacement_global_position = (
+        sum(span.length_m for span in spans[:displacement_span_index])
+        + displacement_span.max_abs_displacement_position_m
+    )
     return ContinuousMovingLoadEnvelopeResult(
         span_envelopes=span_envelopes,
         support_envelopes=support_envelopes,
+        max_abs_displacement_m=displacement_span.max_abs_displacement_m,
+        max_abs_displacement_span_index=displacement_span_index,
+        max_abs_displacement_local_position_m=(
+            displacement_span.max_abs_displacement_position_m
+        ),
+        max_abs_displacement_global_position_m=displacement_global_position,
+        max_abs_displacement_lead_position_m=(
+            displacement_span.max_abs_displacement_lead_position_m
+        ),
         movement_steps=movement_steps,
         section_stations=section_stations,
         lead_start_m=lead_start,
         lead_end_m=lead_end,
         status=(
             "Code-neutral moving axle-train envelope on an Euler-Bernoulli continuous beam; "
-            "traffic-code definitions and transverse distribution remain separate"
+            "moment, shear, support reaction and vertical displacement extrema are retained. "
+            "Traffic-code definitions and transverse distribution remain separate"
         ),
     )
