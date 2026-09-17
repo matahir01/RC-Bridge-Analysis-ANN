@@ -5,25 +5,43 @@ from rc_bridge.analysis.lane_distribution import (
     RemainingAreaGirderDistribution,
 )
 from rc_bridge.codes.eurocode.combinations import ServiceabilityPsiFactors
-from rc_bridge.core.models import BridgeGeometry, ProjectInput, SupportSystem
+from rc_bridge.core.models import (
+    BridgeGeometry,
+    IGirderProfile,
+    ProjectInput,
+    SectionType,
+    SupportSystem,
+)
 from rc_bridge.workflow.project_continuous_envelope import (
     ContinuousDesignEnvelopeInput,
     run_project_continuous_lm1_design_envelope,
 )
 from rc_bridge.workflow.project_continuous_sls import (
-    HoggingCrackMaterialInput,
-    HoggingCrackSectionInput,
     run_continuous_hogging_crack_check,
+    support_crack_input_from_project,
+    support_layers_from_project,
 )
 
 
-def _envelope():
-    project = ProjectInput(
+def _project() -> ProjectInput:
+    return ProjectInput(
         geometry=BridgeGeometry(
             span_lengths_m=[15.0, 15.0],
             support_system=SupportSystem.CONTINUOUS,
+            section_type=SectionType.I,
+            girder_profile=IGirderProfile(
+                top_flange_width_m=0.70,
+                top_flange_thickness_m=0.15,
+                web_width_m=0.30,
+                web_depth_m=0.62,
+                bottom_flange_width_m=0.65,
+                bottom_flange_thickness_m=0.18,
+            ),
         )
     )
+
+
+def _envelope(project: ProjectInput):
     lane_1 = (0.20, 0.18, 0.16, 0.14, 0.12, 0.10, 0.10)
     lane_2 = tuple(reversed(lane_1))
     distributions = (
@@ -62,37 +80,42 @@ def _envelope():
     )
 
 
-def _section() -> HoggingCrackSectionInput:
-    return HoggingCrackSectionInput(
-        bottom_flange_width_m=0.65,
-        bottom_flange_thickness_m=0.18,
-        web_width_m=0.30,
-        total_depth_m=1.20,
-        top_tension_flange_width_m=1.70,
-        top_tension_flange_thickness_m=0.175,
-        top_steel_area_mm2=6500.0,
+def _crack_input(project: ProjectInput):
+    return support_crack_input_from_project(
+        project,
+        effective_deck_width_m=1.70,
+        top_tension_steel_area_mm2=6500.0,
         steel_depth_from_bottom_m=1.14,
         bar_diameter_mm=25.0,
         bar_spacing_mm=150.0,
         cover_mm=40.0,
-    )
-
-
-def _materials() -> HoggingCrackMaterialInput:
-    return HoggingCrackMaterialInput(
         es_mpa=200000.0,
         ecm_mpa=34000.0,
         fct_eff_mpa=3.2,
+        crack_limit_mm=0.30,
     )
 
 
+def test_project_support_layers_keep_false_slab_physical_but_inactive_by_default() -> None:
+    layers = support_layers_from_project(_project(), effective_deck_width_m=1.70)
+
+    assert tuple(layer.label for layer in layers) == (
+        "precast bottom flange",
+        "precast web",
+        "precast top flange",
+        "precast false slab",
+        "in-situ deck",
+    )
+    assert layers[3].active is False
+    assert layers[4].active is True
+    assert layers[-1].end_depth_m == pytest.approx(1.20)
+
+
 def test_continuous_hogging_crack_check_finds_internal_support_sls_station() -> None:
+    project = _project()
     result = run_continuous_hogging_crack_check(
-        _envelope(),
-        section=_section(),
-        materials=_materials(),
-        cracking_moment_knm=100.0,
-        crack_limit_mm=0.30,
+        _envelope(project),
+        input_data=_crack_input(project),
         combination_kind="frequent",
     )
 
@@ -105,29 +128,22 @@ def test_continuous_hogging_crack_check_finds_internal_support_sls_station() -> 
 
 
 def test_continuous_hogging_service_moments_preserve_sls_combination_order() -> None:
-    envelope = _envelope()
+    project = _project()
+    envelope = _envelope(project)
+    input_data = _crack_input(project)
     characteristic = run_continuous_hogging_crack_check(
         envelope,
-        section=_section(),
-        materials=_materials(),
-        cracking_moment_knm=100.0,
-        crack_limit_mm=0.30,
+        input_data=input_data,
         combination_kind="characteristic",
     )
     frequent = run_continuous_hogging_crack_check(
         envelope,
-        section=_section(),
-        materials=_materials(),
-        cracking_moment_knm=100.0,
-        crack_limit_mm=0.30,
+        input_data=input_data,
         combination_kind="frequent",
     )
     quasi = run_continuous_hogging_crack_check(
         envelope,
-        section=_section(),
-        materials=_materials(),
-        cracking_moment_knm=100.0,
-        crack_limit_mm=0.30,
+        input_data=input_data,
         combination_kind="quasi_permanent",
     )
 
