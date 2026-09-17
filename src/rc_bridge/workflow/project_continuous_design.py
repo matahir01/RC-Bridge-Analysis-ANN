@@ -11,11 +11,15 @@ from rc_bridge.core.models import (
 from rc_bridge.design.eurocode_demand import (
     FlexuralDemandResult,
     ShearDemandResult,
-    check_flexure_rectangular,
     check_flexure_t_section,
     check_shear,
 )
-from rc_bridge.design.eurocode_oriented_demand import check_flexure_oriented_flanged
+from rc_bridge.design.eurocode_support_flexure import NegativeBendingFlexureResult
+from rc_bridge.workflow.continuous_support_design import (
+    ContinuousSupportFlangedFlexureInput,
+    ContinuousSupportFlexureInput,
+    check_continuous_support_flexure,
+)
 from rc_bridge.workflow.project_continuous_envelope import (
     ContinuousDesignEnvelopeResult,
     ContinuousDesignEnvelopeStation,
@@ -63,7 +67,7 @@ class ContinuousShearDesignInput:
 @dataclass(frozen=True)
 class ContinuousEurocodeULSDesignResult:
     positive_flexure: FlexuralDemandResult
-    negative_flexure: FlexuralDemandResult
+    negative_flexure: NegativeBendingFlexureResult
     shear: ShearDemandResult
     positive_station: ContinuousDesignEnvelopeStation
     negative_station: ContinuousDesignEnvelopeStation
@@ -122,6 +126,31 @@ def negative_support_design_input_from_project(
     raise TypeError("Unsupported physical girder profile type.")
 
 
+def _canonical_support_input(
+    negative_section: NegativeSupportDesignInput,
+    *,
+    fck_mpa: float,
+    fyk_mpa: float,
+) -> ContinuousSupportFlexureInput | ContinuousSupportFlangedFlexureInput:
+    if isinstance(negative_section, NegativeSupportFlangedDesignInput):
+        return ContinuousSupportFlangedFlexureInput(
+            bottom_flange_width_m=negative_section.bottom_flange_width_m,
+            bottom_flange_thickness_m=negative_section.bottom_flange_thickness_m,
+            web_width_m=negative_section.web_width_m,
+            effective_depth_from_bottom_m=negative_section.effective_depth_from_bottom_m,
+            provided_top_steel_area_mm2=negative_section.provided_top_steel_area_mm2,
+            fck_mpa=fck_mpa,
+            fyk_mpa=fyk_mpa,
+        )
+    return ContinuousSupportFlexureInput(
+        compression_width_m=negative_section.compression_width_m,
+        effective_depth_m=negative_section.effective_depth_from_bottom_m,
+        provided_top_steel_area_mm2=negative_section.provided_top_steel_area_mm2,
+        fck_mpa=fck_mpa,
+        fyk_mpa=fyk_mpa,
+    )
+
+
 def run_continuous_eurocode_uls_design(
     envelope: ContinuousDesignEnvelopeResult,
     *,
@@ -133,18 +162,18 @@ def run_continuous_eurocode_uls_design(
 ) -> ContinuousEurocodeULSDesignResult:
     """Design the governing continuous-girder ULS sections from an LM1 envelope.
 
-    Sagging resistance uses the composite top flange. Hogging resistance is
-    intentionally separate: the deck is on the tension side and is never reused
-    as a compression flange. A T-stem/rectangular lower section can therefore use
-    ``NegativeSupportRectangularDesignInput``; an I-girder with a real lower flange
-    can use ``NegativeSupportFlangedDesignInput``.
+    Sagging resistance uses the composite top flange. Hogging is delegated to the
+    canonical signed support-design workflow at the governing negative-moment
+    station, so the deck is never reused as a compression flange. Web/stem and
+    physical bottom-flange compression models therefore share one support path.
     """
     if fck_mpa <= 0.0 or fyk_mpa <= 0.0:
         raise ValueError("Concrete and reinforcement strengths must be positive.")
 
     positive_moment = max(0.0, envelope.max_positive_uls_moment_knm)
-    negative_moment = max(0.0, -envelope.min_negative_uls_moment_knm)
     design_shear = envelope.max_abs_uls_shear_kn
+    positive_station = envelope.max_positive_moment_station
+    negative_station = envelope.min_negative_moment_station
 
     positive = check_flexure_t_section(
         med_knm=positive_moment,
@@ -157,29 +186,15 @@ def run_continuous_eurocode_uls_design(
         fyk_mpa=fyk_mpa,
     )
 
-    if isinstance(negative_section, NegativeSupportFlangedDesignInput):
-        negative = check_flexure_oriented_flanged(
-            med_knm=negative_moment,
-            compression_flange_width_m=negative_section.bottom_flange_width_m,
-            compression_flange_thickness_m=negative_section.bottom_flange_thickness_m,
-            web_width_m=negative_section.web_width_m,
-            effective_depth_from_compression_face_m=(
-                negative_section.effective_depth_from_bottom_m
-            ),
-            provided_steel_area_mm2=negative_section.provided_top_steel_area_mm2,
+    support_check = check_continuous_support_flexure(
+        negative_station.moment_combinations,
+        _canonical_support_input(
+            negative_section,
             fck_mpa=fck_mpa,
             fyk_mpa=fyk_mpa,
-            compression_face="bottom",
-        )
-    else:
-        negative = check_flexure_rectangular(
-            med_knm=negative_moment,
-            width_m=negative_section.compression_width_m,
-            effective_depth_m=negative_section.effective_depth_from_bottom_m,
-            provided_steel_area_mm2=negative_section.provided_top_steel_area_mm2,
-            fck_mpa=fck_mpa,
-            fyk_mpa=fyk_mpa,
-        )
+        ),
+    )
+    negative = support_check.flexure
 
     shear = check_shear(
         ved_kn=design_shear,
@@ -195,15 +210,15 @@ def run_continuous_eurocode_uls_design(
         positive_flexure=positive,
         negative_flexure=negative,
         shear=shear,
-        positive_station=envelope.max_positive_moment_station,
-        negative_station=envelope.min_negative_moment_station,
+        positive_station=positive_station,
+        negative_station=negative_station,
         shear_station=envelope.max_abs_shear_station,
         positive_design_moment_knm=positive_moment,
-        negative_design_moment_knm=negative_moment,
+        negative_design_moment_knm=negative.design_moment_magnitude_knm,
         design_shear_kn=design_shear,
         status=(
             "Governing continuous Eurocode ULS design: composite T-section for sagging, "
-            "explicit lower-girder compression model for hogging, and web shear check. "
+            "canonical signed support workflow for hogging, and web shear check. "
             "Ductility, support-face shear location and continuous-region SLS remain separate."
         ),
     )
