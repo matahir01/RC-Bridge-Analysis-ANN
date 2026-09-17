@@ -12,8 +12,10 @@ from rc_bridge.design.eurocode_demand import FlexuralDemandResult, check_flexure
 from rc_bridge.design.eurocode_support_flexure import NegativeBendingFlexureResult
 from rc_bridge.workflow.continuous_shear_design import (
     ContinuousShearDesignCheck,
-    ContinuousShearDesignInput as CanonicalContinuousShearDesignInput,
     check_continuous_section_shear,
+)
+from rc_bridge.workflow.continuous_shear_design import (
+    ContinuousShearDesignInput as CanonicalContinuousShearDesignInput,
 )
 from rc_bridge.workflow.continuous_support_design import (
     ContinuousSupportFlangedFlexureInput,
