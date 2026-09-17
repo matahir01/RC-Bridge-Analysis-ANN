@@ -11,7 +11,6 @@ from rc_bridge.analysis.continuous_beam import (
     solve_continuous_beam,
 )
 
-
 InfluenceResponseKind = Literal["moment", "shear"]
 
 
