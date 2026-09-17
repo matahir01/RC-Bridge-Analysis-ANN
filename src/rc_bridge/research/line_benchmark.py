@@ -5,6 +5,7 @@ import io
 from dataclasses import dataclass
 
 from rc_bridge.core.models import ProjectInput
+from rc_bridge.export.verification_model import VerificationModel
 from rc_bridge.export.verification_package import (
     VerificationExportPackage,
     build_verification_export_package,
@@ -43,6 +44,7 @@ _RESULT_COLUMNS = (
 @dataclass(frozen=True)
 class ContinuousLineBenchmarkPackage:
     case_spec: BenchmarkCaseSpec
+    verification_model: VerificationModel
     verification_package: VerificationExportPackage
     external_expected_results_csv: str
 
@@ -169,6 +171,7 @@ def build_continuous_line_benchmark_package(
     verification_package = build_verification_export_package(model, analysis)
     return ContinuousLineBenchmarkPackage(
         case_spec=case_spec,
+        verification_model=model,
         verification_package=verification_package,
         external_expected_results_csv=_write_external_expected_results(analysis),
     )
