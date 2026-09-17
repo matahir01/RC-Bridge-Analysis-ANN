@@ -2,7 +2,10 @@ from __future__ import annotations
 
 import csv
 import io
+import math
 from dataclasses import dataclass, field
+
+from rc_bridge.export.verification_model import VerificationModel
 
 
 @dataclass(frozen=True)
@@ -112,6 +115,24 @@ def _parse_object_id(row: dict[str, str], column: str, *, context: str) -> str:
     if not value:
         raise ValueError(f"Missing {context} identifier in column {column!r}.")
     return value
+
+
+def _normalize_member_end_label(raw: str, mapping: MemberForceTableMapping) -> str:
+    value = raw.strip()
+    if value in mapping.end_aliases:
+        return mapping.end_aliases[value]
+
+    # MIDAS result tables/API may decorate an end as I[1] or J[2].  Strip only
+    # that documented bracketed output-location suffix; do not guess arbitrary labels.
+    bracket_match = None
+    if value.startswith("I[") and value.endswith("]"):
+        bracket_match = "I"
+    elif value.startswith("J[") and value.endswith("]"):
+        bracket_match = "J"
+    if bracket_match is not None and bracket_match in mapping.end_aliases:
+        return mapping.end_aliases[bracket_match]
+
+    raise ValueError(f"Unknown external member-end label {value!r}; update end_aliases.")
 
 
 def _write_normalized(rows: list[tuple[str, str, str, str, str, float, str]]) -> str:
@@ -257,11 +278,7 @@ def normalize_external_result_tables(
                 continue
             member_id = _parse_object_id(row, mapping.member_column, context="member")
             external_end = (row.get(mapping.end_column) or "").strip()
-            if external_end not in mapping.end_aliases:
-                raise ValueError(
-                    f"Unknown external member-end label {external_end!r}; update end_aliases."
-                )
-            end = mapping.end_aliases[external_end]
+            end = _normalize_member_end_label(external_end, mapping)
             shear = _parse_float(row, mapping.vertical_shear_column, context="member shear")
             bending = _parse_float(
                 row,
@@ -342,5 +359,76 @@ def midas_civil_global_profile(
         name="MIDAS Civil global reaction/displacement tables",
         reaction=midas_civil_global_reaction_mapping(load_case=load_case),
         displacement=midas_civil_global_displacement_mapping(load_case=load_case),
+        delimiter=delimiter,
+    )
+
+
+def _validate_midas_beta_zero_horizontal_model(model: VerificationModel) -> None:
+    nodes = {node.node_id: node for node in model.nodes}
+    for beam in model.beams:
+        ni = nodes[beam.node_i]
+        nj = nodes[beam.node_j]
+        if abs(nj.z_m - ni.z_m) > 1e-9:
+            raise ValueError(
+                "Verified MIDAS grillage force mapping requires every beam to be horizontal."
+            )
+        if math.hypot(nj.x_m - ni.x_m, nj.y_m - ni.y_m) <= 1e-12:
+            raise ValueError("Verified MIDAS grillage force mapping found a zero-length plan member.")
+        if abs(beam.beta_angle_deg) > 1e-9:
+            raise ValueError(
+                "Verified MIDAS grillage force mapping requires beta_angle_deg=0 for every beam."
+            )
+
+
+def midas_civil_horizontal_member_force_mapping(
+    model: VerificationModel,
+    *,
+    load_case: str | None = None,
+    vertical_shear_column: str = "Shear-z",
+    vertical_bending_column: str = "Moment-y",
+    torsion_column: str = "Torsion",
+) -> MemberForceTableMapping:
+    """Verified MIDAS beam-force mapping for horizontal beta-zero grillage members.
+
+    MIDAS defines the beam ECS x-axis from N1 to N2. For horizontal elements at
+    beta zero, ECS z follows global vertical Z and ECS y is the horizontal bending
+    axis. Therefore Shear-z, Moment-y and Torsion map directly to the package's
+    vertical shear, vertical-plane bending and member torsion semantics.
+    """
+    _validate_midas_beta_zero_horizontal_model(model)
+    row_filter = TableFilter({"Load": load_case}) if load_case is not None else TableFilter()
+    return MemberForceTableMapping(
+        member_column="Elem",
+        end_column="Part",
+        vertical_shear_column=vertical_shear_column,
+        vertical_bending_column=vertical_bending_column,
+        torsion_column=torsion_column,
+        end_aliases={"I": "I", "J": "J", "PartI": "I", "PartJ": "J"},
+        local_axis_mapping_verified=True,
+        row_filter=row_filter,
+    )
+
+
+def midas_civil_horizontal_grillage_profile(
+    model: VerificationModel,
+    *,
+    load_case: str | None = None,
+    delimiter: str = ",",
+    vertical_shear_column: str = "Shear-z",
+    vertical_bending_column: str = "Moment-y",
+    torsion_column: str = "Torsion",
+) -> ExternalTableMappingProfile:
+    """Full MIDAS profile for the exported horizontal beta-zero verification grillage."""
+    return ExternalTableMappingProfile(
+        name="MIDAS Civil horizontal beta-zero grillage results",
+        reaction=midas_civil_global_reaction_mapping(load_case=load_case),
+        displacement=midas_civil_global_displacement_mapping(load_case=load_case),
+        member_force=midas_civil_horizontal_member_force_mapping(
+            model,
+            load_case=load_case,
+            vertical_shear_column=vertical_shear_column,
+            vertical_bending_column=vertical_bending_column,
+            torsion_column=torsion_column,
+        ),
         delimiter=delimiter,
     )
