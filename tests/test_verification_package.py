@@ -1,7 +1,9 @@
 import csv
 import hashlib
+import io
 import json
-from io import StringIO
+
+import pytest
 
 from rc_bridge.core.models import BridgeGeometry, ProjectInput, SupportSystem
 from rc_bridge.export.verification_package import build_verification_export_package
@@ -60,7 +62,7 @@ def test_verification_package_contains_models_manifest_and_expected_results() ->
         package.expected_results_csv.encode("utf-8")
     ).hexdigest()
 
-    rows = list(csv.DictReader(StringIO(package.expected_results_csv)))
+    rows = list(csv.DictReader(io.StringIO(package.expected_results_csv)))
     result_types = {row["result_type"] for row in rows}
     assert {
         "support_reaction",
@@ -83,10 +85,49 @@ def test_verification_package_expected_results_match_internal_reactions() -> Non
     )
     package = build_verification_export_package(model, analysis)
 
-    rows = list(csv.DictReader(StringIO(package.expected_results_csv)))
+    rows = list(csv.DictReader(io.StringIO(package.expected_results_csv)))
     reaction_rows = [row for row in rows if row["result_type"] == "support_reaction"]
     assert len(reaction_rows) == len(analysis.solution.nodes)
     for row, node in zip(reaction_rows, analysis.solution.nodes, strict=True):
         assert int(row["object_id"]) == node.node_index + 1
         assert float(row["value"]) == node.vertical_reaction_kn
         assert row["unit"] == "kN"
+
+
+def test_verification_package_exposes_four_named_user_files() -> None:
+    project, load_case = _project_and_case()
+    analysis = run_project_continuous_load_case(project, load_case)
+    model = build_project_continuous_verification_model(
+        project,
+        load_case,
+        analysis_area_m2_by_span=(0.45, 0.45),
+    )
+    package = build_verification_export_package(model, analysis)
+
+    files = package.files("two span check")
+    assert set(files) == {
+        "two_span_check.mct",
+        "two_span_check.std",
+        "two_span_check_manifest.json",
+        "two_span_check_expected_results.csv",
+    }
+    assert files["two_span_check.mct"] == package.midas_mct
+    assert files["two_span_check.std"] == package.staad_std
+
+
+def test_verification_package_rejects_mismatched_expected_analysis() -> None:
+    project, load_case = _project_and_case()
+    model = build_project_continuous_verification_model(
+        project,
+        load_case,
+        analysis_area_m2_by_span=(0.45, 0.45),
+    )
+    different_case = ProjectContinuousLoadCase(
+        ei_kn_m2_by_span=(1.0e6, 1.2e6),
+        udl_kn_m_by_span=(20.0, 25.0),
+        name="different load case",
+    )
+    analysis = run_project_continuous_load_case(project, different_case)
+
+    with pytest.raises(ValueError, match="same load-case name"):
+        build_verification_export_package(model, analysis)
