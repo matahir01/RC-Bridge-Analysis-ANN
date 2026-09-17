@@ -1,4 +1,5 @@
 import pytest
+
 from rc_bridge.research.generator import SolverOutputs, generate_training_records
 
 
