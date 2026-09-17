@@ -11,6 +11,10 @@ from rc_bridge.analysis.continuous_beam import (
     member_span_envelope,
     solve_continuous_beam,
 )
+from rc_bridge.analysis.continuous_deflection import (
+    BeamSpanDeflectionEnvelope,
+    member_span_deflection_envelope,
+)
 from rc_bridge.analysis.continuous_moving_loads import (
     ContinuousMovingLoadEnvelopeResult,
     moving_train_continuous_envelope,
@@ -83,6 +87,11 @@ class ProjectContinuousAnalysisResult:
     load_case_name: str
     solution: ContinuousBeamResult
     span_envelopes: tuple[BeamSpanEnvelope, ...]
+    span_deflection_envelopes: tuple[BeamSpanDeflectionEnvelope, ...]
+    max_abs_vertical_displacement_m: float
+    max_abs_vertical_displacement_span_index: int
+    max_abs_vertical_displacement_local_position_m: float
+    max_abs_vertical_displacement_global_position_m: float
     total_applied_vertical_load_kn: float
     total_vertical_reaction_kn: float
     status: str
@@ -143,7 +152,8 @@ def run_project_continuous_load_case(
     ``EI`` stays explicit per span. This avoids silently treating an uncracked
     precast profile, a composite positive-moment section and a cracked support
     section as the same stiffness. Global traffic/point loads are mapped to span
-    local coordinates before assembly.
+    local coordinates before assembly. Section deflections are recovered by
+    integrating the solved member moment field with the supplied span EI values.
     """
     span_lengths = _project_continuous_span_lengths(project)
     if len(load_case.ei_kn_m2_by_span) != len(span_lengths):
@@ -170,6 +180,25 @@ def run_project_continuous_load_case(
         )
         for index, span in enumerate(spans)
     )
+    deflection_envelopes = tuple(
+        member_span_deflection_envelope(
+            span,
+            solution.members[index],
+            solution.nodes[index],
+            stations=load_case.envelope_stations,
+        )
+        for index, span in enumerate(spans)
+    )
+    deflection_span_index = max(
+        range(len(deflection_envelopes)),
+        key=lambda index: deflection_envelopes[index].max_abs_displacement_m,
+    )
+    deflection_local_position = deflection_envelopes[
+        deflection_span_index
+    ].max_abs_position_m
+    deflection_global_position = (
+        sum(span_lengths[:deflection_span_index]) + deflection_local_position
+    )
 
     total_applied = sum(
         span.udl_kn_m * span.length_m
@@ -181,11 +210,19 @@ def run_project_continuous_load_case(
         load_case_name=load_case.name,
         solution=solution,
         span_envelopes=envelopes,
+        span_deflection_envelopes=deflection_envelopes,
+        max_abs_vertical_displacement_m=(
+            deflection_envelopes[deflection_span_index].max_abs_displacement_m
+        ),
+        max_abs_vertical_displacement_span_index=deflection_span_index,
+        max_abs_vertical_displacement_local_position_m=deflection_local_position,
+        max_abs_vertical_displacement_global_position_m=deflection_global_position,
         total_applied_vertical_load_kn=total_applied,
         total_vertical_reaction_kn=total_reaction,
         status=(
-            "Continuous longitudinal beam load case solved with explicit span EI; "
-            "transverse distribution and code-specific load generation remain separate"
+            "Continuous longitudinal beam load case solved with explicit span EI, including "
+            "moment/shear and recovered vertical-deflection envelopes; transverse distribution "
+            "and code-specific load generation remain separate"
         ),
     )
 
