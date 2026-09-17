@@ -15,6 +15,21 @@ def test_reference_geometry_separates_deck_and_carriageway_widths() -> None:
     assert layout.remaining_width_m == pytest.approx(1.0)
 
 
+def test_reference_girder_layout_matches_11m_deck() -> None:
+    geometry = BridgeGeometry()
+    assert geometry.girder_line_width_m == pytest.approx(10.2)
+    assert geometry.nominal_edge_overhang_m == pytest.approx(0.4)
+
+
+def test_girder_layout_cannot_extend_beyond_deck_width() -> None:
+    with pytest.raises(ValueError, match="outside the deck width"):
+        BridgeGeometry(
+            deck_width_m=10.0,
+            girder_count=7,
+            girder_spacing_m=1.70,
+        )
+
+
 def test_false_slab_is_physical_depth_but_not_composite_by_default() -> None:
     geometry = BridgeGeometry()
     assert geometry.physical_deck_depth_m == pytest.approx(0.25)
