@@ -1,7 +1,10 @@
 import math
-
 from rc_bridge.analysis.loads import PointLoad, deck_self_weight_per_girder_kn_m
-from rc_bridge.analysis.point_loads import moment_envelope, section_response, simply_supported_reactions
+from rc_bridge.analysis.point_loads import (
+    moment_envelope,
+    section_response,
+    simply_supported_reactions,
+)
 from rc_bridge.core.sections import RectangularSection, TSection
 
 
