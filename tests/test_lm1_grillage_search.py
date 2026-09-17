@@ -1,6 +1,6 @@
 import pytest
 
-from rc_bridge.core.models import BridgeGeometry, ProjectInput
+from rc_bridge.core.models import BridgeGeometry, ProjectInput, SupportSystem
 from rc_bridge.workflow.grillage_verification_export import GrillageSectionProperties
 from rc_bridge.workflow.lm1_grillage_search import (
     build_governing_lm1_search_verification_packages,
@@ -18,6 +18,20 @@ def _project() -> ProjectInput:
             carriageway_width_m=7.0,
             girder_count=8,
             girder_spacing_m=1.40,
+        ),
+    )
+
+
+def _continuous_project() -> ProjectInput:
+    return ProjectInput(
+        name="Continuous automated LM1 search",
+        geometry=BridgeGeometry(
+            span_lengths_m=[10.0, 10.0],
+            deck_width_m=11.0,
+            carriageway_width_m=7.0,
+            girder_count=8,
+            girder_spacing_m=1.40,
+            support_system=SupportSystem.CONTINUOUS,
         ),
     )
 
@@ -68,6 +82,34 @@ def test_search_generator_moves_remainder_to_both_edges_and_permutes_lane_number
     assert any(signature[0][0][0] == 2 for signature in transverse_signatures)
 
 
+def test_search_generator_positions_lane_tandems_independently() -> None:
+    placements = generate_lm1_search_placements(_project(), longitudinal_step_m=15.0)
+
+    assert any(
+        len({position for _, position in placement.tandem_lead_positions_m}) > 1
+        for placement in placements
+    )
+    assert any(placement.tandem_lead_x_m is None for placement in placements)
+    assert any(placement.tandem_lead_x_m is not None for placement in placements)
+
+
+def test_continuous_search_generates_spanwise_udl_patterns() -> None:
+    placements = generate_lm1_search_placements(
+        _continuous_project(),
+        longitudinal_step_m=20.0,
+    )
+    signatures = {
+        tuple((region.x_start_m, region.x_end_m) for region in placement.common_udl_regions)
+        for placement in placements
+    }
+
+    assert signatures == {
+        ((0.0, 10.0),),
+        ((10.0, 20.0),),
+        ((0.0, 10.0), (10.0, 20.0)),
+    }
+
+
 def test_search_envelopes_moment_shear_and_torsion_independently_for_every_girder() -> None:
     result = run_project_native_lm1_grillage_search(
         _project(),
@@ -80,6 +122,9 @@ def test_search_envelopes_moment_shear_and_torsion_independently_for_every_girde
     assert result.evaluated_case_count > 4
     assert len(result.girders) == 8
     assert [girder.girder_index for girder in result.girders] == list(range(1, 9))
+    assert result.tandem_combinations_exhaustive
+    assert result.udl_pattern_count == 1
+    assert result.search_strategy == "exhaustive-independent-tandem+full-length-udl"
 
     for girder in result.girders:
         case_effects = [
