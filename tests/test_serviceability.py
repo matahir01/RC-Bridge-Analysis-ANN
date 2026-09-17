@@ -1,4 +1,5 @@
 import pytest
+
 from rc_bridge.design.eurocode_serviceability import (
     ec2_tension_stiffening_zeta,
     interpolate_service_deformation,
