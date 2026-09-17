@@ -94,7 +94,7 @@ def _station_grid(
     supplied = tuple(float(value) for value in transverse_stations_m)
     if any(value < -1e-9 or value > total_length + 1e-9 for value in supplied):
         raise ValueError("A grillage transverse station lies outside the bridge length.")
-    return tuple(sorted(set((*support_stations, *supplied))))
+    return tuple(sorted({*support_stations, *supplied}))
 
 
 def _girder_y_coordinates(project: ProjectInput) -> tuple[float, ...]:
