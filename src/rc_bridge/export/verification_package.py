@@ -37,6 +37,11 @@ def _sha256(text: str) -> str:
     return hashlib.sha256(text.encode("utf-8")).hexdigest()
 
 
+def _format_float(value: float) -> str:
+    """Serialize a Python float with enough significant digits for exact round-trip recovery."""
+    return format(float(value), ".17g")
+
+
 def _expected_results_csv(analysis: ProjectContinuousAnalysisResult) -> str:
     stream = StringIO()
     writer = csv.writer(stream, lineterminator="\n")
@@ -60,7 +65,7 @@ def _expected_results_csv(analysis: ProjectContinuousAnalysisResult) -> str:
                 "",
                 "",
                 "FZ",
-                f"{node.vertical_reaction_kn:.12g}",
+                _format_float(node.vertical_reaction_kn),
                 "kN",
             ]
         )
@@ -71,7 +76,7 @@ def _expected_results_csv(analysis: ProjectContinuousAnalysisResult) -> str:
                 "",
                 "",
                 "RY",
-                f"{node.rotation_rad:.12g}",
+                _format_float(node.rotation_rad),
                 "rad",
             ]
         )
@@ -92,7 +97,7 @@ def _expected_results_csv(analysis: ProjectContinuousAnalysisResult) -> str:
                     member.span_index,
                     position,
                     component,
-                    f"{value:.12g}",
+                    _format_float(value),
                     unit,
                 ]
             )
@@ -104,9 +109,9 @@ def _expected_results_csv(analysis: ProjectContinuousAnalysisResult) -> str:
                 "span_envelope",
                 member_id,
                 envelope.span_index,
-                f"{envelope.max_sagging_position_m:.12g}",
+                _format_float(envelope.max_sagging_position_m),
                 "M_max_sagging",
-                f"{envelope.max_sagging_moment_knm:.12g}",
+                _format_float(envelope.max_sagging_moment_knm),
                 "kNm",
             ]
         )
@@ -115,9 +120,9 @@ def _expected_results_csv(analysis: ProjectContinuousAnalysisResult) -> str:
                 "span_envelope",
                 member_id,
                 envelope.span_index,
-                f"{envelope.min_hogging_position_m:.12g}",
+                _format_float(envelope.min_hogging_position_m),
                 "M_min_hogging",
-                f"{envelope.min_hogging_moment_knm:.12g}",
+                _format_float(envelope.min_hogging_moment_knm),
                 "kNm",
             ]
         )
@@ -126,9 +131,9 @@ def _expected_results_csv(analysis: ProjectContinuousAnalysisResult) -> str:
                 "span_envelope",
                 member_id,
                 envelope.span_index,
-                f"{envelope.max_abs_shear_position_m:.12g}",
+                _format_float(envelope.max_abs_shear_position_m),
                 "V_max_abs",
-                f"{envelope.max_abs_shear_kn:.12g}",
+                _format_float(envelope.max_abs_shear_kn),
                 "kN",
             ]
         )
@@ -140,9 +145,9 @@ def _expected_results_csv(analysis: ProjectContinuousAnalysisResult) -> str:
                 "span_deflection",
                 member_id,
                 envelope.span_index,
-                f"{envelope.maximum_upward_position_m:.12g}",
+                _format_float(envelope.maximum_upward_position_m),
                 "DZ_max_upward",
-                f"{envelope.maximum_upward_displacement_m:.12g}",
+                _format_float(envelope.maximum_upward_displacement_m),
                 "m",
             ]
         )
@@ -151,9 +156,9 @@ def _expected_results_csv(analysis: ProjectContinuousAnalysisResult) -> str:
                 "span_deflection",
                 member_id,
                 envelope.span_index,
-                f"{envelope.minimum_downward_position_m:.12g}",
+                _format_float(envelope.minimum_downward_position_m),
                 "DZ_min_downward",
-                f"{envelope.minimum_downward_displacement_m:.12g}",
+                _format_float(envelope.minimum_downward_displacement_m),
                 "m",
             ]
         )
@@ -162,9 +167,9 @@ def _expected_results_csv(analysis: ProjectContinuousAnalysisResult) -> str:
                 "span_deflection",
                 member_id,
                 envelope.span_index,
-                f"{envelope.max_abs_position_m:.12g}",
+                _format_float(envelope.max_abs_position_m),
                 "DZ_max_abs",
-                f"{envelope.max_abs_displacement_m:.12g}",
+                _format_float(envelope.max_abs_displacement_m),
                 "m",
             ]
         )
