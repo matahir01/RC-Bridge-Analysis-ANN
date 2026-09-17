@@ -2,6 +2,9 @@ import csv
 import io
 
 from rc_bridge.core.models import BridgeGeometry, ProjectInput
+from rc_bridge.research.lm1_external_adapters import (
+    compare_lm1_midas_member_force_table_case,
+)
 from rc_bridge.research.lm1_grillage_benchmark import (
     build_lm1_governing_benchmark_suite,
     compare_lm1_external_grillage_case,
@@ -66,6 +69,36 @@ def _scale_moments(text: str, factor: float) -> str:
     return stream.getvalue()
 
 
+def _midas_member_force_table(case) -> str:
+    reader = csv.DictReader(io.StringIO(case.native_expected_results_csv))
+    values: dict[tuple[str, str], dict[str, str]] = {}
+    for row in reader:
+        if row["result_type"] != "member_end_force":
+            continue
+        key = (row["object_id"], row["position_m"])
+        values.setdefault(key, {})[row["component"]] = row["value"]
+
+    stream = io.StringIO()
+    writer = csv.writer(stream, lineterminator="\n")
+    writer.writerow(["Elem", "Part", "Load", "Shear-z", "Moment-y", "Torsion"])
+    load_case = case.case.model.load_cases[0].name
+    for (member_id, end), components in sorted(
+        values.items(),
+        key=lambda item: (int(item[0][0]), item[0][1]),
+    ):
+        writer.writerow(
+            [
+                member_id,
+                end,
+                load_case,
+                components["V_VERTICAL"],
+                components["M_VERTICAL"],
+                components["T"],
+            ]
+        )
+    return stream.getvalue()
+
+
 def test_governing_search_builds_one_external_package_per_unique_governing_case() -> None:
     search = _search()
     suite = build_lm1_governing_benchmark_suite(search)
@@ -115,3 +148,16 @@ def test_external_benchmark_report_passes_exact_round_trip_and_detects_moment_er
     )
     assert not changed.passes
     assert any(item.endswith(" M") for item in changed.failed_components)
+
+
+def test_midas_member_force_adapter_round_trips_native_member_results() -> None:
+    suite = build_lm1_governing_benchmark_suite(_search())
+    case = suite.cases[0]
+
+    report = compare_lm1_midas_member_force_table_case(
+        case,
+        member_force_table=_midas_member_force_table(case),
+        source_name="MIDAS-format native round trip",
+    )
+
+    assert report.passes
