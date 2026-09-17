@@ -42,6 +42,8 @@ class ImportedGirderEffect:
             raise ValueError("Imported envelope moment must be non-negative.")
         if self.effects.shear_kn < 0.0:
             raise ValueError("Imported envelope shear must be non-negative.")
+        if self.effects.torsion_knm < 0.0:
+            raise ValueError("Imported envelope torsion must be non-negative.")
 
 
 @dataclass(frozen=True)
