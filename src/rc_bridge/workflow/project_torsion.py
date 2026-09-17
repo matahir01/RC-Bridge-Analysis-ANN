@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from rc_bridge.core.models import DesignCode, ProjectInput
 from rc_bridge.design.eurocode_shear import (
     ShearReinforcementResult,
     required_vertical_shear_reinforcement,
@@ -12,7 +13,6 @@ from rc_bridge.design.eurocode_torsion import (
     shear_torsion_interaction,
     torsion_reinforcement_and_resistance,
 )
-from rc_bridge.core.models import DesignCode, ProjectInput
 from rc_bridge.workflow.eurocode_girder import TGirderDesignInput
 from rc_bridge.workflow.project_bridge import ProjectGirderCombinationSet
 
