@@ -14,6 +14,13 @@ from rc_bridge.analysis.lane_distribution import (
     RemainingAreaGirderDistribution,
     aggregate_lm1_continuous_section_effects,
 )
+from rc_bridge.codes.eurocode.combinations import (
+    EurocodeFactors,
+    ServiceabilityPsiFactors,
+    SignedSectionCombinationSet,
+    SignedSectionEnvelope,
+    signed_section_combinations,
+)
 from rc_bridge.codes.eurocode.en1991_2 import (
     LM1AdjustmentFactors,
     NotionalLaneLayout,
@@ -66,6 +73,12 @@ class ProjectContinuousLM1SectionResult:
     girder_effects: tuple[AggregatedGirderSectionEffect, ...]
     traffic_distribution_method: str
     status: str
+
+    def effect_for_girder(self, girder_index: int) -> AggregatedGirderSectionEffect:
+        for effect in self.girder_effects:
+            if effect.girder_index == girder_index:
+                return effect
+        raise IndexError(f"Girder {girder_index} is not present in the LM1 section result.")
 
 
 def run_project_continuous_lm1_section(
@@ -167,4 +180,33 @@ def run_project_continuous_lm1_section(
             "Continuous EN 1991-2 LM1 characteristic section effects generated from one "
             "longitudinal influence line and mapped using supplied transverse distributions"
         ),
+    )
+
+
+def continuous_lm1_girder_combinations(
+    result: ProjectContinuousLM1SectionResult,
+    *,
+    girder_index: int,
+    permanent_characteristic_effect: float,
+    sls_factors: ServiceabilityPsiFactors,
+    uls_factors: EurocodeFactors | None = None,
+) -> SignedSectionCombinationSet:
+    """Build signed ULS/SLS branches for one girder at the analysed section.
+
+    ``permanent_characteristic_effect`` must be the signed longitudinal effect at
+    the same section and for the same response kind as ``result``. Keeping it
+    explicit prevents this traffic workflow from inventing a composite/cracked EI
+    or silently mixing effects from different longitudinal locations.
+    """
+    traffic = result.effect_for_girder(girder_index)
+    envelope = SignedSectionEnvelope(
+        maximum_positive_effect=traffic.maximum_positive_effect,
+        minimum_negative_effect=traffic.minimum_negative_effect,
+        response_kind=traffic.response_kind,
+    )
+    return signed_section_combinations(
+        permanent_characteristic_effect=permanent_characteristic_effect,
+        traffic_characteristic=envelope,
+        sls_factors=sls_factors,
+        uls_factors=uls_factors,
     )
