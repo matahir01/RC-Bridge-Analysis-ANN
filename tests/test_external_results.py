@@ -6,7 +6,6 @@ from rc_bridge.export.external_results import (
     parse_verification_results_csv,
 )
 
-
 _EXPECTED = """result_type,object_id,span_index,position_m,component,value,unit
 support_reaction,1,,,FZ,100,kN
 member_end_force,1,0,0,M_i,-250,kNm
