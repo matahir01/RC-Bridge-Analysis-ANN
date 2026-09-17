@@ -1,0 +1,127 @@
+import pytest
+
+from rc_bridge.design.eurocode_cracking import (
+    crack_width_ec2_t_section,
+    cracked_t_section_sls,
+)
+from rc_bridge.design.eurocode_deflection import (
+    ec2_interpolated_udl_deflection,
+    effective_concrete_modulus_mpa,
+    simply_supported_full_span_udl_deflection_mm,
+)
+from rc_bridge.design.eurocode_serviceability import uncracked_t_section_sls
+
+
+def test_cracked_t_section_properties_and_steel_stress_are_positive() -> None:
+    result = cracked_t_section_sls(
+        effective_flange_width_m=1.70,
+        flange_thickness_m=0.25,
+        web_width_m=0.30,
+        total_depth_m=1.20,
+        steel_area_mm2=6000.0,
+        steel_depth_m=1.10,
+        modular_ratio=6.0,
+        service_moment_knm=1200.0,
+    )
+    assert 0.0 < result.neutral_axis_from_top_mm < 1100.0
+    assert result.second_moment_mm4 > 0.0
+    assert result.steel_stress_mpa > 0.0
+
+
+def test_uncracked_member_returns_zero_crack_width() -> None:
+    result = crack_width_ec2_t_section(
+        effective_flange_width_m=1.70,
+        flange_thickness_m=0.25,
+        web_width_m=0.30,
+        total_depth_m=1.20,
+        steel_area_mm2=6000.0,
+        steel_depth_m=1.10,
+        bar_diameter_mm=32.0,
+        bar_spacing_mm=150.0,
+        cover_mm=50.0,
+        service_moment_knm=100.0,
+        cracking_moment_knm=300.0,
+        es_mpa=200000.0,
+        ecm_mpa=34000.0,
+        fct_eff_mpa=3.2,
+        crack_limit_mm=0.30,
+    )
+    assert result.crack_width_mm == pytest.approx(0.0)
+    assert result.g_crack_mm == pytest.approx(0.30)
+
+
+def test_cracked_member_returns_continuous_crack_limit_state() -> None:
+    result = crack_width_ec2_t_section(
+        effective_flange_width_m=1.70,
+        flange_thickness_m=0.25,
+        web_width_m=0.30,
+        total_depth_m=1.20,
+        steel_area_mm2=6000.0,
+        steel_depth_m=1.10,
+        bar_diameter_mm=32.0,
+        bar_spacing_mm=150.0,
+        cover_mm=50.0,
+        service_moment_knm=1200.0,
+        cracking_moment_knm=300.0,
+        es_mpa=200000.0,
+        ecm_mpa=34000.0,
+        fct_eff_mpa=3.2,
+        crack_limit_mm=0.30,
+    )
+    assert result.crack_width_mm > 0.0
+    assert result.max_crack_spacing_mm > 0.0
+    assert result.g_crack_mm == pytest.approx(0.30 - result.crack_width_mm)
+    assert result.utilization == pytest.approx(result.crack_width_mm / 0.30)
+
+
+def test_effective_modulus_reduces_with_creep() -> None:
+    assert effective_concrete_modulus_mpa(34000.0, 1.0) == pytest.approx(17000.0)
+
+
+def test_elastic_udl_deflection_matches_closed_form() -> None:
+    value = simply_supported_full_span_udl_deflection_mm(
+        udl_kn_m=20.0,
+        span_m=10.0,
+        elastic_modulus_mpa=30000.0,
+        second_moment_mm4=8.0e9,
+    )
+    expected = 5.0 * 20.0 * 10000.0**4 / (384.0 * 30000.0 * 8.0e9)
+    assert value == pytest.approx(expected)
+
+
+def test_ec2_deflection_result_carries_limit_state() -> None:
+    uncracked = uncracked_t_section_sls(
+        effective_flange_width_m=1.70,
+        flange_thickness_m=0.25,
+        web_width_m=0.30,
+        total_depth_m=1.20,
+        steel_area_mm2=6000.0,
+        steel_depth_m=1.10,
+        modular_ratio=6.0,
+        fct_eff_mpa=3.2,
+    )
+    cracked = cracked_t_section_sls(
+        effective_flange_width_m=1.70,
+        flange_thickness_m=0.25,
+        web_width_m=0.30,
+        total_depth_m=1.20,
+        steel_area_mm2=6000.0,
+        steel_depth_m=1.10,
+        modular_ratio=6.0,
+        service_moment_knm=700.0,
+    )
+    result = ec2_interpolated_udl_deflection(
+        udl_kn_m=25.0,
+        span_m=15.0,
+        ecm_mpa=34000.0,
+        uncracked_second_moment_mm4=uncracked.second_moment_mm4,
+        cracked_second_moment_mm4=cracked.second_moment_mm4,
+        cracking_moment_knm=uncracked.cracking_moment_knm,
+        allowable_deflection_mm=30.0,
+        beta=0.5,
+    )
+    assert result.interpolated_deflection_mm >= result.uncracked_deflection_mm
+    assert result.interpolated_deflection_mm <= result.fully_cracked_deflection_mm
+    assert result.g_deflection_mm == pytest.approx(
+        30.0 - result.interpolated_deflection_mm
+    )
