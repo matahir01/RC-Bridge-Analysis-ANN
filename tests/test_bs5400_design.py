@@ -73,7 +73,7 @@ def test_bs5400_t_section_rejects_neutral_axis_beyond_singly_reinforced_scope() 
         )
 
 
-def test_bs5400_shear_matches_reference_example_screening() -> None:
+def test_bs5400_shear_matches_reference_example_and_returns_minimum_links() -> None:
     result = check_shear_bs5400(
         ved_kn=443.0,
         web_width_m=1.0,
@@ -86,13 +86,19 @@ def test_bs5400_shear_matches_reference_example_screening() -> None:
     assert result.design_shear_stress_mpa == pytest.approx(0.537621359223)
     assert result.concrete_shear_stress_mpa == pytest.approx(0.640138008264)
     assert result.depth_factor == pytest.approx(0.882593446079)
+    assert result.concrete_design_shear_stress_mpa == pytest.approx(0.564981610680)
     assert result.concrete_resistance_kn == pytest.approx(465.544847200)
+    assert result.specified_fyv_mpa == pytest.approx(500.0)
+    assert result.effective_fyv_mpa == pytest.approx(460.0)
+    assert result.minimum_asv_per_s_mm2_per_m == pytest.approx(999.500249875)
+    assert result.design_asv_per_s_mm2_per_m == pytest.approx(0.0)
+    assert result.governing_asv_per_s_mm2_per_m == pytest.approx(999.500249875)
     assert not result.requires_shear_reinforcement
     assert not result.exceeds_maximum_shear
     assert result.g_shear_concrete_kn > 0.0
 
 
-def test_bs5400_shear_flags_when_concrete_resistance_is_exceeded() -> None:
+def test_bs5400_shear_sizes_links_above_concrete_resistance() -> None:
     result = check_shear_bs5400(
         ved_kn=600.0,
         web_width_m=1.0,
@@ -102,7 +108,11 @@ def test_bs5400_shear_flags_when_concrete_resistance_is_exceeded() -> None:
         fyv_mpa=500.0,
     )
     assert result.requires_shear_reinforcement
-    assert result.minimum_asv_per_s_mm2_per_m > 0.0
+    assert result.design_asv_per_s_mm2_per_m == pytest.approx(1407.230707461)
+    assert result.design_asv_per_s_mm2_per_m > result.minimum_asv_per_s_mm2_per_m
+    assert result.governing_asv_per_s_mm2_per_m == pytest.approx(
+        result.design_asv_per_s_mm2_per_m
+    )
 
 
 def test_bs5400_shear_flags_absolute_web_crushing_limit() -> None:
