@@ -72,6 +72,10 @@ class BridgeGeometry(BaseModel):
     def validate_bridge_widths_and_deck_build_up(self) -> BridgeGeometry:
         if self.carriageway_width_m > self.deck_width_m:
             raise ValueError("Carriageway width cannot exceed total deck width.")
+        if self.girder_line_width_m > float(self.deck_width_m) + 1e-9:
+            raise ValueError(
+                "Girder count and spacing place the exterior girder lines outside the deck width."
+            )
         if abs(float(self.deck_structural_depth_m) - self.deck_construction.physical_depth_m) > 1e-9:
             raise ValueError(
                 "deck_structural_depth_m must equal the physical deck build-up; "
@@ -86,6 +90,15 @@ class BridgeGeometry(BaseModel):
     @property
     def composite_flange_depth_m(self) -> float:
         return self.deck_construction.composite_flange_depth_m
+
+    @property
+    def girder_line_width_m(self) -> float:
+        return (int(self.girder_count) - 1) * float(self.girder_spacing_m)
+
+    @property
+    def nominal_edge_overhang_m(self) -> float:
+        """Symmetric edge overhang implied by deck width, count, and spacing."""
+        return (float(self.deck_width_m) - self.girder_line_width_m) / 2.0
 
 
 class ProjectInput(BaseModel):
