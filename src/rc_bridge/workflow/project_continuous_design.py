@@ -2,6 +2,12 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from rc_bridge.core.models import (
+    IGirderProfile,
+    ProjectInput,
+    RectangularGirderProfile,
+    TGirderProfile,
+)
 from rc_bridge.design.eurocode_demand import (
     FlexuralDemandResult,
     ShearDemandResult,
@@ -66,6 +72,54 @@ class ContinuousEurocodeULSDesignResult:
     negative_design_moment_knm: float
     design_shear_kn: float
     status: str
+
+
+def negative_support_design_input_from_project(
+    project: ProjectInput,
+    *,
+    effective_depth_from_bottom_m: float,
+    provided_top_steel_area_mm2: float,
+) -> NegativeSupportDesignInput:
+    """Build the hogging compression model from the physical precast profile.
+
+    The deck slab is deliberately ignored on the compression side for hogging.
+    Rectangular precast girders use their full width; T-girders use the lower stem
+    width because they have no lower flange; I-girders use their actual bottom
+    flange plus web. The top-steel effective depth must still be supplied because
+    it depends on the actual deck reinforcement location and cover.
+    """
+    if effective_depth_from_bottom_m <= 0.0:
+        raise ValueError("Hogging effective depth from the bottom must be positive.")
+    if provided_top_steel_area_mm2 <= 0.0:
+        raise ValueError("Provided top steel area must be positive.")
+
+    profile = project.geometry.girder_profile
+    if profile is None:
+        raise ValueError(
+            "Physical girder profile dimensions are required to derive the hogging compression model."
+        )
+
+    if isinstance(profile, IGirderProfile):
+        return NegativeSupportFlangedDesignInput(
+            bottom_flange_width_m=float(profile.bottom_flange_width_m),
+            bottom_flange_thickness_m=float(profile.bottom_flange_thickness_m),
+            web_width_m=float(profile.web_width_m),
+            effective_depth_from_bottom_m=effective_depth_from_bottom_m,
+            provided_top_steel_area_mm2=provided_top_steel_area_mm2,
+        )
+    if isinstance(profile, TGirderProfile):
+        return NegativeSupportRectangularDesignInput(
+            compression_width_m=float(profile.web_width_m),
+            effective_depth_from_bottom_m=effective_depth_from_bottom_m,
+            provided_top_steel_area_mm2=provided_top_steel_area_mm2,
+        )
+    if isinstance(profile, RectangularGirderProfile):
+        return NegativeSupportRectangularDesignInput(
+            compression_width_m=float(profile.width_m),
+            effective_depth_from_bottom_m=effective_depth_from_bottom_m,
+            provided_top_steel_area_mm2=provided_top_steel_area_mm2,
+        )
+    raise TypeError("Unsupported physical girder profile type.")
 
 
 def run_continuous_eurocode_uls_design(
