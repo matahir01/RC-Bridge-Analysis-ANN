@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from rc_bridge.research.lm1_grillage_benchmark import (
     GrillageEnvelopeTolerance,
@@ -18,6 +18,7 @@ class LM1ExternalBenchmarkSuiteReport:
     case_reports: tuple[LM1ExternalGrillageBenchmarkReport, ...]
     missing_case_ids: tuple[int, ...]
     unexpected_case_ids: tuple[int, ...]
+    tolerance: GrillageEnvelopeTolerance = field(default_factory=GrillageEnvelopeTolerance)
 
     @property
     def passes(self) -> bool:
@@ -50,6 +51,7 @@ def compare_lm1_external_grillage_suite(
     if not source_name.strip():
         raise ValueError("External benchmark source_name cannot be empty.")
 
+    policy = tolerance or GrillageEnvelopeTolerance()
     cases_by_id = {case.case_id: case for case in suite.cases}
     expected_ids = set(cases_by_id)
     supplied_ids = set(external_results_by_case_id)
@@ -61,7 +63,7 @@ def compare_lm1_external_grillage_suite(
             cases_by_id[case_id],
             external_results_csv=external_results_by_case_id[case_id],
             source_name=source_name,
-            tolerance=tolerance,
+            tolerance=policy,
         )
         for case_id in sorted(expected_ids & supplied_ids)
     )
@@ -70,4 +72,5 @@ def compare_lm1_external_grillage_suite(
         case_reports=reports,
         missing_case_ids=missing,
         unexpected_case_ids=unexpected,
+        tolerance=policy,
     )
