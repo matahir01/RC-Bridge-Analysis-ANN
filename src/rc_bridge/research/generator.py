@@ -5,6 +5,7 @@ from dataclasses import dataclass
 
 from .dataset import TrainingRecord
 from .sampling import VariableRange, latin_hypercube_samples
+from .verification import DeterministicSolverVerification
 
 
 @dataclass(frozen=True)
@@ -37,19 +38,26 @@ def generate_training_records(
     samples: Iterable[dict[str, float]],
     solver: SolverFunction,
     *,
-    solver_verified: bool = False,
+    verification: DeterministicSolverVerification | None = None,
+    solver_verified: bool | None = None,
 ) -> list[TrainingRecord]:
     """Evaluate deterministic samples and create ANN-ready records.
 
-    ``solver_verified`` is deliberately mandatory for production data. This
-    prevents a partially implemented or unverified calculation path from being
-    silently used as ANN ground truth.
+    Production export requires named deterministic verification milestones. The
+    former ``solver_verified=True`` Boolean is retained only to produce a clear
+    migration error; it can no longer unlock training data by itself.
     """
-    if not solver_verified:
+    if solver_verified is not None:
         raise RuntimeError(
-            "Training data generation is locked until the deterministic solver "
-            "path is marked verified."
+            "The legacy solver_verified Boolean no longer unlocks ANN data. "
+            "Supply a DeterministicSolverVerification with all required milestones."
         )
+    if verification is None:
+        raise RuntimeError(
+            "Training data generation is locked until structured deterministic "
+            "solver verification is supplied."
+        )
+    verification.require_ann_ready()
 
     records: list[TrainingRecord] = []
     for sample in samples:
