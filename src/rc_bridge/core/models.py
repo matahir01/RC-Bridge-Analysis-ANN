@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from enum import Enum
+from typing import Literal
 
 from pydantic import BaseModel, Field, PositiveFloat, PositiveInt, model_validator
 
@@ -19,6 +20,91 @@ class SectionType(str, Enum):
 class SupportSystem(str, Enum):
     SIMPLY_SUPPORTED = "simply_supported"
     CONTINUOUS = "continuous"
+
+
+class RectangularGirderProfile(BaseModel):
+    shape: Literal["rectangular"] = "rectangular"
+    width_m: PositiveFloat
+    depth_m: PositiveFloat
+
+    @property
+    def area_m2(self) -> float:
+        return float(self.width_m * self.depth_m)
+
+    @property
+    def total_depth_m(self) -> float:
+        return float(self.depth_m)
+
+    @property
+    def section_type(self) -> SectionType:
+        return SectionType.RECTANGULAR
+
+
+class TGirderProfile(BaseModel):
+    shape: Literal["t"] = "t"
+    flange_width_m: PositiveFloat
+    flange_thickness_m: PositiveFloat
+    web_width_m: PositiveFloat
+    total_depth_m: PositiveFloat
+
+    @model_validator(mode="after")
+    def validate_t_profile(self) -> TGirderProfile:
+        if self.flange_thickness_m >= self.total_depth_m:
+            raise ValueError("T-girder flange thickness must be less than total depth.")
+        if self.web_width_m > self.flange_width_m:
+            raise ValueError("T-girder web width cannot exceed flange width.")
+        return self
+
+    @property
+    def area_m2(self) -> float:
+        web_depth_m = float(self.total_depth_m - self.flange_thickness_m)
+        return float(
+            self.flange_width_m * self.flange_thickness_m
+            + self.web_width_m * web_depth_m
+        )
+
+    @property
+    def section_type(self) -> SectionType:
+        return SectionType.T
+
+
+class IGirderProfile(BaseModel):
+    shape: Literal["i"] = "i"
+    top_flange_width_m: PositiveFloat
+    top_flange_thickness_m: PositiveFloat
+    web_width_m: PositiveFloat
+    web_depth_m: PositiveFloat
+    bottom_flange_width_m: PositiveFloat
+    bottom_flange_thickness_m: PositiveFloat
+
+    @model_validator(mode="after")
+    def validate_i_profile(self) -> IGirderProfile:
+        if self.web_width_m > max(self.top_flange_width_m, self.bottom_flange_width_m):
+            raise ValueError("I-girder web width is inconsistent with flange widths.")
+        return self
+
+    @property
+    def total_depth_m(self) -> float:
+        return float(
+            self.top_flange_thickness_m
+            + self.web_depth_m
+            + self.bottom_flange_thickness_m
+        )
+
+    @property
+    def area_m2(self) -> float:
+        return float(
+            self.top_flange_width_m * self.top_flange_thickness_m
+            + self.web_width_m * self.web_depth_m
+            + self.bottom_flange_width_m * self.bottom_flange_thickness_m
+        )
+
+    @property
+    def section_type(self) -> SectionType:
+        return SectionType.I
+
+
+GirderProfile = RectangularGirderProfile | TGirderProfile | IGirderProfile
 
 
 class MaterialProperties(BaseModel):
@@ -67,6 +153,7 @@ class BridgeGeometry(BaseModel):
     deck_construction: DeckConstruction = Field(default_factory=DeckConstruction)
     support_system: SupportSystem = SupportSystem.SIMPLY_SUPPORTED
     section_type: SectionType = SectionType.T
+    girder_profile: GirderProfile | None = None
 
     @model_validator(mode="after")
     def validate_bridge_widths_and_deck_build_up(self) -> BridgeGeometry:
@@ -81,6 +168,13 @@ class BridgeGeometry(BaseModel):
                 "deck_structural_depth_m must equal the physical deck build-up; "
                 "edit the deck-construction component depths explicitly."
             )
+        if self.girder_profile is not None:
+            if self.girder_profile.section_type != self.section_type:
+                raise ValueError("Physical girder profile shape must match section_type.")
+            if abs(self.girder_profile.total_depth_m - float(self.girder_depth_m)) > 1e-9:
+                raise ValueError(
+                    "Physical girder profile depth must match girder_depth_m."
+                )
         return self
 
     @property
@@ -99,6 +193,12 @@ class BridgeGeometry(BaseModel):
     def nominal_edge_overhang_m(self) -> float:
         """Symmetric edge overhang implied by deck width, count, and spacing."""
         return (float(self.deck_width_m) - self.girder_line_width_m) / 2.0
+
+    @property
+    def girder_profile_area_m2(self) -> float | None:
+        if self.girder_profile is None:
+            return None
+        return self.girder_profile.area_m2
 
 
 class ProjectInput(BaseModel):
