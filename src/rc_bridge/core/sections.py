@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from math import isclose
 
 
 @dataclass(frozen=True)
@@ -116,7 +115,11 @@ class ISection:
         a3 = self.bottom_flange_width_m * self.bottom_flange_thickness_m
         y1 = self.top_flange_thickness_m / 2.0
         y2 = self.top_flange_thickness_m + self.web_depth_m / 2.0
-        y3 = self.top_flange_thickness_m + self.web_depth_m + self.bottom_flange_thickness_m / 2.0
+        y3 = (
+            self.top_flange_thickness_m
+            + self.web_depth_m
+            + self.bottom_flange_thickness_m / 2.0
+        )
         return (a1 * y1 + a2 * y2 + a3 * y3) / (a1 + a2 + a3)
 
     @property
@@ -136,7 +139,9 @@ class ISection:
             (
                 self.bottom_flange_width_m,
                 self.bottom_flange_thickness_m,
-                self.top_flange_thickness_m + self.web_depth_m + self.bottom_flange_thickness_m / 2.0,
+                self.top_flange_thickness_m
+                + self.web_depth_m
+                + self.bottom_flange_thickness_m / 2.0,
             ),
         )
         total = 0.0
