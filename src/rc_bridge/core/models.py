@@ -110,6 +110,7 @@ GirderProfile = RectangularGirderProfile | TGirderProfile | IGirderProfile
 class MaterialProperties(BaseModel):
     fck_mpa: PositiveFloat = 35.0
     fyk_mpa: PositiveFloat = 500.0
+    fcu_mpa: PositiveFloat | None = None
     concrete_density_kn_m3: PositiveFloat = 25.0
     elastic_modulus_mpa: PositiveFloat | None = None
 
