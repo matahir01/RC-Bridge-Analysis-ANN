@@ -10,6 +10,7 @@ from rc_bridge.analysis.continuous_beam import (
     member_section_response,
     solve_continuous_beam,
 )
+from rc_bridge.analysis.moving_loads import AxleTrain, positioned_axles
 
 InfluenceResponseKind = Literal["moment", "shear"]
 
@@ -34,6 +35,16 @@ class AdverseUDLEffect:
     full_length_effect: float
     positive_loaded_length_m: float
     negative_loaded_length_m: float
+    status: str
+
+
+@dataclass(frozen=True)
+class MovingTrainInfluenceEffect:
+    maximum_positive_effect: float
+    maximum_positive_lead_position_m: float
+    minimum_negative_effect: float
+    minimum_negative_lead_position_m: float
+    movement_steps: int
     status: str
 
 
@@ -128,6 +139,81 @@ def section_influence_line(
         unit_load_kn=1.0,
         status=(
             "Numerical unit-load influence line for a linear Euler-Bernoulli continuous beam"
+        ),
+    )
+
+
+def _interpolated_ordinate(
+    influence_line: ContinuousSectionInfluenceLine,
+    global_position_m: float,
+) -> float:
+    positions = influence_line.load_positions_m
+    ordinates = influence_line.ordinates
+    if len(positions) != len(ordinates) or len(positions) < 2:
+        raise ValueError("Influence line requires matching position/ordinate vectors.")
+    if not 0.0 <= global_position_m <= influence_line.bridge_length_m:
+        raise ValueError("Influence-line interpolation position lies outside the bridge.")
+
+    index = bisect_right(positions, global_position_m) - 1
+    if index < 0:
+        return ordinates[0]
+    if index >= len(positions) - 1:
+        return ordinates[-1]
+
+    x0 = positions[index]
+    x1 = positions[index + 1]
+    y0 = ordinates[index]
+    y1 = ordinates[index + 1]
+    if x1 <= x0:
+        raise ValueError("Influence-line load positions must be strictly increasing.")
+    ratio = (global_position_m - x0) / (x1 - x0)
+    return y0 + ratio * (y1 - y0)
+
+
+def moving_train_influence_effect(
+    influence_line: ContinuousSectionInfluenceLine,
+    train: AxleTrain,
+    *,
+    movement_steps: int = 1201,
+) -> MovingTrainInfluenceEffect:
+    """Envelope an arbitrary axle train using a previously generated influence line."""
+    if movement_steps < 2:
+        raise ValueError("At least two movement steps are required.")
+    if influence_line.unit_load_kn <= 0.0:
+        raise ValueError("Influence-line unit load must be positive.")
+
+    lead_start = 0.0
+    lead_end = influence_line.bridge_length_m + train.train_length_m
+    max_effect = float("-inf")
+    max_lead = lead_start
+    min_effect = float("inf")
+    min_lead = lead_start
+
+    for step in range(movement_steps):
+        lead = lead_start + (lead_end - lead_start) * step / (movement_steps - 1)
+        axles = positioned_axles(train, lead, influence_line.bridge_length_m)
+        effect = sum(
+            axle.magnitude_kn
+            * _interpolated_ordinate(influence_line, axle.position_m)
+            / influence_line.unit_load_kn
+            for axle in axles
+        )
+        if effect > max_effect:
+            max_effect = effect
+            max_lead = lead
+        if effect < min_effect:
+            min_effect = effect
+            min_lead = lead
+
+    return MovingTrainInfluenceEffect(
+        maximum_positive_effect=max_effect,
+        maximum_positive_lead_position_m=max_lead,
+        minimum_negative_effect=min_effect,
+        minimum_negative_lead_position_m=min_lead,
+        movement_steps=movement_steps,
+        status=(
+            "Moving axle-train effect evaluated by linear interpolation of a numerical "
+            "continuous-beam influence line"
         ),
     )
 
