@@ -66,7 +66,12 @@ def test_two_equal_spans_produce_symmetric_sagging_hogging_and_reactions() -> No
         supports[2].max_vertical_reaction_kn,
         rel=1e-10,
     )
-    assert supports[1].max_vertical_reaction_kn > supports[0].max_vertical_reaction_kn
+    assert supports[0].min_vertical_reaction_kn < 0.0
+    assert supports[0].min_vertical_reaction_kn == pytest.approx(
+        supports[2].min_vertical_reaction_kn,
+        rel=1e-10,
+    )
+    assert supports[1].min_vertical_reaction_kn == pytest.approx(0.0, abs=1e-12)
 
 
 def test_moving_envelope_validates_resolution() -> None:
