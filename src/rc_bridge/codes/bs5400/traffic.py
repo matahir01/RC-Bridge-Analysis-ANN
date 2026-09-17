@@ -224,6 +224,6 @@ def hb_vehicle_train(
         inner_axle_spacing_m=inner_axle_spacing_m,
         axle_load_kn=axle_load_kn,
         total_vehicle_load_kn=4.0 * axle_load_kn,
-        overall_length_m=inner_axle_spacing_m + 3.6,
+        overall_length_m=inner_axle_spacing_m + 4.0,
         train=train,
     )
