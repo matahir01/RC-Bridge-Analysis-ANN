@@ -4,9 +4,11 @@ from rc_bridge.analysis.lane_distribution import (
     LaneGirderDistribution,
     RemainingAreaGirderDistribution,
 )
+from rc_bridge.codes.eurocode.combinations import ServiceabilityPsiFactors
 from rc_bridge.core.models import BridgeGeometry, ProjectInput, SupportSystem
 from rc_bridge.workflow.project_continuous_lm1 import (
     ProjectContinuousLM1SectionInput,
+    continuous_lm1_girder_combinations,
     run_project_continuous_lm1_section,
 )
 
@@ -48,8 +50,8 @@ def _remaining_distribution() -> RemainingAreaGirderDistribution:
     )
 
 
-def test_project_continuous_lm1_maps_support_hogging_to_all_girders() -> None:
-    result = run_project_continuous_lm1_section(
+def _support_result():
+    return run_project_continuous_lm1_section(
         _project(),
         ProjectContinuousLM1SectionInput(
             ei_kn_m2_by_span=(1.0e6, 1.0e6),
@@ -62,6 +64,10 @@ def test_project_continuous_lm1_maps_support_hogging_to_all_girders() -> None:
             movement_steps=121,
         ),
     )
+
+
+def test_project_continuous_lm1_maps_support_hogging_to_all_girders() -> None:
+    result = _support_result()
 
     assert result.lane_layout.lane_count == 2
     assert result.lane_layout.remaining_width_m == pytest.approx(1.0)
@@ -81,6 +87,27 @@ def test_project_continuous_lm1_maps_support_hogging_to_all_girders() -> None:
     ) + result.remaining_area_effect.minimum_negative_effect
     assert total_positive == pytest.approx(source_positive)
     assert total_negative == pytest.approx(source_negative)
+
+
+def test_support_hogging_combination_uses_directional_g_factor() -> None:
+    result = _support_result()
+    combinations = continuous_lm1_girder_combinations(
+        result,
+        girder_index=4,
+        permanent_characteristic_effect=-300.0,
+        sls_factors=ServiceabilityPsiFactors(psi1_traffic=0.75, psi2_traffic=0.0),
+    )
+
+    traffic = result.effect_for_girder(4)
+    assert combinations.positive_gamma_g == pytest.approx(1.0)
+    assert combinations.negative_gamma_g == pytest.approx(1.35)
+    assert combinations.positive_uls_effect == pytest.approx(
+        -300.0 + 1.5 * traffic.maximum_positive_effect
+    )
+    assert combinations.negative_uls_effect == pytest.approx(
+        1.35 * -300.0 + 1.5 * traffic.minimum_negative_effect
+    )
+    assert combinations.negative_uls_effect < combinations.positive_uls_effect
 
 
 def test_project_continuous_lm1_requires_remaining_area_distribution() -> None:
