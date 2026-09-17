@@ -22,10 +22,29 @@ def _support_command(support: VerificationSupport) -> str:
         return f"{support.node_id} PINNED"
 
     labels = ("FX", "FY", "FZ", "MX", "MY", "MZ")
-    released = [label for label, is_restrained in zip(labels, restrained, strict=True) if not is_restrained]
+    released = [
+        label
+        for label, is_restrained in zip(labels, restrained, strict=True)
+        if not is_restrained
+    ]
     if not released:
         return f"{support.node_id} FIXED"
     return f"{support.node_id} FIXED BUT {' '.join(released)}"
+
+
+def _global_member_force_print_commands(
+    model: VerificationModel,
+    *,
+    members_per_command: int = 40,
+) -> list[str]:
+    if members_per_command < 1:
+        raise ValueError("members_per_command must be positive.")
+    member_ids = [beam.member_id for beam in model.beams]
+    return [
+        "PRINT MEMBER FORCES GLOBAL LIST " + " ".join(str(value) for value in chunk)
+        for start in range(0, len(member_ids), members_per_command)
+        if (chunk := member_ids[start : start + members_per_command])
+    ]
 
 
 def export_staad_std(model: VerificationModel) -> str:
@@ -35,6 +54,9 @@ def export_staad_std(model: VerificationModel) -> str:
     instead of asking STAAD to infer them from nominal dimensions. That keeps the
     external stiffness aligned with the deterministic solver and avoids automatic
     shear-deformation assumptions unless explicit AY/AZ values are supplied.
+
+    Post-analysis member-end forces are requested in the global coordinate system
+    so the verification return path is not forced to infer STAAD member local axes.
     """
     model.validate_load_positions()
     lines: list[str] = [
@@ -55,7 +77,9 @@ def export_staad_std(model: VerificationModel) -> str:
 
     lines.append("MEMBER PROPERTY")
     for section in model.sections:
-        member_ids = [str(beam.member_id) for beam in model.beams if beam.section_id == section.section_id]
+        member_ids = [
+            str(beam.member_id) for beam in model.beams if beam.section_id == section.section_id
+        ]
         if not member_ids:
             continue
         properties = [
@@ -70,7 +94,7 @@ def export_staad_std(model: VerificationModel) -> str:
             properties.append(f"AZ {section.shear_area_z_m2:.12g}")
         lines.append(f"{' '.join(member_ids)} PRIS {' '.join(properties)}")
 
-    lines.extend(["DEFINE MATERIAL START"])
+    lines.append("DEFINE MATERIAL START")
     for material in model.materials:
         name = _safe_name(material.name)
         lines.extend(
@@ -86,7 +110,9 @@ def export_staad_std(model: VerificationModel) -> str:
 
     lines.append("CONSTANTS")
     for material in model.materials:
-        member_ids = [str(beam.member_id) for beam in model.beams if beam.material_id == material.material_id]
+        member_ids = [
+            str(beam.member_id) for beam in model.beams if beam.material_id == material.material_id
+        ]
         if member_ids:
             lines.append(f"MATERIAL {_safe_name(material.name)} {' '.join(member_ids)}")
 
@@ -123,17 +149,13 @@ def export_staad_std(model: VerificationModel) -> str:
                     ("MY", load.my_knm),
                     ("MZ", load.mz_knm),
                 )
-                active = " ".join(f"{name} {value:.12g}" for name, value in terms if value != 0.0)
+                active = " ".join(
+                    f"{name} {value:.12g}" for name, value in terms if value != 0.0
+                )
                 if active:
                     lines.append(f"{load.node_id} {active}")
 
-    lines.extend(
-        [
-            "PERFORM ANALYSIS",
-            "PRINT SUPPORT REACTION ALL",
-            "PRINT MEMBER FORCES ALL",
-            "PRINT JOINT DISPLACEMENTS ALL",
-            "FINISH",
-        ]
-    )
+    lines.extend(["PERFORM ANALYSIS", "PRINT SUPPORT REACTION ALL"])
+    lines.extend(_global_member_force_print_commands(model))
+    lines.extend(["PRINT JOINT DISPLACEMENTS ALL", "FINISH"])
     return "\n".join(lines) + "\n"
