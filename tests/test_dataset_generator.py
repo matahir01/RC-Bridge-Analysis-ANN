@@ -2,7 +2,6 @@ import pytest
 
 from rc_bridge.research.generator import SolverOutputs, generate_training_records
 
-
 SAMPLE = {
     "span_m": 15.0,
     "girder_spacing_m": 1.7,
