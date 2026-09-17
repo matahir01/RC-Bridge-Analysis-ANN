@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from itertools import pairwise
 
 from rc_bridge.codes.eurocode.en1991_2 import (
     LM1AdjustmentFactors,
@@ -18,7 +19,6 @@ from rc_bridge.workflow.grillage_verification_export import (
     GrillageVerificationLoadCase,
     build_project_grillage_verification_model,
 )
-
 
 LM1_TRANSVERSE_WHEEL_SPACING_M = 2.0
 
@@ -126,7 +126,7 @@ def _validate_transverse_coverage(
         raise ValueError("LM1 transverse snapshot contains no loaded carriageway strips.")
     if abs(strips[0][0] - left_edge) > 1e-9 or abs(strips[-1][1] - right_edge) > 1e-9:
         raise ValueError("LM1 lane and remaining-area strips must span the complete carriageway width.")
-    for previous, current in zip(strips, strips[1:]):
+    for previous, current in pairwise(strips):
         if abs(previous[1] - current[0]) > 1e-9:
             raise ValueError("LM1 transverse strips must be contiguous without gaps or overlaps.")
 
