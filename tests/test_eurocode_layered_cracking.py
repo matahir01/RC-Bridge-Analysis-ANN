@@ -86,8 +86,6 @@ def test_layered_crack_width_matches_existing_positive_t_solver() -> None:
         **kwargs,
     )
 
-    # The direct crack equation and transformed cracked mechanics should agree;
-    # the layered model computes its own gross-section cracking moment.
     assert layered.steel_stress_mpa == pytest.approx(existing.steel_stress_mpa, rel=1e-9)
     assert layered.effective_tension_depth_mm == pytest.approx(
         existing.effective_tension_depth_mm,
@@ -125,6 +123,51 @@ def test_layered_support_orientation_handles_bottom_flange_web_and_deck_tension_
     assert 0.0 < result.effective_tension_depth_mm < 600.0
     assert result.effective_tension_area_mm2 > 0.0
     assert result.crack_width_mm >= 0.0
+
+
+def test_inactive_false_slab_keeps_depth_but_is_excluded_from_tension_area() -> None:
+    inactive_false_slab = (
+        HorizontalSectionLayer(0.65, 0.00, 0.18, "bottom flange"),
+        HorizontalSectionLayer(0.30, 0.18, 0.80, "web"),
+        HorizontalSectionLayer(0.70, 0.80, 0.95, "precast top flange"),
+        HorizontalSectionLayer(1.70, 0.95, 1.025, "precast false slab", active=False),
+        HorizontalSectionLayer(1.70, 1.025, 1.20, "in-situ deck"),
+    )
+    active_false_slab = tuple(
+        HorizontalSectionLayer(
+            layer.width_m,
+            layer.start_depth_m,
+            layer.end_depth_m,
+            layer.label,
+            active=True,
+        )
+        for layer in inactive_false_slab
+    )
+
+    inactive = cracked_layered_section_sls(
+        inactive_false_slab,
+        total_depth_m=1.20,
+        steel_area_mm2=6500.0,
+        steel_depth_from_compression_face_m=1.10,
+        modular_ratio=200000.0 / 34000.0,
+        service_moment_knm=850.0,
+        fct_eff_mpa=3.2,
+    )
+    active = cracked_layered_section_sls(
+        active_false_slab,
+        total_depth_m=1.20,
+        steel_area_mm2=6500.0,
+        steel_depth_from_compression_face_m=1.10,
+        modular_ratio=200000.0 / 34000.0,
+        service_moment_knm=850.0,
+        fct_eff_mpa=3.2,
+    )
+
+    assert inactive.effective_tension_depth_mm == pytest.approx(250.0)
+    assert inactive.effective_tension_area_mm2 == pytest.approx(1.70 * 1000.0 * 175.0)
+    assert active.effective_tension_area_mm2 == pytest.approx(1.70 * 1000.0 * 250.0)
+    assert inactive.effective_tension_area_mm2 < active.effective_tension_area_mm2
+    assert inactive.gross_cracking_moment_knm != pytest.approx(active.gross_cracking_moment_knm)
 
 
 def test_layered_section_rejects_noncontiguous_strips() -> None:
