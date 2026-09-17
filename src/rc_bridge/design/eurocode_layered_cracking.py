@@ -8,12 +8,19 @@ from rc_bridge.design.eurocode_cracking import CrackWidthResult
 
 @dataclass(frozen=True)
 class HorizontalSectionLayer:
-    """One non-overlapping horizontal concrete strip measured from the compression face."""
+    """One non-overlapping horizontal strip measured from the compression face.
+
+    ``active=False`` keeps the layer's physical thickness in the section geometry
+    while excluding its concrete area from stiffness, cracking moment and effective
+    tension area. This is intended for construction layers whose structural
+    participation has not been justified.
+    """
 
     width_m: float
     start_depth_m: float
     end_depth_m: float
     label: str = ""
+    active: bool = True
 
     def __post_init__(self) -> None:
         if self.width_m <= 0.0:
@@ -52,15 +59,19 @@ def _validated_layers(
             raise ValueError("Layered section strips must be contiguous and non-overlapping.")
     if abs(ordered[-1].end_depth_m - total_depth_m) > tolerance:
         raise ValueError("Layered section strips must terminate at the total section depth.")
+    if not any(layer.active for layer in ordered):
+        raise ValueError("Layered section must contain at least one active concrete layer.")
     return ordered
 
 
 def _gross_concrete_properties(
     layers: tuple[HorizontalSectionLayer, ...],
 ) -> tuple[float, float, float]:
-    """Return gross concrete area [mm2], centroid y [mm], inertia [mm4]."""
+    """Return active gross concrete area [mm2], centroid y [mm], inertia [mm4]."""
     areas: list[tuple[float, float, float]] = []
     for layer in layers:
+        if not layer.active:
+            continue
         width = layer.width_m * 1000.0
         y0 = layer.start_depth_m * 1000.0
         y1 = layer.end_depth_m * 1000.0
@@ -71,6 +82,8 @@ def _gross_concrete_properties(
         areas.append((area, centroid, local_inertia))
 
     total_area = sum(item[0] for item in areas)
+    if total_area <= 0.0:
+        raise ValueError("Layered section has no active gross concrete area.")
     centroid = sum(area * y for area, y, _ in areas) / total_area
     inertia = sum(local_i + area * (y - centroid) ** 2 for area, y, local_i in areas)
     return total_area, centroid, inertia
@@ -100,6 +113,8 @@ def _compressed_concrete_first_moment_about_na(
 ) -> float:
     first_moment = 0.0
     for layer in layers:
+        if not layer.active:
+            continue
         width = layer.width_m * 1000.0
         y0 = layer.start_depth_m * 1000.0
         y1 = min(layer.end_depth_m * 1000.0, x_mm)
@@ -117,6 +132,8 @@ def _compressed_concrete_inertia_about_na(
 ) -> float:
     inertia = 0.0
     for layer in layers:
+        if not layer.active:
+            continue
         width = layer.width_m * 1000.0
         y0 = layer.start_depth_m * 1000.0
         y1 = min(layer.end_depth_m * 1000.0, x_mm)
@@ -139,6 +156,8 @@ def _effective_tension_area_mm2(
     tension_zone_start = h_mm - hceff_mm
     area = 0.0
     for layer in layers:
+        if not layer.active:
+            continue
         width = layer.width_m * 1000.0
         y0 = max(layer.start_depth_m * 1000.0, tension_zone_start)
         y1 = layer.end_depth_m * 1000.0
@@ -162,7 +181,8 @@ def cracked_layered_section_sls(
     """Elastic transformed cracked analysis for a layered concrete section.
 
     Depth zero is always the compression face for the supplied bending direction;
-    the tension face is at ``total_depth_m``. Tensile concrete is neglected.
+    the tension face is at ``total_depth_m``. Tensile concrete and inactive layers
+    are neglected in transformed stiffness.
     """
     ordered = _validated_layers(layers, total_depth_m)
     if min(steel_area_mm2, modular_ratio, fct_eff_mpa) <= 0.0:
@@ -307,9 +327,7 @@ def crack_width_ec2_layered_section(
         srmax = k3 * cover_mm + k1 * k2 * k4 * bar_diameter_mm / rho
     else:
         h_mm = total_depth_m * 1000.0
-        srmax = 1.3 * (
-            h_mm - cracked.neutral_axis_from_compression_face_mm
-        )
+        srmax = 1.3 * (h_mm - cracked.neutral_axis_from_compression_face_mm)
 
     crack_width_mm = srmax * strain_difference
     return CrackWidthResult(
