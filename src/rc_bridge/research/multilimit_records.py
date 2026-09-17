@@ -63,6 +63,7 @@ def eurocode_multilimit_record_from_project(
     project: ProjectInput,
     section: TGirderDesignInput,
     verification: DeterministicSolverVerification,
+    span_index: int = 0,
     provided_shear_steel_mm2_per_m: float | None = None,
     g_fatigue: float | None = None,
     g_torsion: float | None = None,
@@ -74,6 +75,8 @@ def eurocode_multilimit_record_from_project(
     the concrete-only reserve or the *required* reinforcement demand.
     """
     verification.require_ann_ready(expected_profile=SolverProfile.EUROCODE_1G)
+    if not 0 <= span_index < len(project.geometry.span_lengths_m):
+        raise IndexError("span_index is outside the project span list.")
 
     design = result.design.uls_design
     shear = design.shear
@@ -101,7 +104,7 @@ def eurocode_multilimit_record_from_project(
         )
         g_shear_kn = shear_resistance_kn - ved_kn
 
-    span_m = float(project.geometry.span_lengths_m[0])
+    span_m = float(project.geometry.span_lengths_m[span_index])
     return MultiLimitTrainingRecord(
         solver_profile=SolverProfile.EUROCODE_1G.value,
         girder_index=result.combinations.girder_index,
