@@ -1,7 +1,10 @@
 from rc_bridge.export.external_results import (
     ExternalResultComparisonReport,
+    ExternalResultCoverageReport,
     compare_external_results_csv,
+    parse_verification_result_template_csv,
     parse_verification_results_csv,
+    validate_external_result_coverage,
 )
 from rc_bridge.export.midas_mct import export_midas_mct
 from rc_bridge.export.model_verification_package import (
@@ -29,6 +32,7 @@ from rc_bridge.export.verification_package import (
 __all__ = [
     "DisplacementTableMapping",
     "ExternalResultComparisonReport",
+    "ExternalResultCoverageReport",
     "ExternalTableMappingProfile",
     "MemberForceTableMapping",
     "ModelVerificationExportPackage",
@@ -45,5 +49,7 @@ __all__ = [
     "midas_civil_global_profile",
     "midas_civil_global_reaction_mapping",
     "normalize_external_result_tables",
+    "parse_verification_result_template_csv",
     "parse_verification_results_csv",
+    "validate_external_result_coverage",
 ]
