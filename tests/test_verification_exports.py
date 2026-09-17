@@ -86,7 +86,8 @@ def test_staad_export_contains_complete_analysis_skeleton() -> None:
     assert "2 CON GZ -80 4" in text
     assert "PERFORM ANALYSIS" in text
     assert "PRINT SUPPORT REACTION ALL" in text
-    assert "PRINT MEMBER FORCES ALL" in text
+    assert "PRINT MEMBER FORCES GLOBAL LIST 1 2" in text
+    assert "PRINT MEMBER FORCES ALL" not in text
     assert "PRINT JOINT DISPLACEMENTS ALL" in text
     assert text.rstrip().endswith("FINISH")
 
