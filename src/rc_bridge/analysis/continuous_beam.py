@@ -203,6 +203,12 @@ def solve_continuous_beam(
     if free:
         reduced_stiffness = stiffness[np.ix_(free, free)]
         reduced_load = loads[free]
+        rank = np.linalg.matrix_rank(reduced_stiffness, hermitian=True)
+        if rank < reduced_stiffness.shape[0]:
+            raise ValueError(
+                "Beam stiffness matrix is singular; check supports for rigid-body "
+                "mechanisms and verify connectivity."
+            )
         try:
             displacement[free] = np.linalg.solve(reduced_stiffness, reduced_load)
         except np.linalg.LinAlgError as exc:
