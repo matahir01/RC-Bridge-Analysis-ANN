@@ -37,9 +37,7 @@ class MemberForceTableMapping:
     vertical_shear_column: str
     vertical_bending_column: str
     torsion_column: str
-    end_aliases: dict[str, str] = field(
-        default_factory=lambda: {"I": "I", "J": "J"}
-    )
+    end_aliases: dict[str, str] = field(default_factory=lambda: {"I": "I", "J": "J"})
     shear_unit: str = "kN"
     moment_unit: str = "kNm"
     scale_force_to_output_unit: float = 1.0
@@ -93,7 +91,10 @@ def _require_columns(rows: list[dict[str, str]], columns: tuple[str, ...]) -> No
 
 
 def _matches_filter(row: dict[str, str], row_filter: TableFilter) -> bool:
-    return all((row.get(column) or "").strip() == value for column, value in row_filter.values_by_column.items())
+    return all(
+        (row.get(column) or "").strip() == value
+        for column, value in row_filter.values_by_column.items()
+    )
 
 
 def _parse_float(row: dict[str, str], column: str, *, context: str) -> float:
@@ -101,7 +102,9 @@ def _parse_float(row: dict[str, str], column: str, *, context: str) -> float:
     try:
         return float(raw)
     except ValueError as exc:
-        raise ValueError(f"Invalid numeric value in {context} column {column!r}: {raw!r}.") from exc
+        raise ValueError(
+            f"Invalid numeric value in {context} column {column!r}: {raw!r}."
+        ) from exc
 
 
 def _parse_object_id(row: dict[str, str], column: str, *, context: str) -> str:
@@ -112,6 +115,16 @@ def _parse_object_id(row: dict[str, str], column: str, *, context: str) -> str:
 
 
 def _write_normalized(rows: list[tuple[str, str, str, str, str, float, str]]) -> str:
+    identities: set[tuple[str, str, str, str, str, str]] = set()
+    for result_type, object_id, span_index, position_m, component, _, unit in rows:
+        identity = (result_type, object_id, span_index, position_m, component, unit)
+        if identity in identities:
+            raise ValueError(
+                "External tables produce duplicate normalized result identities. "
+                "Apply a load-case/step filter or refine the source mapping."
+            )
+        identities.add(identity)
+
     stream = io.StringIO()
     writer = csv.writer(stream, lineterminator="\n")
     writer.writerow(
@@ -303,4 +316,31 @@ def midas_civil_global_reaction_mapping(
         node_column="Node",
         vertical_reaction_column="FZ",
         row_filter=row_filter,
+    )
+
+
+def midas_civil_global_displacement_mapping(
+    *,
+    load_case: str | None = None,
+) -> DisplacementTableMapping:
+    """MIDAS Civil displacement mapping documented for Node/Load/DZ columns."""
+    row_filter = TableFilter({"Load": load_case}) if load_case is not None else TableFilter()
+    return DisplacementTableMapping(
+        node_column="Node",
+        vertical_displacement_column="DZ",
+        row_filter=row_filter,
+    )
+
+
+def midas_civil_global_profile(
+    *,
+    load_case: str | None = None,
+    delimiter: str = ",",
+) -> ExternalTableMappingProfile:
+    """Safe built-in MIDAS profile for global reaction and displacement tables only."""
+    return ExternalTableMappingProfile(
+        name="MIDAS Civil global reaction/displacement tables",
+        reaction=midas_civil_global_reaction_mapping(load_case=load_case),
+        displacement=midas_civil_global_displacement_mapping(load_case=load_case),
+        delimiter=delimiter,
     )
