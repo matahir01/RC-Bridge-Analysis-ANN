@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from enum import Enum
 
-from pydantic import BaseModel, Field, PositiveFloat, PositiveInt
+from pydantic import BaseModel, Field, PositiveFloat, PositiveInt, model_validator
 
 
 class DesignCode(str, Enum):
@@ -28,15 +28,64 @@ class MaterialProperties(BaseModel):
     elastic_modulus_mpa: PositiveFloat | None = None
 
 
+class DeckConstruction(BaseModel):
+    """Physical deck build-up and structural participation.
+
+    The precast false slab always contributes permanent weight when present,
+    but it is excluded from the composite compression flange by default. It may
+    only be included when the project detailing and verification justify
+    composite participation.
+    """
+
+    precast_false_slab_depth_m: PositiveFloat = 0.075
+    in_situ_slab_depth_m: PositiveFloat = 0.175
+    false_slab_composite_participation: bool = False
+    in_situ_slab_composite_participation: bool = True
+
+    @property
+    def physical_depth_m(self) -> float:
+        return float(self.precast_false_slab_depth_m + self.in_situ_slab_depth_m)
+
+    @property
+    def composite_flange_depth_m(self) -> float:
+        depth = 0.0
+        if self.false_slab_composite_participation:
+            depth += float(self.precast_false_slab_depth_m)
+        if self.in_situ_slab_composite_participation:
+            depth += float(self.in_situ_slab_depth_m)
+        return depth
+
+
 class BridgeGeometry(BaseModel):
     span_lengths_m: list[PositiveFloat] = Field(default_factory=lambda: [15.0])
     deck_width_m: PositiveFloat = 11.0
+    carriageway_width_m: PositiveFloat = 7.0
     girder_count: PositiveInt = 7
     girder_spacing_m: PositiveFloat = 1.70
     girder_depth_m: PositiveFloat = 0.95
     deck_structural_depth_m: PositiveFloat = 0.25
+    deck_construction: DeckConstruction = Field(default_factory=DeckConstruction)
     support_system: SupportSystem = SupportSystem.SIMPLY_SUPPORTED
     section_type: SectionType = SectionType.T
+
+    @model_validator(mode="after")
+    def validate_bridge_widths_and_deck_build_up(self) -> BridgeGeometry:
+        if self.carriageway_width_m > self.deck_width_m:
+            raise ValueError("Carriageway width cannot exceed total deck width.")
+        if abs(float(self.deck_structural_depth_m) - self.deck_construction.physical_depth_m) > 1e-9:
+            raise ValueError(
+                "deck_structural_depth_m must equal the physical deck build-up; "
+                "edit the deck-construction component depths explicitly."
+            )
+        return self
+
+    @property
+    def physical_deck_depth_m(self) -> float:
+        return self.deck_construction.physical_depth_m
+
+    @property
+    def composite_flange_depth_m(self) -> float:
+        return self.deck_construction.composite_flange_depth_m
 
 
 class ProjectInput(BaseModel):
