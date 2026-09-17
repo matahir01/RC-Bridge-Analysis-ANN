@@ -5,8 +5,8 @@ from dataclasses import dataclass
 from rc_bridge.codes.common import FactoredCombination, LoadEffects
 from rc_bridge.codes.eurocode.combinations import EurocodeFactors, persistent_uls
 from rc_bridge.design.eurocode_cracking import (
-    CrackWidthResult,
     CrackedTSectionSLS,
+    CrackWidthResult,
     crack_width_ec2_t_section,
     cracked_t_section_sls,
 )
