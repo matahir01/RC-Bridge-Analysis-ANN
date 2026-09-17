@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from .loads import PointLoad
-from .point_loads import reactions as point_reactions
+from .point_loads import simply_supported_reactions as point_reactions
 
 
 @dataclass(frozen=True)
