@@ -1,4 +1,12 @@
-from rc_bridge.core.models import BridgeGeometry, DesignCode, MaterialProperties, ProjectInput, SectionType, SupportSystem
+from rc_bridge.core.models import (
+    BridgeGeometry,
+    DeckConstruction,
+    DesignCode,
+    MaterialProperties,
+    ProjectInput,
+    SectionType,
+    SupportSystem,
+)
 
 
 REFERENCE_BRIDGE_15M = ProjectInput(
@@ -7,10 +15,17 @@ REFERENCE_BRIDGE_15M = ProjectInput(
     geometry=BridgeGeometry(
         span_lengths_m=[15.0],
         deck_width_m=11.0,
+        carriageway_width_m=7.0,
         girder_count=7,
         girder_spacing_m=1.70,
         girder_depth_m=0.95,
         deck_structural_depth_m=0.25,
+        deck_construction=DeckConstruction(
+            precast_false_slab_depth_m=0.075,
+            in_situ_slab_depth_m=0.175,
+            false_slab_composite_participation=False,
+            in_situ_slab_composite_participation=True,
+        ),
         support_system=SupportSystem.SIMPLY_SUPPORTED,
         section_type=SectionType.T,
     ),
