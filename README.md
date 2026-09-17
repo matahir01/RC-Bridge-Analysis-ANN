@@ -39,6 +39,12 @@ Implemented so far:
 - BS 5400 rectangular/T-section flexure, shear/link sizing, cracking, deflection, detailing and fatigue-scope mechanics
 - Actual provided BS 5400 vertical-link shear resistance with minimum-link and web-resistance checks
 - Code-specific consolidated project workflows for ULS and SLS verification
+- MIDAS Civil `.mct` longitudinal verification-model export
+- STAAD.Pro `.std` longitudinal verification-model export
+- Exact static moving-vehicle snapshot export at an internal governing axle position
+- Verification bundles containing model files, manifest hashes and internal expected-results CSV
+- Normalized external-results comparison with explicit absolute/relative tolerances
+- Independent benchmark and imported-grillage comparison frameworks that do not self-certify the solver
 - Latin Hypercube Sampling utilities
 - Code-profile-specific deterministic verification manifests
 - Separate locked Eurocode continuous-span verification profile
@@ -106,6 +112,22 @@ Continuous service deflection keeps span EI explicit. The solver does not silent
 
 The current project-level continuous traffic workflow uses supplied validated/imported transverse lane distributions. It does not treat equal-share distribution as production ground truth, and it does not assume that moment distribution factors are automatically valid for deflection.
 
+## MIDAS Civil / STAAD.Pro verification export
+The verification exporter is designed to remove manual recreation of benchmark models. One internal longitudinal load case can generate:
+
+```text
+bridge_verification.mct
+bridge_verification.std
+bridge_verification_manifest.json
+bridge_verification_expected_results.csv
+```
+
+The external line model carries support-line geometry, beam connectivity, stabilized boundary conditions, explicit material stiffness, section properties derived to reproduce the caller-supplied span EI, UDLs and point/axle loads at the same locations used internally. A moving axle train can also be frozen at an exact lead-axle position so structural response is compared without mixing differences in moving-load search algorithms.
+
+The manifest stores model metadata and SHA-256 hashes. The expected-results table includes support reactions/rotations, member-end moments/shears, span moment/shear envelopes and deflection envelopes. External result tables can be normalized to the same schema and compared with explicit absolute and relative tolerances.
+
+This exporter currently reproduces the **longitudinal line-model verification problem**. It does not yet claim to be a complete seven-girder/deck grillage exporter. Full grillage export will require validated transverse-member/deck stiffness, diaphragm modelling, bearing representation and load placement rules. MIDAS/STAAD text generation is based on their documented input syntax, but actual parser acceptance in installed MIDAS Civil and STAAD.Pro versions remains an external validation step.
+
 ## Installing research/ANN dependencies
 The deterministic bridge solver remains lightweight. TensorFlow is an optional research dependency:
 
@@ -123,12 +145,14 @@ The current equal-share transverse-distribution route is explicitly **verificati
 BS 5400 is retained as a legacy/comparison path and remains isolated from the Eurocode implementation.
 
 ## Remaining major work
-1. Independently verify transverse load distribution and benchmark longitudinal/continuous results against grillage or established structural software.
-2. Add validated edge-girder tributary permanent loading and edge-girder traffic effects.
-3. Complete Eurocode continuous-span service traffic deflection using justified traffic combinations and displacement-specific transverse/load-pattern treatment.
-4. Develop cracked/composite effective-stiffness, creep/shrinkage and construction-stage treatment for continuous service analysis.
-5. Complete continuous-region fatigue, torsion and detailing integration where applicable.
-6. Complete the continuous Eurocode verification manifest and keep ANN export locked until the independent benchmark is passed.
-7. Define the continuous-bridge ANN feature schema/topology and justified random-variable distributions/bounds before generating training data.
-8. Train, validate and calibrate ANN surrogate models, then add reliability analysis and RBDO.
-9. Build calculation reports, desktop GUI, project persistence and Windows installer.
+1. Open generated `.mct` and `.std` files in installed MIDAS Civil/STAAD.Pro versions, resolve any version-specific text syntax, and capture independent benchmark results.
+2. Build the full seven-girder/deck/diaphragm verification-grillage exporter after transverse stiffness assumptions are validated.
+3. Independently verify transverse load distribution and benchmark longitudinal/continuous results against grillage or established structural software.
+4. Add validated edge-girder tributary permanent loading and edge-girder traffic effects.
+5. Complete Eurocode continuous-span service traffic deflection using justified traffic combinations and displacement-specific transverse/load-pattern treatment.
+6. Develop cracked/composite effective-stiffness, creep/shrinkage and construction-stage treatment for continuous service analysis.
+7. Complete continuous-region fatigue, torsion and detailing integration where applicable.
+8. Complete the continuous Eurocode verification manifest and keep ANN export locked until the independent benchmark is passed.
+9. Define the continuous-bridge ANN feature schema/topology and justified random-variable distributions/bounds before generating training data.
+10. Train, validate and calibrate ANN surrogate models, then add reliability analysis and RBDO.
+11. Build calculation reports, desktop GUI, project persistence and Windows installer.
