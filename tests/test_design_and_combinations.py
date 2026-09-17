@@ -11,6 +11,7 @@ from rc_bridge.codes.eurocode.combinations import (
 )
 from rc_bridge.design.eurocode_flexure import rectangular_singly_reinforced_resistance
 from rc_bridge.research.dataset import TrainingRecord
+from rc_bridge.research.verification import SolverProfile
 
 
 def test_eurocode_combination_is_transparent() -> None:
@@ -64,11 +65,13 @@ def test_preliminary_ec2_flexure_returns_positive_resistance() -> None:
 
 def test_training_record_exports_solver_outputs() -> None:
     record = TrainingRecord(
+        solver_profile=SolverProfile.EUROCODE_1G.value,
         span_m=15.0,
         girder_spacing_m=1.70,
         girder_depth_m=0.95,
         deck_thickness_m=0.25,
         fck_mpa=35.0,
+        fcu_mpa=None,
         fyk_mpa=500.0,
         steel_area_mm2=4800.0,
         permanent_moment_knm=800.0,
@@ -78,5 +81,6 @@ def test_training_record_exports_solver_outputs() -> None:
         g_flexure_knm=220.0,
     )
     row = record.to_dict()
+    assert row["solver_profile"] == SolverProfile.EUROCODE_1G.value
     assert row["span_m"] == 15.0
     assert row["g_flexure_knm"] == 220.0
