@@ -1,18 +1,28 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from enum import Enum
+
+
+class SolverProfile(str, Enum):
+    """Deterministic code/loading profile that produced ANN ground truth."""
+
+    EUROCODE_1G = "eurocode_1g_en1990_en1991_2_en1992_2"
+    BS5400_BD37_01 = "bs5400_part4_bd37_01"
 
 
 @dataclass(frozen=True)
 class DeterministicSolverVerification:
     """Named verification milestones required before ANN ground-truth export.
 
-    A single Boolean is intentionally insufficient: each deterministic solver
-    capability must be explicitly verified so the training-data provenance is
-    auditable. Torsion is conditional because some sampled/design cases may
-    legitimately have no torsional design requirement.
+    Verification is tied to one solver profile. A verified Eurocode path cannot
+    certify BS 5400 records (or vice versa). Torsion remains conditional because
+    some sampled/design cases may legitimately have no torsional requirement.
     """
 
+    solver_profile: SolverProfile
+    traffic_loading: bool = False
+    load_combinations: bool = False
     flexure: bool = False
     shear: bool = False
     cracking: bool = False
@@ -26,6 +36,8 @@ class DeterministicSolverVerification:
 
     def missing_requirements(self) -> tuple[str, ...]:
         requirements = {
+            "traffic_loading": self.traffic_loading,
+            "load_combinations": self.load_combinations,
             "flexure": self.flexure,
             "shear": self.shear,
             "cracking": self.cracking,
@@ -43,7 +55,13 @@ class DeterministicSolverVerification:
     def ann_ready(self) -> bool:
         return not self.missing_requirements()
 
-    def require_ann_ready(self) -> None:
+    def require_ann_ready(self, *, expected_profile: SolverProfile) -> None:
+        if self.solver_profile != expected_profile:
+            raise RuntimeError(
+                "ANN training data generation remains locked. Verification profile "
+                f"{self.solver_profile.value!r} does not match requested solver profile "
+                f"{expected_profile.value!r}."
+            )
         missing = self.missing_requirements()
         if missing:
             raise RuntimeError(
