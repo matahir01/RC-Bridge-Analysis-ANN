@@ -6,6 +6,7 @@ from rc_bridge.research.lm1_external_adapters import (
     compare_lm1_midas_member_force_table_case,
 )
 from rc_bridge.research.lm1_grillage_benchmark import (
+    build_lm1_benchmark_suite_for_case_ids,
     build_lm1_governing_benchmark_suite,
     compare_lm1_external_grillage_case,
     external_grillage_envelope_from_normalized_results,
@@ -161,3 +162,25 @@ def test_midas_member_force_adapter_round_trips_native_member_results() -> None:
     )
 
     assert report.passes
+
+
+
+def test_selected_benchmark_suite_can_include_supplemental_interaction_case() -> None:
+    search = _search()
+    governing = set(search.governing_case_ids)
+    supplemental = next(
+        case.placement.case_id
+        for case in search.cases
+        if case.placement.case_id not in governing
+    )
+    selected = tuple(sorted((*search.governing_case_ids, supplemental)))
+
+    suite = build_lm1_benchmark_suite_for_case_ids(search, selected)
+
+    assert tuple(case.case_id for case in suite.cases) == selected
+    supplemental_package = next(
+        case for case in suite.cases if case.case_id == supplemental
+    )
+    assert supplemental_package.case == next(
+        case for case in search.cases if case.placement.case_id == supplemental
+    )
