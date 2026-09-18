@@ -3,6 +3,10 @@ from __future__ import annotations
 from bisect import bisect_right
 from dataclasses import dataclass
 
+from rc_bridge.analysis.physical_sections import (
+    composite_girder_properties,
+    transverse_deck_strip_properties,
+)
 from rc_bridge.codes.eurocode.materials import secant_elastic_modulus_mpa
 from rc_bridge.core.models import DesignCode, ProjectInput
 from rc_bridge.export.verification_model import (
@@ -181,21 +185,23 @@ def _coordinate_index(values: tuple[float, ...], value: float) -> int:
 def build_project_grillage_verification_model(
     project: ProjectInput,
     *,
-    longitudinal_sections_by_span: tuple[GrillageSectionProperties, ...],
-    transverse_section: GrillageSectionProperties,
+    longitudinal_sections_by_span: tuple[GrillageSectionProperties, ...] | None = None,
+    transverse_section: GrillageSectionProperties | None = None,
     transverse_stations_m: tuple[float, ...],
     load_case: GrillageVerificationLoadCase,
+    longitudinal_slab_width_m: float | None = None,
+    transverse_strip_width_m: float | None = None,
 ) -> VerificationModel:
     """Build a full bridge beam-grillage model for independent software verification.
 
-    Longitudinal and transverse section properties are explicit inputs. Every point-load
-    x-coordinate and every area-load boundary is inserted as an exact grid line. The
-    transverse grid extends to the physical deck edges, so loads on deck overhangs are
-    transferred through transverse cantilever strips rather than moved inward.
+    Section properties are derived from physical geometry when omitted; explicit
+    values remain available as expert overrides. Every point-load x-coordinate and
+    area-load boundary is inserted as an exact grid line. The transverse grid extends
+    to the physical deck edges, so overhang loads are carried by transverse cantilevers.
     """
     span_count = len(project.geometry.span_lengths_m)
     girder_count = int(project.geometry.girder_count)
-    if len(longitudinal_sections_by_span) != span_count:
+    if longitudinal_sections_by_span is not None and len(longitudinal_sections_by_span) != span_count:
         raise ValueError("One longitudinal grillage section is required per physical span.")
     if load_case.longitudinal_udl_kn_m_by_girder is not None and len(
         load_case.longitudinal_udl_kn_m_by_girder
@@ -212,6 +218,45 @@ def build_project_grillage_verification_model(
     y_lines = _transverse_y_coordinates(project, load_case.area_loads)
     y_line_count = len(y_lines)
     girder_y_indices = tuple(_coordinate_index(y_lines, value) for value in y_girders)
+    if longitudinal_sections_by_span is None:
+        generated = composite_girder_properties(
+            project.geometry,
+            slab_width_m=longitudinal_slab_width_m,
+        )
+        longitudinal_sections_by_span = tuple(
+            GrillageSectionProperties(
+                name=f"Physical composite longitudinal span {index + 1}",
+                area_m2=generated.area_m2,
+                torsion_constant_m4=generated.torsion_constant_m4,
+                iy_m4=generated.iy_m4,
+                iz_m4=generated.iz_m4,
+            )
+            for index in range(span_count)
+        )
+        longitudinal_basis = generated.basis
+    else:
+        longitudinal_basis = "explicit expert override A, J, Iy and Iz per span"
+
+    if transverse_section is None:
+        representative_width = (
+            float(transverse_strip_width_m)
+            if transverse_strip_width_m is not None
+            else _support_stations(project)[-1] / (len(x_stations) - 1)
+        )
+        generated_transverse = transverse_deck_strip_properties(
+            project.geometry,
+            strip_width_m=representative_width,
+        )
+        transverse_section = GrillageSectionProperties(
+            name="Physical transverse deck strip",
+            area_m2=generated_transverse.area_m2,
+            torsion_constant_m4=generated_transverse.torsion_constant_m4,
+            iy_m4=generated_transverse.iy_m4,
+            iz_m4=generated_transverse.iz_m4,
+        )
+        transverse_basis = generated_transverse.basis
+    else:
+        transverse_basis = "explicit expert override A, J, Iy and Iz"
     e_kn_m2 = _elastic_modulus_mpa(project) * 1000.0
     material = VerificationMaterial(
         material_id=1,
@@ -406,8 +451,8 @@ def build_project_grillage_verification_model(
             "deck_width_m": f"{float(project.geometry.deck_width_m):.12g}",
             "edge_overhang_m": f"{project.geometry.nominal_edge_overhang_m:.12g}",
             "station_count": str(len(x_stations)),
-            "transverse_stiffness_basis": "explicit caller-supplied A, J, Iy and Iz",
-            "longitudinal_stiffness_basis": "explicit caller-supplied A, J, Iy and Iz per span",
+            "transverse_stiffness_basis": transverse_basis,
+            "longitudinal_stiffness_basis": longitudinal_basis,
             "point_load_mapping": "exact x station; exact nodal or transverse-member y position",
             "area_load_mapping": "exact patch boundaries; uniform cell pressure lumped q*A/4 to each corner",
             "deck_overhang_model": "transverse cantilever strip from exterior girder to physical deck edge",

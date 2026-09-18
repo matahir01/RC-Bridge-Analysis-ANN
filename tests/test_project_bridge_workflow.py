@@ -4,8 +4,12 @@ from rc_bridge.codes.eurocode.combinations import ServiceabilityPsiFactors
 from rc_bridge.core.models import (
     BridgeGeometry,
     MaterialProperties,
+    PermanentActionModel,
+    PermanentLineAction,
+    PermanentLineActionCategory,
     ProjectInput,
     SupportSystem,
+    SurfacingLayer,
     TGirderProfile,
 )
 from rc_bridge.workflow.eurocode_girder import TGirderDesignInput
@@ -15,6 +19,7 @@ from rc_bridge.workflow.project_bridge import (
     girder_characteristic_permanent_effects,
     girder_deck_self_weight_kn_m,
     girder_deck_tributary_width_m,
+    girder_superimposed_permanent_loads_kn_m,
     internal_girder_characteristic_permanent_effects,
     internal_girder_deck_self_weight_kn_m,
     physical_girder_self_weight_kn_m,
@@ -261,6 +266,87 @@ def test_project_equal_share_verification_rejects_continuous_system() -> None:
     project.geometry.support_system = SupportSystem.CONTINUOUS
     with pytest.raises(ValueError, match="simple spans only"):
         run_project_lm1_equal_share_verification(project)
+
+
+def test_physical_surfacing_band_uses_exact_girder_tributary_overlap() -> None:
+    project = ProjectInput(
+        permanent_actions=PermanentActionModel(
+            surfacing_layers=[
+                SurfacingLayer(
+                    name="Carriageway asphalt",
+                    thickness_m=0.08,
+                    density_kn_m3=23.0,
+                    y_start_m=-3.5,
+                    y_end_m=3.5,
+                )
+            ]
+        )
+    )
+
+    edge = girder_superimposed_permanent_loads_kn_m(project, girder_index=1)
+    internal = girder_superimposed_permanent_loads_kn_m(project, girder_index=4)
+
+    assert edge[0] == pytest.approx(0.0)
+    assert internal[0] == pytest.approx(0.08 * 23.0 * 1.70)
+
+
+def test_positioned_barriers_and_services_conserve_line_load() -> None:
+    project = ProjectInput(
+        permanent_actions=PermanentActionModel(
+            line_actions=[
+                PermanentLineAction(
+                    name="Left barrier",
+                    magnitude_kn_m=10.0,
+                    y_m=-5.3,
+                    category=PermanentLineActionCategory.BARRIER,
+                ),
+                PermanentLineAction(
+                    name="Service duct",
+                    magnitude_kn_m=4.0,
+                    y_m=0.25,
+                    category=PermanentLineActionCategory.SERVICES,
+                ),
+                PermanentLineAction(
+                    name="Median fixture",
+                    magnitude_kn_m=2.0,
+                    y_m=0.0,
+                    category=PermanentLineActionCategory.OTHER,
+                ),
+            ]
+        )
+    )
+
+    assigned = [
+        girder_superimposed_permanent_loads_kn_m(project, girder_index=index)
+        for index in range(1, 8)
+    ]
+
+    assert sum(item[1] for item in assigned) == pytest.approx(14.0)
+    assert sum(item[2] for item in assigned) == pytest.approx(2.0)
+    assert assigned[0][1] == pytest.approx(10.0)
+
+
+def test_physical_permanent_categories_reject_explicit_double_counting() -> None:
+    project = ProjectInput(
+        permanent_actions=PermanentActionModel(
+            surfacing_layers=[
+                SurfacingLayer(
+                    name="Deck-wide finish",
+                    thickness_m=0.05,
+                    density_kn_m3=22.0,
+                    y_start_m=-5.5,
+                    y_end_m=5.5,
+                )
+            ]
+        )
+    )
+
+    with pytest.raises(ValueError, match="double count physical surfacing"):
+        girder_characteristic_permanent_effects(
+            project,
+            girder_index=4,
+            additional=UniformPermanentLoadInput(surfacing_and_finishes_kn_m=1.0),
+        )
 
 
 

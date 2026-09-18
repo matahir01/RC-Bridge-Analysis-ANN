@@ -24,6 +24,12 @@ class SupportSystem(str, Enum):
     CONTINUOUS = "continuous"
 
 
+class PermanentLineActionCategory(str, Enum):
+    BARRIER = "barrier"
+    SERVICES = "services"
+    OTHER = "other"
+
+
 class RectangularGirderProfile(BaseModel):
     shape: Literal["rectangular"] = "rectangular"
     width_m: PositiveFloat
@@ -115,6 +121,48 @@ class MaterialProperties(BaseModel):
     fcu_mpa: PositiveFloat | None = None
     concrete_density_kn_m3: PositiveFloat = 25.0
     elastic_modulus_mpa: PositiveFloat | None = None
+
+
+class SurfacingLayer(BaseModel):
+    """One uniform superimposed permanent layer over a transverse deck band."""
+
+    name: str
+    thickness_m: PositiveFloat
+    density_kn_m3: PositiveFloat
+    y_start_m: float
+    y_end_m: float
+
+    @model_validator(mode="after")
+    def validate_band(self) -> SurfacingLayer:
+        if not self.name.strip():
+            raise ValueError("Surfacing-layer name cannot be empty.")
+        if self.y_end_m <= self.y_start_m:
+            raise ValueError("Surfacing-layer transverse bounds must define positive width.")
+        return self
+
+    @property
+    def pressure_kn_m2(self) -> float:
+        return float(self.thickness_m * self.density_kn_m3)
+
+
+class PermanentLineAction(BaseModel):
+    """A physical longitudinal line action positioned across the deck."""
+
+    name: str
+    magnitude_kn_m: PositiveFloat
+    y_m: float
+    category: PermanentLineActionCategory
+
+    @model_validator(mode="after")
+    def validate_name(self) -> PermanentLineAction:
+        if not self.name.strip():
+            raise ValueError("Permanent line-action name cannot be empty.")
+        return self
+
+
+class PermanentActionModel(BaseModel):
+    surfacing_layers: list[SurfacingLayer] = Field(default_factory=list)
+    line_actions: list[PermanentLineAction] = Field(default_factory=list)
 
 
 class DeckConstruction(BaseModel):
@@ -259,3 +307,15 @@ class ProjectInput(BaseModel):
     design_code: DesignCode = DesignCode.EUROCODE
     geometry: BridgeGeometry = Field(default_factory=BridgeGeometry)
     materials: MaterialProperties = Field(default_factory=MaterialProperties)
+    permanent_actions: PermanentActionModel = Field(default_factory=PermanentActionModel)
+
+    @model_validator(mode="after")
+    def validate_permanent_action_positions(self) -> ProjectInput:
+        half_width = float(self.geometry.deck_width_m) / 2.0
+        for layer in self.permanent_actions.surfacing_layers:
+            if layer.y_start_m < -half_width or layer.y_end_m > half_width:
+                raise ValueError("Surfacing layer lies outside the physical deck width.")
+        for action in self.permanent_actions.line_actions:
+            if action.y_m < -half_width or action.y_m > half_width:
+                raise ValueError("Permanent line action lies outside the physical deck width.")
+        return self

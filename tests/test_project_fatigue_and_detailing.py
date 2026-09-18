@@ -100,6 +100,12 @@ def test_project_t_girder_detailing_uses_design_shear_and_ec2_materials() -> Non
     assert result.detailing.shear.governing_required_asw_per_s_mm2_per_m >= (
         result.detailing.shear.minimum_asw_per_s_mm2_per_m
     )
+    assert result.selected_longitudinal_bars.provided_area_mm2 >= (
+        result.detailing.longitudinal.minimum_tension_steel_mm2
+    )
+    assert result.selected_links.satisfies_required_area
+    assert result.anchorage_and_laps.design_anchorage_length_mm > 0.0
+    assert result.cover_and_durability.satisfies_nominal_cover
 
 
 

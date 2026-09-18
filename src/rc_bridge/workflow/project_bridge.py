@@ -23,7 +23,12 @@ from rc_bridge.codes.eurocode.combinations import (
 )
 from rc_bridge.codes.eurocode.en1991_2 import notional_lane_layout
 from rc_bridge.codes.eurocode.materials import concrete_properties_ec2
-from rc_bridge.core.models import DesignCode, ProjectInput, SupportSystem
+from rc_bridge.core.models import (
+    DesignCode,
+    PermanentLineActionCategory,
+    ProjectInput,
+    SupportSystem,
+)
 from rc_bridge.workflow.eurocode_bridge_traffic import (
     BridgeLM1TrafficResult,
     run_simple_span_lm1_bridge_traffic,
@@ -149,26 +154,90 @@ def girder_deck_tributary_width_m(project: ProjectInput, *, girder_index: int) -
     if not 1 <= girder_index <= girder_count:
         raise IndexError("girder_index is outside the project girder layout.")
 
-    width = float(geometry.deck_width_m)
-    spacing = float(geometry.girder_spacing_m)
-    edge = float(geometry.nominal_edge_overhang_m)
-    first_y = -width / 2.0 + edge
-    coordinates = tuple(first_y + index * spacing for index in range(girder_count))
-    y = coordinates[girder_index - 1]
-    left_boundary = (
-        -width / 2.0
-        if girder_index == 1
-        else 0.5 * (coordinates[girder_index - 2] + y)
-    )
-    right_boundary = (
-        width / 2.0
-        if girder_index == girder_count
-        else 0.5 * (y + coordinates[girder_index])
+    left_boundary, right_boundary = girder_deck_tributary_bounds_m(
+        project,
+        girder_index=girder_index,
     )
     tributary_width = right_boundary - left_boundary
     if tributary_width <= 0.0:
         raise ValueError("Computed girder deck tributary width must be positive.")
     return tributary_width
+
+
+def girder_deck_tributary_bounds_m(
+    project: ProjectInput,
+    *,
+    girder_index: int,
+) -> tuple[float, float]:
+    """Return physical left/right transverse tributary boundaries for one girder."""
+    geometry = project.geometry
+    girder_count = int(geometry.girder_count)
+    if not 1 <= girder_index <= girder_count:
+        raise IndexError("girder_index is outside the project girder layout.")
+    width = float(geometry.deck_width_m)
+    spacing = float(geometry.girder_spacing_m)
+    first_y = -width / 2.0 + float(geometry.nominal_edge_overhang_m)
+    coordinates = tuple(first_y + index * spacing for index in range(girder_count))
+    y = coordinates[girder_index - 1]
+    left = -width / 2.0 if girder_index == 1 else 0.5 * (coordinates[girder_index - 2] + y)
+    right = width / 2.0 if girder_index == girder_count else 0.5 * (y + coordinates[girder_index])
+    return left, right
+
+
+def girder_superimposed_permanent_loads_kn_m(
+    project: ProjectInput,
+    *,
+    girder_index: int,
+) -> tuple[float, float, float]:
+    """Return physical surfacing, barrier/service and other loads on one girder.
+
+    Area layers are assigned by exact overlap with the girder tributary band.
+    Longitudinal line actions between girder lines are shared by linear statics;
+    actions on deck overhangs are assigned to the adjacent exterior girder. The
+    latter captures vertical load allocation only—local overhang bending remains
+    a transverse-deck design action.
+    """
+    girder_count = int(project.geometry.girder_count)
+    if not 1 <= girder_index <= girder_count:
+        raise IndexError("girder_index is outside the project girder layout.")
+    left, right = girder_deck_tributary_bounds_m(project, girder_index=girder_index)
+    surfacing = sum(
+        max(0.0, min(right, layer.y_end_m) - max(left, layer.y_start_m))
+        * layer.pressure_kn_m2
+        for layer in project.permanent_actions.surfacing_layers
+    )
+
+    width = float(project.geometry.deck_width_m)
+    spacing = float(project.geometry.girder_spacing_m)
+    first_y = -width / 2.0 + float(project.geometry.nominal_edge_overhang_m)
+    coordinates = tuple(first_y + index * spacing for index in range(girder_count))
+    by_category = {
+        PermanentLineActionCategory.BARRIER: 0.0,
+        PermanentLineActionCategory.SERVICES: 0.0,
+        PermanentLineActionCategory.OTHER: 0.0,
+    }
+    for action in project.permanent_actions.line_actions:
+        shares = [0.0] * girder_count
+        if action.y_m <= coordinates[0]:
+            shares[0] = 1.0
+        elif action.y_m >= coordinates[-1]:
+            shares[-1] = 1.0
+        else:
+            left_index = next(
+                index
+                for index in range(girder_count - 1)
+                if coordinates[index] <= action.y_m <= coordinates[index + 1]
+            )
+            fraction_right = (action.y_m - coordinates[left_index]) / spacing
+            shares[left_index] = 1.0 - fraction_right
+            shares[left_index + 1] = fraction_right
+        by_category[action.category] += float(action.magnitude_kn_m) * shares[girder_index - 1]
+
+    barriers_and_services = (
+        by_category[PermanentLineActionCategory.BARRIER]
+        + by_category[PermanentLineActionCategory.SERVICES]
+    )
+    return surfacing, barriers_and_services, by_category[PermanentLineActionCategory.OTHER]
 
 
 def girder_deck_self_weight_kn_m(project: ProjectInput, *, girder_index: int) -> float:
@@ -241,8 +310,22 @@ def girder_characteristic_permanent_effects(
         if profile_self_weight_kn_m is not None
         else extra.girder_self_weight_kn_m
     )
+    automated_surfacing, automated_barrier_services, automated_other = (
+        girder_superimposed_permanent_loads_kn_m(project, girder_index=girder_index)
+    )
+    if automated_surfacing > 0.0 and extra.surfacing_and_finishes_kn_m > 0.0:
+        raise ValueError("Explicit surfacing load would double count physical surfacing layers.")
+    if automated_barrier_services > 0.0 and extra.assigned_barrier_and_services_kn_m > 0.0:
+        raise ValueError(
+            "Explicit barrier/services load would double count positioned line actions."
+        )
+    if automated_other > 0.0 and extra.other_kn_m > 0.0:
+        raise ValueError("Explicit other permanent load would double count physical line actions.")
     other_permanent_kn_m = (
-        extra.surfacing_and_finishes_kn_m
+        automated_surfacing
+        + automated_barrier_services
+        + automated_other
+        + extra.surfacing_and_finishes_kn_m
         + extra.assigned_barrier_and_services_kn_m
         + extra.other_kn_m
     )

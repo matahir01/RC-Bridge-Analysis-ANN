@@ -1,6 +1,12 @@
 import pytest
 
-from rc_bridge.design.eurocode_detailing import beam_detailing_requirements
+from rc_bridge.design.eurocode_detailing import (
+    anchorage_and_lap_lengths_mm,
+    beam_detailing_requirements,
+    nominal_cover_check,
+    select_longitudinal_bar_arrangement,
+    select_vertical_link_arrangement,
+)
 from rc_bridge.design.eurocode_fatigue import (
     concrete_compression_fatigue_check,
     concrete_design_fatigue_strength_mpa,
@@ -107,3 +113,51 @@ def test_minimum_shear_reinforcement_can_govern_design_requirement() -> None:
     assert result.shear.governing_required_asw_per_s_mm2_per_m == pytest.approx(
         result.shear.minimum_asw_per_s_mm2_per_m
     )
+
+
+def test_discrete_longitudinal_bar_selection_meets_area_and_spacing() -> None:
+    result = select_longitudinal_bar_arrangement(
+        required_area_mm2=6200.0,
+        web_width_mm=300.0,
+        cover_mm=50.0,
+        link_diameter_mm=12.0,
+    )
+
+    assert result.provided_area_mm2 >= 6200.0
+    assert result.layer_count <= 3
+    assert sum(result.bars_per_layer) == result.bar_count
+    assert result.clear_horizontal_spacing_mm >= max(25.0, result.bar_diameter_mm)
+    assert result.fits_web
+
+
+def test_discrete_vertical_link_selection_meets_area_and_spacing() -> None:
+    result = select_vertical_link_arrangement(
+        required_asw_per_s_mm2_per_m=420.0,
+        web_width_mm=300.0,
+        maximum_longitudinal_spacing_mm=300.0,
+        maximum_transverse_leg_spacing_mm=200.0,
+        cover_mm=50.0,
+    )
+
+    assert result.provided_asw_per_s_mm2_per_m >= 420.0
+    assert result.spacing_mm <= 300.0
+    assert result.satisfies_required_area
+
+
+def test_anchorage_lap_and_cover_checks_are_explicit() -> None:
+    anchorage = anchorage_and_lap_lengths_mm(
+        bar_diameter_mm=32.0,
+        fyk_mpa=500.0,
+        fctd_mpa=1.50,
+    )
+    cover = nominal_cover_check(
+        bar_diameter_mm=32.0,
+        durability_minimum_cover_mm=40.0,
+        allowance_for_deviation_mm=10.0,
+        provided_cover_mm=50.0,
+    )
+
+    assert anchorage.design_anchorage_length_mm >= anchorage.minimum_anchorage_length_mm
+    assert anchorage.design_lap_length_mm >= 15.0 * 32.0
+    assert cover.nominal_cover_mm == pytest.approx(50.0)
+    assert cover.satisfies_nominal_cover

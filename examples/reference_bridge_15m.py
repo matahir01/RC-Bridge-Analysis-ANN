@@ -8,7 +8,6 @@ from rc_bridge.core.models import (
     SupportSystem,
 )
 
-
 REFERENCE_BRIDGE_15M = ProjectInput(
     name="15 m RC Girder Benchmark",
     design_code=DesignCode.EUROCODE,

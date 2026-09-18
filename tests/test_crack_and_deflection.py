@@ -1,10 +1,12 @@
 import pytest
 
+from rc_bridge.analysis.loads import PointLoad
 from rc_bridge.design.eurocode_cracking import (
     crack_width_ec2_t_section,
     cracked_t_section_sls,
 )
 from rc_bridge.design.eurocode_deflection import (
+    ec2_interpolated_load_pattern_deflection,
     ec2_interpolated_udl_deflection,
     effective_concrete_modulus_mpa,
     simply_supported_full_span_udl_deflection_mm,
@@ -125,3 +127,71 @@ def test_ec2_deflection_result_carries_limit_state() -> None:
     assert result.g_deflection_mm == pytest.approx(
         30.0 - result.interpolated_deflection_mm
     )
+
+
+def test_load_pattern_deflection_recovers_full_span_udl_closed_form() -> None:
+    result = ec2_interpolated_load_pattern_deflection(
+        span_m=10.0,
+        ecm_mpa=30000.0,
+        uncracked_second_moment_mm4=8.0e9,
+        cracked_second_moment_mm4=8.0e9,
+        service_moment_knm=250.0,
+        cracking_moment_knm=500.0,
+        allowable_deflection_mm=50.0,
+        udl_kn_m=20.0,
+        evaluation_stations=51,
+        integration_segments=400,
+    )
+    expected = simply_supported_full_span_udl_deflection_mm(
+        udl_kn_m=20.0,
+        span_m=10.0,
+        elastic_modulus_mpa=30000.0,
+        second_moment_mm4=8.0e9,
+    )
+    assert result.interpolated_deflection_mm == pytest.approx(expected, rel=1.0e-7)
+    assert "load-pattern" in result.status
+
+
+def test_load_pattern_deflection_uses_actual_asymmetric_axle_positions() -> None:
+    left_pattern = ec2_interpolated_load_pattern_deflection(
+        span_m=12.0,
+        ecm_mpa=32000.0,
+        uncracked_second_moment_mm4=1.0e10,
+        cracked_second_moment_mm4=6.0e9,
+        service_moment_knm=300.0,
+        cracking_moment_knm=180.0,
+        allowable_deflection_mm=48.0,
+        point_loads=(PointLoad(100.0, 2.0), PointLoad(120.0, 3.5)),
+        evaluation_stations=61,
+        integration_segments=400,
+    )
+    mirrored_pattern = ec2_interpolated_load_pattern_deflection(
+        span_m=12.0,
+        ecm_mpa=32000.0,
+        uncracked_second_moment_mm4=1.0e10,
+        cracked_second_moment_mm4=6.0e9,
+        service_moment_knm=300.0,
+        cracking_moment_knm=180.0,
+        allowable_deflection_mm=48.0,
+        point_loads=(PointLoad(100.0, 10.0), PointLoad(120.0, 8.5)),
+        evaluation_stations=61,
+        integration_segments=400,
+    )
+    central_equivalent = ec2_interpolated_load_pattern_deflection(
+        span_m=12.0,
+        ecm_mpa=32000.0,
+        uncracked_second_moment_mm4=1.0e10,
+        cracked_second_moment_mm4=6.0e9,
+        service_moment_knm=300.0,
+        cracking_moment_knm=180.0,
+        allowable_deflection_mm=48.0,
+        point_loads=(PointLoad(220.0, 6.0),),
+        evaluation_stations=61,
+        integration_segments=400,
+    )
+
+    assert left_pattern.interpolated_deflection_mm == pytest.approx(
+        mirrored_pattern.interpolated_deflection_mm,
+        rel=1.0e-7,
+    )
+    assert left_pattern.interpolated_deflection_mm < central_equivalent.interpolated_deflection_mm

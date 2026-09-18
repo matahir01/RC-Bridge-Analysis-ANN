@@ -16,7 +16,10 @@ Implemented so far:
 - Typed bridge geometry, materials, deck construction and design-code models
 - Independently editable deck width, girder count and girder spacing with linked geometry guidance
 - Physical rectangular, T and I girder profiles with automatic precast-girder self-weight when a complete profile is defined
+- Automatic gross composite longitudinal `A`, `J`, `Iy` and `Iz` derivation for physical rectangular, T and I girder profiles, including participating deck concrete
+- Automatic physical transverse deck-strip properties for native/verification grillages, with explicit expert overrides retained and stiffness assumptions recorded in model metadata
 - Edge-aware deck tributary widths and permanent-load protection against conflicting/double-counted explicit girder self-weight
+- Physical-position-aware surfacing layers and barrier/service/other line actions, with conservative girder allocation and category-level double-count protection
 - Separate 75 mm precast false slab and 175 mm in-situ slab construction model
 - Uniform, point and moving axle-train load mechanics
 - Simply supported reactions, shear/moment response and moving-load envelopes
@@ -25,6 +28,7 @@ Implemented so far:
 - Continuous moving axle-train moment, shear, reaction and vertical-deflection envelopes
 - Code-neutral elastic T-section service-analysis mechanics
 - Numerical simply-supported and continuous-span elastic deflection recovery
+- Simple-span UDL-plus-axle load-pattern deflection with virtual-work curvature integration, span-wise maximum search and EC2 cracked/uncracked interpolation
 - EN 1991-2 LM1 lane/tandem/UDL loading including remaining carriageway area
 - Continuous LM1 tandem placement and adverse influence-region UDL effects
 - Lane-specific transverse-distribution interfaces
@@ -36,6 +40,7 @@ Implemented so far:
 - Layered continuous-support crack analysis with active/inactive construction layers
 - Continuous deterministic and moving-train deflection serviceability checks with explicit limits
 - Eurocode T-girder flexure, shear, torsion, cracking, deflection, fatigue and detailing kernels
+- Practical EC2 discrete longitudinal-bar and vertical-link selection, straight-bar anchorage/lap calculations, explicit durability-cover checks and congestion-aware web fit checks
 - Actual provided EC2 vertical-link shear resistance, using the lower of V_Rd,s and V_Rd,max
 - BS 5400 / BD 37/01 HA loading plus Type HB moving-vehicle mechanics
 - BS 5400 rectangular/T-section flexure, shear/link sizing, cracking, deflection, detailing and fatigue-scope mechanics
@@ -211,10 +216,10 @@ The current equal-share transverse-distribution route is explicitly **verificati
 BS 5400 is retained as a legacy/comparison path and remains isolated from the Eurocode implementation.
 
 ## Remaining major work
-1. **Automate physical analysis properties.** Derive longitudinal girder and transverse deck/grillage stiffness properties from the selected physical geometry/materials, retain explicit expert overrides, and add mechanics tests for the generated properties.
-2. **Complete simple-span service deflection.** Replace the current equivalent-full-span-UDL approximation with validated load-pattern/curvature integration that uses the actual permanent and native traffic response.
-3. **Complete permanent-action modelling.** Girder self-weight is already automatic when a complete physical profile is defined; add physical-position-aware surfacing, barriers, services and other superimposed permanent actions without double counting.
-4. **Complete practical RC detailing.** Select usable longitudinal bars and links, spacing zones, anchorage/development length, laps, curtailment, cover/durability, congestion checks and torsion reinforcement placement.
+1. **Refine physical analysis properties.** Gross longitudinal composite and representative transverse deck-strip properties are now derived automatically from physical geometry, with explicit expert overrides retained. Complete station-specific transverse strip widths, edge-girder longitudinal slab widths and any validated cracked/creep/construction-stage stiffness selections required by production analysis.
+2. **Complete simple-span service deflection integration.** The load-pattern/curvature engine now handles actual full-span UDL plus arbitrary axle patterns and searches the span maximum. Replace the compatibility equivalent-UDL adapter by tracing the governing co-located native traffic service pattern into this engine.
+3. **Extend permanent-action modelling to staged/nonuniform longitudinal actions.** Girder and deck self-weight, transverse surfacing bands and positioned barrier/service/other line actions are automated with category-level double-count protection. Add longitudinally varying/staged actions when required by a project.
+4. **Complete envelope-driven detailing.** Discrete longitudinal bars and closed links, web-fit/congestion, straight-bar anchorage/laps and explicit durability cover are implemented. Add section-by-section link spacing zones, longitudinal curtailment from the final design envelope, alternate anchorage geometries and drawing-level torsion-cage placement.
 5. **Add the dedicated Eurocode fatigue traffic path.** Implement the appropriate fatigue-load-model moving analysis and integrate it into the simple-span production workflow rather than reusing LM1.
 6. **Generalize the native simple-span production workflow.** Extend the benchmark-gated design path from its current T-girder adapter to the supported rectangular, T and I non-prestressed RC girder profiles.
 7. **Complete the continuous-span production workflow.** Integrate native transverse distribution, signed sagging/hogging/shear envelopes, service traffic deflection, torsion, fatigue and detailing with the existing continuous analysis/design kernels.
