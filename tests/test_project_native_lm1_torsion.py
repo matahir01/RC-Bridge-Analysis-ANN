@@ -65,10 +65,11 @@ def native_benchmark_case():
         longitudinal_step_m=15.0,
     )
     cases_by_id = {case.placement.case_id: case for case in search.cases}
+    all_case_ids = tuple(sorted(cases_by_id))
     suite = LM1GoverningBenchmarkSuite(
         cases=tuple(
             SimpleNamespace(case_id=case_id, case=cases_by_id[case_id])
-            for case_id in search.governing_case_ids
+            for case_id in all_case_ids
         )
     )
     reports = tuple(
@@ -77,7 +78,7 @@ def native_benchmark_case():
             source_name="MIDAS Civil",
             comparisons=(SimpleNamespace(passes=True),),
         )
-        for case_id in search.governing_case_ids
+        for case_id in all_case_ids
     )
     report = LM1ExternalBenchmarkSuiteReport(
         source_name="MIDAS Civil",
