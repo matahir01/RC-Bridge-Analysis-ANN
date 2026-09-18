@@ -12,6 +12,10 @@ from rc_bridge.core.models import (
 from rc_bridge.workflow.eurocode_layered_girder import LayeredGirderDesignInput
 from rc_bridge.workflow.grillage_verification_export import GrillageSectionProperties
 from rc_bridge.workflow.project_construction import PermanentGrillageStageInput
+from rc_bridge.workflow.project_continuous_detailing import (
+    ContinuousLongitudinalDetailingInput,
+    run_project_continuous_native_detailing,
+)
 from rc_bridge.workflow.project_continuous_design import (
     ContinuousShearDesignInput,
     NegativeSupportRectangularDesignInput,
@@ -281,3 +285,73 @@ def test_continuous_native_fatigue_checks_top_and_bottom_steel_through_reversal(
     }
     assert support_sides == {"left", "right"}
     assert "moment jumps" in result.status
+
+
+
+def test_continuous_native_detailing_generates_top_bottom_and_link_zones() -> None:
+    production = _run()
+    result = run_project_continuous_native_detailing(
+        _project(),
+        production=production,
+        detailing=ContinuousLongitudinalDetailingInput(
+            bottom_composite_slab_width_m=1.50,
+            bottom_effective_depth_from_top_m=1.10,
+            bottom_cover_mm=50.0,
+            top_effective_deck_width_m=1.50,
+            top_effective_depth_from_bottom_m=1.10,
+            top_cover_mm=50.0,
+        ),
+    )
+
+    assert result.bottom_zones
+    assert result.top_zones
+    assert result.link_zones
+    assert result.bottom_continuous_core.bar_count >= 2
+    assert result.top_continuous_core.bar_count >= 2
+    assert all(
+        zone.arrangement.bar_count >= zone.continuous_bar_count
+        for zone in (*result.bottom_zones, *result.top_zones)
+    )
+    assert all(
+        0.0 <= zone.anchored_start_m <= zone.x_start_m
+        and zone.x_end_m <= zone.anchored_end_m <= 20.0
+        for zone in (*result.bottom_zones, *result.top_zones)
+    )
+    assert any(item.positive_design_moment_knm > 0.0 for item in result.stations)
+    assert any(item.negative_design_moment_knm > 0.0 for item in result.stations)
+
+
+def test_continuous_detailing_can_include_matched_torsion_cage() -> None:
+    production = _run(girder_index=1)
+    torsion = check_project_continuous_native_matched_shear_torsion(
+        _project(),
+        production=production,
+        section=ContinuousShearDesignInput(
+            web_width_m=0.40,
+            effective_depth_m=1.05,
+            longitudinal_steel_area_mm2=6500.0,
+            provided_asw_per_s_mm2_per_m=1600.0,
+        ),
+        torsion_cell=TorsionCellInput(
+            ak_m2=0.10,
+            uk_m=1.40,
+            tef_m=0.15,
+        ),
+    )
+    result = run_project_continuous_native_detailing(
+        _project(),
+        production=production,
+        detailing=ContinuousLongitudinalDetailingInput(
+            bottom_composite_slab_width_m=1.50,
+            bottom_effective_depth_from_top_m=1.10,
+            bottom_cover_mm=50.0,
+            top_effective_deck_width_m=1.50,
+            top_effective_depth_from_bottom_m=1.10,
+            top_cover_mm=50.0,
+        ),
+        torsion=torsion,
+    )
+
+    assert result.torsion_cage is not None
+    assert result.torsion_cage.links.satisfies_shear
+    assert result.torsion_cage.links.satisfies_torsion

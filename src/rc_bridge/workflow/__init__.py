@@ -37,6 +37,14 @@ from rc_bridge.workflow.project_continuous_native_deflection import (
     ContinuousNativeServiceDeflectionResult,
     run_project_continuous_native_service_deflection,
 )
+from rc_bridge.workflow.project_continuous_detailing import (
+    ContinuousDetailingStation,
+    ContinuousLinkSpacingZone,
+    ContinuousLongitudinalBarZone,
+    ContinuousLongitudinalDetailingInput,
+    ProjectContinuousDetailingResult,
+    run_project_continuous_native_detailing,
+)
 from rc_bridge.workflow.project_continuous_native_fatigue import (
     ContinuousFatigueStationResult,
     ContinuousTopSteelFatigueInput,
@@ -115,7 +123,11 @@ __all__ = [
     "ConstructionProppingMode",
     "ConstructionTimeEffectMode",
     "ConstructionTransverseActionMode",
+    "ContinuousDetailingStation",
     "ContinuousFatigueStationResult",
+    "ContinuousLinkSpacingZone",
+    "ContinuousLongitudinalBarZone",
+    "ContinuousLongitudinalDetailingInput",
     "ContinuousNativeLM1StationTrace",
     "ContinuousNativeServiceDeflectionResult",
     "ContinuousNativeShearTorsionPoint",
@@ -137,6 +149,7 @@ __all__ = [
     "NativeLM1ShearTorsionPoint",
     "PermanentGrillageStageInput",
     "ProjectConstructionGrillageResult",
+    "ProjectContinuousDetailingResult",
     "ProjectContinuousNativeFatigueResult",
     "ProjectContinuousNativeLM1EnvelopeResult",
     "ProjectContinuousNativeShearTorsionResult",
@@ -168,6 +181,7 @@ __all__ = [
     "run_project_all_layered_girders_from_native_lm1",
     "run_project_all_t_girders_from_native_lm1",
     "run_project_construction_grillage",
+    "run_project_continuous_native_detailing",
     "run_project_continuous_native_fatigue",
     "run_project_continuous_native_lm1_envelope",
     "run_project_continuous_native_service_deflection",
