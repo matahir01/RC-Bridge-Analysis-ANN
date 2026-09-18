@@ -1,7 +1,13 @@
 import pytest
 
 from rc_bridge.codes.eurocode.combinations import ServiceabilityPsiFactors
-from rc_bridge.core.models import MaterialProperties, ProjectInput, SupportSystem
+from rc_bridge.core.models import (
+    BridgeGeometry,
+    MaterialProperties,
+    ProjectInput,
+    SupportSystem,
+    TGirderProfile,
+)
 from rc_bridge.workflow.eurocode_girder import TGirderDesignInput
 from rc_bridge.workflow.project_bridge import (
     SLSCombinationChoice,
@@ -11,6 +17,7 @@ from rc_bridge.workflow.project_bridge import (
     girder_deck_tributary_width_m,
     internal_girder_characteristic_permanent_effects,
     internal_girder_deck_self_weight_kn_m,
+    physical_girder_self_weight_kn_m,
     project_eurocode_material_input,
     project_internal_girder_combinations_verification,
     project_serviceability_from_combinations,
@@ -254,3 +261,43 @@ def test_project_equal_share_verification_rejects_continuous_system() -> None:
     project.geometry.support_system = SupportSystem.CONTINUOUS
     with pytest.raises(ValueError, match="simple spans only"):
         run_project_lm1_equal_share_verification(project)
+
+
+
+def test_physical_girder_profile_self_weight_enters_permanent_effects() -> None:
+    project = ProjectInput(
+        geometry=BridgeGeometry(
+            girder_profile=TGirderProfile(
+                flange_width_m=0.60,
+                flange_thickness_m=0.15,
+                web_width_m=0.30,
+                total_depth_m=0.95,
+            )
+        )
+    )
+
+    assert physical_girder_self_weight_kn_m(project) == pytest.approx(8.25)
+    effects = internal_girder_characteristic_permanent_effects(project)
+    assert effects.moment_knm == pytest.approx(530.859375)
+    assert effects.shear_kn == pytest.approx(141.5625)
+
+
+def test_profile_self_weight_cannot_be_double_counted_as_explicit_line_load() -> None:
+    project = ProjectInput(
+        geometry=BridgeGeometry(
+            girder_profile=TGirderProfile(
+                flange_width_m=0.60,
+                flange_thickness_m=0.15,
+                web_width_m=0.30,
+                total_depth_m=0.95,
+            )
+        )
+    )
+
+    with pytest.raises(ValueError, match="already derived"):
+        internal_girder_characteristic_permanent_effects(
+            project,
+            additional=UniformPermanentLoadInput(
+                girder_self_weight_kn_m=8.25,
+            ),
+        )
