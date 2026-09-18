@@ -104,11 +104,11 @@ def test_nonparticipating_false_slab_gap_changes_layered_section_response() -> N
         ConcreteSectionLayer(0.30, 0.25, 1.20, "precast girder"),
     )
     gap_result = layered_singly_reinforced_resistance(
-        layers=with_gap, effective_depth_m=1.10, steel_area_mm2=6500.0,
+        layers=with_gap, effective_depth_m=1.10, steel_area_mm2=18000.0,
         fck_mpa=35.0, fyk_mpa=500.0,
     )
     filled_result = layered_singly_reinforced_resistance(
-        layers=filled, effective_depth_m=1.10, steel_area_mm2=6500.0,
+        layers=filled, effective_depth_m=1.10, steel_area_mm2=18000.0,
         fck_mpa=35.0, fyk_mpa=500.0,
     )
     assert gap_result.resistance_knm < filled_result.resistance_knm

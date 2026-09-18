@@ -162,7 +162,7 @@ def layered_singly_reinforced_resistance(
     lever_arm = effective_depth_m - centroid
     if lever_arm <= 0.0:
         raise ValueError("Calculated layered-section lever arm is non-positive.")
-    resistance_knm = steel_force_n * lever_arm / 1.0e6
+    resistance_knm = steel_force_n * lever_arm / 1000.0
     return LayeredFlexureResult(
         resistance_knm=resistance_knm,
         neutral_axis_from_top_m=neutral_axis,
