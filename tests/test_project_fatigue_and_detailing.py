@@ -7,6 +7,12 @@ from rc_bridge.workflow.project_bridge import (
     SLSCombinationChoice,
     run_project_internal_t_girder_verification,
 )
+from rc_bridge.workflow.project_deck_fatigue import (
+    LocalDeckFatigueSourceKind,
+    LocalDeckReinforcementFatigueInput,
+    ProjectLocalDeckFatigueInput,
+    run_project_local_deck_fatigue,
+)
 from rc_bridge.workflow.project_detailing import run_project_t_girder_detailing
 from rc_bridge.workflow.project_fatigue import (
     ConcreteFatigueInput,
@@ -156,3 +162,42 @@ def test_project_t_girder_detailing_checks_explicit_provided_shear_links() -> No
         design=design.design,
     )
     assert failed.provided_shear_satisfies_requirement is False
+
+
+
+def test_local_deck_fatigue_requires_dedicated_traceable_stress_source() -> None:
+    result = run_project_local_deck_fatigue(
+        ProjectInput(),
+        fatigue=ProjectLocalDeckFatigueInput(
+            source_kind=LocalDeckFatigueSourceKind.DEDICATED_PLATE_ANALYSIS,
+            source_description="FLM3 local slab plate model at critical wheel path",
+            reinforcement_details=(
+                LocalDeckReinforcementFatigueInput(
+                    detail_name="transverse top steel over girder",
+                    reference_stress_range_mpa=72.0,
+                    lambda_s=0.90,
+                    characteristic_fatigue_strength_mpa=162.5,
+                ),
+                LocalDeckReinforcementFatigueInput(
+                    detail_name="transverse bottom steel between girders",
+                    reference_stress_range_mpa=64.0,
+                    lambda_s=0.90,
+                    characteristic_fatigue_strength_mpa=162.5,
+                ),
+            ),
+        ),
+    )
+
+    assert len(result.reinforcement_details) == 2
+    assert result.passes
+    assert result.source_kind == LocalDeckFatigueSourceKind.DEDICATED_PLATE_ANALYSIS
+    assert "not silently" in result.status
+
+
+def test_local_deck_fatigue_rejects_untraceable_empty_detail_set() -> None:
+    with pytest.raises(ValueError, match="at least one"):
+        ProjectLocalDeckFatigueInput(
+            source_kind=LocalDeckFatigueSourceKind.VERIFIED_EXTERNAL_LOCAL_MODEL,
+            source_description="external local deck model",
+            reinforcement_details=(),
+        )

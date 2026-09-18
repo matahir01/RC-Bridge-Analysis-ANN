@@ -28,6 +28,13 @@ from rc_bridge.workflow.project_construction import (
     build_construction_stage_verification_packages,
     run_project_construction_grillage,
 )
+from rc_bridge.workflow.project_deck_fatigue import (
+    LocalDeckFatigueSourceKind,
+    LocalDeckReinforcementFatigueInput,
+    ProjectLocalDeckFatigueInput,
+    ProjectLocalDeckFatigueResult,
+    run_project_local_deck_fatigue,
+)
 from rc_bridge.workflow.project_envelope_detailing import (
     ProjectTGirderEnvelopeDetailingResult,
     ULSDetailingEnvelopePoint,
@@ -92,6 +99,8 @@ __all__ = [
     "GrillageStiffnessModifiers",
     "GrillageVerificationLoadCase",
     "LayeredGirderDesignInput",
+    "LocalDeckFatigueSourceKind",
+    "LocalDeckReinforcementFatigueInput",
     "NativeFLM3FatigueDesignInput",
     "NativeFLM3LayeredGirderFatigueResult",
     "NativeFLM3TGirderFatigueResult",
@@ -103,6 +112,8 @@ __all__ = [
     "ProjectConstructionGrillageResult",
     "ProjectLayeredGirderDetailingResult",
     "ProjectLayeredGirderEnvelopeDetailingResult",
+    "ProjectLocalDeckFatigueInput",
+    "ProjectLocalDeckFatigueResult",
     "ProjectNativeFLM3GrillageSearchResult",
     "ProjectNativeLM1GrillageSearchResult",
     "ProjectNativeLM1LayeredGirderDesignSuite",
@@ -129,6 +140,7 @@ __all__ = [
     "run_project_layered_girder_envelope_detailing",
     "run_project_layered_girder_fatigue_from_native_flm3",
     "run_project_layered_girder_from_native_lm1",
+    "run_project_local_deck_fatigue",
     "run_project_native_flm3_grillage_search",
     "run_project_native_lm1_grillage_search",
     "run_project_native_torsion_cage_detailing",
