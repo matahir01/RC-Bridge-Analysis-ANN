@@ -17,8 +17,10 @@ from rc_bridge.core.models import (
 )
 from rc_bridge.workflow.grillage_verification_export import (
     GrillageSectionProperties,
+    GrillageStiffnessModifiers,
     GrillageVerificationLoadCase,
     build_project_grillage_verification_model,
+    service_grillage_stiffness_modifiers,
 )
 
 
@@ -186,4 +188,70 @@ def test_automatic_longitudinal_properties_require_physical_profile() -> None:
             ProjectInput(),
             transverse_stations_m=(5.0, 10.0),
             load_case=GrillageVerificationLoadCase(name="missing profile"),
+        )
+
+
+def test_explicit_stiffness_modifiers_scale_vertical_bending_and_torsion() -> None:
+    project = ProjectInput(
+        geometry=BridgeGeometry(
+            span_lengths_m=[15.0],
+            section_type=SectionType.T,
+            girder_profile=TGirderProfile(
+                flange_width_m=0.70,
+                flange_thickness_m=0.15,
+                web_width_m=0.30,
+                total_depth_m=0.95,
+            ),
+        )
+    )
+    gross = build_project_grillage_verification_model(
+        project,
+        transverse_stations_m=(7.5,),
+        load_case=GrillageVerificationLoadCase(name="gross"),
+    )
+    modified = build_project_grillage_verification_model(
+        project,
+        transverse_stations_m=(7.5,),
+        load_case=GrillageVerificationLoadCase(name="modified"),
+        stiffness_modifiers=GrillageStiffnessModifiers(
+            longitudinal_bending_factors_by_span=(0.60,),
+            longitudinal_torsion_factors_by_span=(0.75,),
+            transverse_bending_factor=0.50,
+            transverse_torsion_factor=0.80,
+            basis="test explicit modifiers",
+        ),
+    )
+
+    assert modified.sections[0].iy_m4 == pytest.approx(0.60 * gross.sections[0].iy_m4)
+    assert modified.sections[0].torsion_constant_m4 == pytest.approx(
+        0.75 * gross.sections[0].torsion_constant_m4
+    )
+    first_transverse = 7
+    assert modified.sections[first_transverse].iy_m4 == pytest.approx(
+        0.50 * gross.sections[first_transverse].iy_m4
+    )
+    assert modified.sections[first_transverse].torsion_constant_m4 == pytest.approx(
+        0.80 * gross.sections[first_transverse].torsion_constant_m4
+    )
+    assert modified.metadata["stiffness_modifier_basis"] == "test explicit modifiers"
+
+
+def test_service_stiffness_helper_requires_explicit_cracked_ratios_and_creep() -> None:
+    modifiers = service_grillage_stiffness_modifiers(
+        span_count=2,
+        creep_coefficient=1.0,
+        longitudinal_cracked_inertia_ratios_by_span=(0.60, 0.50),
+        transverse_cracked_inertia_ratio=0.40,
+    )
+
+    assert modifiers.longitudinal_bending_factors_by_span == pytest.approx((0.30, 0.25))
+    assert modifiers.transverse_bending_factor == pytest.approx(0.20)
+    assert "cracked/creep-adjusted" in modifiers.basis
+
+    with pytest.raises(ValueError, match="per span"):
+        service_grillage_stiffness_modifiers(
+            span_count=2,
+            creep_coefficient=1.0,
+            longitudinal_cracked_inertia_ratios_by_span=(0.60,),
+            transverse_cracked_inertia_ratio=0.40,
         )

@@ -43,6 +43,91 @@ class GrillageSectionProperties:
 
 
 @dataclass(frozen=True)
+class GrillageStiffnessModifiers:
+    """Explicit effective-stiffness modifiers for a grillage model.
+
+    The verification material modulus remains unchanged. Longitudinal and
+    transverse bending factors therefore scale Iy, while torsion factors
+    scale J. No cracked or creep factor is inferred automatically.
+    """
+
+    longitudinal_bending_factors_by_span: tuple[float, ...] | None = None
+    longitudinal_torsion_factors_by_span: tuple[float, ...] | None = None
+    transverse_bending_factor: float = 1.0
+    transverse_torsion_factor: float = 1.0
+    basis: str = "explicit stiffness modifiers"
+
+    def __post_init__(self) -> None:
+        values = (
+            *(self.longitudinal_bending_factors_by_span or ()),
+            *(self.longitudinal_torsion_factors_by_span or ()),
+            self.transverse_bending_factor,
+            self.transverse_torsion_factor,
+        )
+        if any(value <= 0.0 for value in values):
+            raise ValueError("All grillage stiffness modifiers must be positive.")
+        if not self.basis.strip():
+            raise ValueError("Grillage stiffness modifier basis cannot be empty.")
+
+
+def service_grillage_stiffness_modifiers(
+    *,
+    span_count: int,
+    creep_coefficient: float,
+    longitudinal_cracked_inertia_ratios_by_span: tuple[float, ...],
+    transverse_cracked_inertia_ratio: float,
+    longitudinal_torsion_factors_by_span: tuple[float, ...] | None = None,
+    transverse_torsion_factor: float = 1.0,
+    basis: str = "explicit cracked/creep-adjusted service stiffness",
+) -> GrillageStiffnessModifiers:
+    """Build transparent service stiffness from explicit cracked ratios and creep.
+
+    Because the model retains Ecm as its material modulus, the bending factor
+    is (Icr/Ig)/(1+phi). The caller must justify every cracked inertia ratio
+    and creep coefficient from the applicable design basis.
+    """
+    if span_count < 1:
+        raise ValueError("span_count must be positive.")
+    if creep_coefficient < 0.0:
+        raise ValueError("creep_coefficient cannot be negative.")
+    if len(longitudinal_cracked_inertia_ratios_by_span) != span_count:
+        raise ValueError("One longitudinal cracked inertia ratio is required per span.")
+    if any(
+        value <= 0.0 or value > 1.0
+        for value in longitudinal_cracked_inertia_ratios_by_span
+    ):
+        raise ValueError("Longitudinal cracked inertia ratios must lie in (0, 1].")
+    if not 0.0 < transverse_cracked_inertia_ratio <= 1.0:
+        raise ValueError("Transverse cracked inertia ratio must lie in (0, 1].")
+    modulus_factor = 1.0 / (1.0 + creep_coefficient)
+    return GrillageStiffnessModifiers(
+        longitudinal_bending_factors_by_span=tuple(
+            value * modulus_factor
+            for value in longitudinal_cracked_inertia_ratios_by_span
+        ),
+        longitudinal_torsion_factors_by_span=longitudinal_torsion_factors_by_span,
+        transverse_bending_factor=transverse_cracked_inertia_ratio * modulus_factor,
+        transverse_torsion_factor=transverse_torsion_factor,
+        basis=basis,
+    )
+
+
+def _apply_stiffness_modifiers(
+    section: GrillageSectionProperties,
+    *,
+    bending_factor: float,
+    torsion_factor: float,
+) -> GrillageSectionProperties:
+    return GrillageSectionProperties(
+        name=section.name,
+        area_m2=section.area_m2,
+        torsion_constant_m4=section.torsion_constant_m4 * torsion_factor,
+        iy_m4=section.iy_m4 * bending_factor,
+        iz_m4=section.iz_m4,
+    )
+
+
+@dataclass(frozen=True)
 class GrillagePointLoad:
     """One downward point load positioned in the bridge plan."""
 
@@ -193,6 +278,7 @@ def build_project_grillage_verification_model(
     load_case: GrillageVerificationLoadCase,
     longitudinal_slab_width_m: float | None = None,
     transverse_strip_width_m: float | None = None,
+    stiffness_modifiers: GrillageStiffnessModifiers | None = None,
 ) -> VerificationModel:
     """Build a full bridge beam-grillage model for independent software verification.
 
@@ -203,6 +289,28 @@ def build_project_grillage_verification_model(
     """
     span_count = len(project.geometry.span_lengths_m)
     girder_count = int(project.geometry.girder_count)
+    modifiers = stiffness_modifiers or GrillageStiffnessModifiers(
+        basis="unmodified supplied/physical gross stiffness"
+    )
+    if (
+        modifiers.longitudinal_bending_factors_by_span is not None
+        and len(modifiers.longitudinal_bending_factors_by_span) != span_count
+    ):
+        raise ValueError("Longitudinal bending modifiers must match the project span count.")
+    if (
+        modifiers.longitudinal_torsion_factors_by_span is not None
+        and len(modifiers.longitudinal_torsion_factors_by_span) != span_count
+    ):
+        raise ValueError("Longitudinal torsion modifiers must match the project span count.")
+
+    def longitudinal_bending_factor(span_index: int) -> float:
+        values = modifiers.longitudinal_bending_factors_by_span
+        return 1.0 if values is None else values[span_index]
+
+    def longitudinal_torsion_factor(span_index: int) -> float:
+        values = modifiers.longitudinal_torsion_factors_by_span
+        return 1.0 if values is None else values[span_index]
+
     if longitudinal_sections_by_span is not None and len(longitudinal_sections_by_span) != span_count:
         raise ValueError("One longitudinal grillage section is required per physical span.")
     if load_case.longitudinal_udl_kn_m_by_girder is not None and len(
@@ -242,15 +350,19 @@ def build_project_grillage_verification_model(
                     slab_width_basis=slab_basis,
                 )
                 longitudinal_sections.append(
-                    GrillageSectionProperties(
-                        name=(
-                            f"Physical composite span {span_index + 1} "
-                            f"girder {girder_index + 1}"
+                    _apply_stiffness_modifiers(
+                        GrillageSectionProperties(
+                            name=(
+                                f"Physical composite span {span_index + 1} "
+                                f"girder {girder_index + 1}"
+                            ),
+                            area_m2=generated.area_m2,
+                            torsion_constant_m4=generated.torsion_constant_m4,
+                            iy_m4=generated.iy_m4,
+                            iz_m4=generated.iz_m4,
                         ),
-                        area_m2=generated.area_m2,
-                        torsion_constant_m4=generated.torsion_constant_m4,
-                        iy_m4=generated.iy_m4,
-                        iz_m4=generated.iz_m4,
+                        bending_factor=longitudinal_bending_factor(span_index),
+                        torsion_factor=longitudinal_torsion_factor(span_index),
                     )
                 )
                 span_ids.append(len(longitudinal_sections))
@@ -259,7 +371,14 @@ def build_project_grillage_verification_model(
             f"{generated.basis}; distinct physical section per span/girder line"
         )
     else:
-        longitudinal_sections.extend(longitudinal_sections_by_span)
+        longitudinal_sections.extend(
+            _apply_stiffness_modifiers(
+                section,
+                bending_factor=longitudinal_bending_factor(span_index),
+                torsion_factor=longitudinal_torsion_factor(span_index),
+            )
+            for span_index, section in enumerate(longitudinal_sections_by_span)
+        )
         longitudinal_section_ids = [
             [span_index + 1] * girder_count for span_index in range(span_count)
         ]
@@ -285,12 +404,16 @@ def build_project_grillage_verification_model(
                 strip_width_basis=strip_basis,
             )
             transverse_sections.append(
-                GrillageSectionProperties(
-                    name=f"Physical transverse deck strip station {x_index + 1}",
-                    area_m2=generated_transverse.area_m2,
-                    torsion_constant_m4=generated_transverse.torsion_constant_m4,
-                    iy_m4=generated_transverse.iy_m4,
-                    iz_m4=generated_transverse.iz_m4,
+                _apply_stiffness_modifiers(
+                    GrillageSectionProperties(
+                        name=f"Physical transverse deck strip station {x_index + 1}",
+                        area_m2=generated_transverse.area_m2,
+                        torsion_constant_m4=generated_transverse.torsion_constant_m4,
+                        iy_m4=generated_transverse.iy_m4,
+                        iz_m4=generated_transverse.iz_m4,
+                    ),
+                    bending_factor=modifiers.transverse_bending_factor,
+                    torsion_factor=modifiers.transverse_torsion_factor,
                 )
             )
             transverse_section_ids.append(len(longitudinal_sections) + x_index + 1)
@@ -298,7 +421,13 @@ def build_project_grillage_verification_model(
             f"{generated_transverse.basis}; distinct physical section per transverse grid line"
         )
     else:
-        transverse_sections.append(transverse_section)
+        transverse_sections.append(
+            _apply_stiffness_modifiers(
+                transverse_section,
+                bending_factor=modifiers.transverse_bending_factor,
+                torsion_factor=modifiers.transverse_torsion_factor,
+            )
+        )
         transverse_section_ids = [len(longitudinal_sections) + 1] * len(x_stations)
         transverse_basis = "explicit expert override A, J, Iy and Iz"
     e_kn_m2 = _elastic_modulus_mpa(project) * 1000.0
@@ -488,6 +617,25 @@ def build_project_grillage_verification_model(
             "station_count": str(len(x_stations)),
             "transverse_stiffness_basis": transverse_basis,
             "longitudinal_stiffness_basis": longitudinal_basis,
+            "stiffness_modifier_basis": modifiers.basis,
+            "longitudinal_bending_factors_by_span": (
+                "1"
+                if modifiers.longitudinal_bending_factors_by_span is None
+                else ",".join(
+                    f"{value:.12g}"
+                    for value in modifiers.longitudinal_bending_factors_by_span
+                )
+            ),
+            "longitudinal_torsion_factors_by_span": (
+                "1"
+                if modifiers.longitudinal_torsion_factors_by_span is None
+                else ",".join(
+                    f"{value:.12g}"
+                    for value in modifiers.longitudinal_torsion_factors_by_span
+                )
+            ),
+            "transverse_bending_factor": f"{modifiers.transverse_bending_factor:.12g}",
+            "transverse_torsion_factor": f"{modifiers.transverse_torsion_factor:.12g}",
             "point_load_mapping": "exact x station; exact nodal or transverse-member y position",
             "area_load_mapping": "exact patch boundaries; uniform cell pressure lumped q*A/4 to each corner",
             "deck_overhang_model": "transverse cantilever strip from exterior girder to physical deck edge",

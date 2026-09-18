@@ -19,6 +19,7 @@ Implemented so far:
 - Automatic edge-aware gross composite longitudinal `A`, `J`, `Iy` and `Iz` derivation for every rectangular, T or I girder line, including participating deck concrete and physical overhang tributaries
 - Automatic station-specific transverse deck-strip properties for native/verification grillages, with exact bridge-length recovery, explicit expert overrides and stiffness assumptions recorded in model metadata
 - Native LM1 and FLM3 grillage searches can now consume those physical properties directly when explicit expert section overrides are omitted
+- Explicit span-wise longitudinal and transverse effective-stiffness modifiers, plus a service helper that combines caller-justified cracked inertia ratios and creep without silently choosing them
 - Edge-aware deck tributary widths and permanent-load protection against conflicting/double-counted explicit girder self-weight
 - Physical-position-aware surfacing layers and barrier/service/other line actions with transverse allocation, explicit longitudinal extents, construction-stage tags/filters and category-level double-count protection
 - Exact simple-span segmented permanent-load reactions, shear and zero-shear moment extrema; the same permanent moment field feeds native service-deflection curvature
@@ -223,7 +224,7 @@ The current equal-share transverse-distribution route is explicitly **verificati
 BS 5400 is retained as a legacy/comparison path and remains isolated from the Eurocode implementation.
 
 ## Remaining major work
-1. **Complete staged stiffness selection.** Edge-aware longitudinal composite properties and station-specific transverse strips are now derived automatically from physical geometry, while explicit expert overrides remain available. Add validated cracked, creep-adjusted and construction-stage stiffness selections where the applicable analysis requires them; never select these states silently.
+1. **Complete construction-stage stiffness selection.** Edge-aware longitudinal composite properties and station-specific transverse strips are derived automatically. Explicit effective-stiffness modifiers and a cracked-inertia/creep service helper are available without silently selecting cracked states. Add dedicated precast/deck-construction section states and validate project-specific cracked/creep inputs before final acceptance.
 2. **Complete drawing-level detailing.** Native simple-span section-by-section link spacing and anchorage-extended longitudinal curtailment are now generated from the ULS envelope. Add alternate anchorage geometries, splice staggering/constructability rules and drawing-level torsion-cage placement.
 3. **Complete the remaining fatigue scope.** A dedicated native full-width FLM3 moving-grillage path now drives simple-span T-girder longitudinal-reinforcement and concrete-compression fatigue without reusing LM1, and can be attached directly to the native-LM1 production result. Add code-governed fatigue-lane/National-Annex placement automation, shear-reinforcement and local deck fatigue, continuous-span fatigue and final independent validation.
 4. **Generalize the native simple-span production workflow.** Extend the benchmark-gated design path from its current T-girder adapter to the supported rectangular, T and I non-prestressed RC girder profiles.
