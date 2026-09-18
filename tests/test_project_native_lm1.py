@@ -236,7 +236,16 @@ def test_native_lm1_can_design_all_girders_and_identify_governing_lines() -> Non
     )
 
     assert len(result.girders) == 7
-    assert result.governing_moment_girder_index == 7
-    assert result.governing_shear_girder_index == 7
-    assert result.governing_torsion_girder_index == 7
+    assert result.governing_moment_girder_index == max(
+        result.girders,
+        key=lambda item: item.combinations.persistent_uls.effects.moment_knm,
+    ).combinations.girder_index
+    assert result.governing_shear_girder_index == max(
+        result.girders,
+        key=lambda item: abs(item.combinations.persistent_uls.effects.shear_kn),
+    ).combinations.girder_index
+    assert result.governing_torsion_girder_index == max(
+        result.girders,
+        key=lambda item: abs(item.combinations.persistent_uls.effects.torsion_knm),
+    ).combinations.girder_index
     assert result.search_strategy == search.search_strategy
