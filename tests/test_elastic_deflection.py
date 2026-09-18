@@ -3,7 +3,6 @@ from math import sqrt
 import pytest
 
 from rc_bridge.analysis.elastic_deflection import (
-    simply_supported_deflection_at_x_mm,
     simply_supported_deflection_from_moment_diagram_mm,
     simply_supported_midspan_deflection_mm,
 )
@@ -106,12 +105,26 @@ def test_moment_diagram_deflection_finds_interior_peak_between_stations() -> Non
     expected_position_m = span_m - sqrt(
         (span_m**2 - load_position_m**2) / 3.0
     )
-    expected_deflection_mm = simply_supported_deflection_at_x_mm(
-        span_m=span_m,
-        target_x_m=expected_position_m,
-        elastic_modulus_mpa=elastic_modulus_mpa,
-        second_moment_mm4=second_moment_mm4,
-        point_loads=(PointLoad(point_kn, load_position_m),),
+    span_mm = span_m * 1000.0
+    load_position_mm = load_position_m * 1000.0
+    expected_position_mm = expected_position_m * 1000.0
+    right_distance_mm = span_mm - expected_position_mm
+    expected_deflection_mm = (
+        point_kn
+        * 1000.0
+        * load_position_mm
+        * right_distance_mm
+        * (
+            span_mm**2
+            - load_position_mm**2
+            - right_distance_mm**2
+        )
+        / (
+            6.0
+            * span_mm
+            * elastic_modulus_mpa
+            * second_moment_mm4
+        )
     )
 
     nodal_maximum_mm = max(abs(value) for value in result.station_deflections_mm)
