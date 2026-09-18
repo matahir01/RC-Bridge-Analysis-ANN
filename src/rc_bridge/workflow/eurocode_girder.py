@@ -15,6 +15,10 @@ from rc_bridge.design.eurocode_serviceability import (
     UncrackedTSectionSLS,
     uncracked_t_section_sls,
 )
+from rc_bridge.design.eurocode_shear import (
+    ProvidedShearResistanceResult,
+    provided_vertical_shear_resistance,
+)
 from rc_bridge.design.girder_design import GirderDesignResult, design_t_girder_ec2
 
 
@@ -29,6 +33,7 @@ class TGirderDesignInput:
     bar_diameter_mm: float
     bar_spacing_mm: float
     cover_mm: float
+    provided_shear_asw_per_s_mm2_per_m: float | None = None
 
 
 @dataclass(frozen=True)
@@ -59,6 +64,7 @@ class EurocodeTGirderWorkflowResult:
     cracked_sls: CrackedTSectionSLS
     crack: CrackWidthResult
     deflection: DeflectionResult
+    provided_shear: ProvidedShearResistanceResult | None = None
 
     @property
     def g_flexure_knm(self) -> float:
@@ -66,7 +72,24 @@ class EurocodeTGirderWorkflowResult:
 
     @property
     def g_shear_kn(self) -> float:
+        ved_kn = abs(self.uls_design.design_effects.shear_kn)
+        if (
+            ved_kn > self.uls_design.shear.concrete_resistance_kn
+            and self.provided_shear is not None
+        ):
+            return self.provided_shear.governing_resistance_kn - ved_kn
         return self.uls_design.shear.g_shear_concrete_kn
+
+    @property
+    def shear_utilization(self) -> float:
+        ved_kn = abs(self.uls_design.design_effects.shear_kn)
+        if (
+            ved_kn > self.uls_design.shear.concrete_resistance_kn
+            and self.provided_shear is not None
+        ):
+            resistance = self.provided_shear.governing_resistance_kn
+            return ved_kn / resistance if resistance > 0.0 else float("inf")
+        return self.uls_design.shear.utilization_concrete_only
 
     @property
     def g_crack_mm(self) -> float:
@@ -104,6 +127,11 @@ def run_eurocode_t_girder_case(
         raise ValueError("Span must be positive.")
     if serviceability.service_moment_knm < 0:
         raise ValueError("Service moment cannot be negative.")
+    if (
+        section.provided_shear_asw_per_s_mm2_per_m is not None
+        and section.provided_shear_asw_per_s_mm2_per_m < 0.0
+    ):
+        raise ValueError("Provided shear A_sw/s cannot be negative.")
 
     combination = persistent_uls(permanent_effects, traffic_effects, uls_factors)
     uls_design = design_t_girder_ec2(
@@ -158,6 +186,17 @@ def run_eurocode_t_girder_case(
         crack_limit_mm=serviceability.crack_limit_mm,
         kt=serviceability.crack_kt,
     )
+    provided_shear = None
+    if section.provided_shear_asw_per_s_mm2_per_m is not None:
+        provided_shear = provided_vertical_shear_resistance(
+            provided_asw_per_s_mm2_per_m=section.provided_shear_asw_per_s_mm2_per_m,
+            web_width_m=section.web_width_m,
+            effective_depth_m=section.effective_depth_m,
+            fck_mpa=materials.fck_mpa,
+            fyk_mpa=materials.fyk_mpa,
+            cot_theta=cot_theta,
+        )
+
     deflection = ec2_interpolated_udl_deflection(
         udl_kn_m=serviceability.equivalent_full_span_udl_kn_m,
         span_m=span_m,
@@ -177,4 +216,5 @@ def run_eurocode_t_girder_case(
         cracked_sls=cracked,
         crack=crack,
         deflection=deflection,
+        provided_shear=provided_shear,
     )
