@@ -211,6 +211,8 @@ def test_native_lm1_runs_full_simple_span_t_girder_design_path() -> None:
     assert result.design.uls_design.shear.design_shear_kn > 0.0
     assert result.design.crack.crack_width_mm >= 0.0
     assert result.design.deflection.interpolated_deflection_mm >= 0.0
+    assert result.detailing.detailing.longitudinal.minimum_tension_steel_mm2 > 0.0
+    assert result.detailing.detailing.shear.governing_required_asw_per_s_mm2_per_m > 0.0
     assert result.uls_torsion_knm == pytest.approx(
         result.combinations.persistent_uls.effects.torsion_knm
     )
