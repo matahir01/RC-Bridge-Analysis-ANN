@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+
 from rc_bridge.analysis.physical_sections import (
     composite_concrete_layers,
     girder_bottom_width_m,
