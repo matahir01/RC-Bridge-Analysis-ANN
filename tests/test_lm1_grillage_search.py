@@ -11,7 +11,13 @@ from rc_bridge.codes.eurocode.combinations import (
     persistent_uls,
     quasi_permanent_sls,
 )
-from rc_bridge.core.models import BridgeGeometry, ProjectInput, SupportSystem
+from rc_bridge.core.models import (
+    BridgeGeometry,
+    ProjectInput,
+    SectionType,
+    SupportSystem,
+    TGirderProfile,
+)
 from rc_bridge.workflow.grillage_verification_export import GrillageSectionProperties
 from rc_bridge.workflow.lm1_grillage_search import (
     build_governing_lm1_search_verification_packages,
@@ -295,3 +301,37 @@ def test_native_service_deflection_combines_permanent_and_colocated_traffic_fiel
     assert service_moment == pytest.approx(max(abs(value) for value in diagram.moments_knm))
     assert f"case {governing.case_id}" in diagram.source
     assert "software-test fixture" in diagram.source
+
+
+
+def test_native_lm1_search_can_use_automatic_physical_grillage_properties() -> None:
+    project = ProjectInput(
+        name="Physical automatic native search",
+        geometry=BridgeGeometry(
+            span_lengths_m=[15.0],
+            deck_width_m=5.0,
+            carriageway_width_m=3.0,
+            girder_count=3,
+            girder_spacing_m=2.0,
+            section_type=SectionType.T,
+            girder_profile=TGirderProfile(
+                flange_width_m=0.70,
+                flange_thickness_m=0.15,
+                web_width_m=0.30,
+                total_depth_m=0.95,
+            ),
+        ),
+    )
+
+    result = run_project_native_lm1_grillage_search(
+        project,
+        transverse_stations_m=(7.5,),
+        longitudinal_step_m=15.0,
+        max_exhaustive_tandem_combinations=10,
+    )
+
+    assert result.evaluated_case_count > 0
+    assert len(result.girders) == 3
+    first_model = result.cases[0].model
+    assert "gross composite" in first_model.metadata["longitudinal_stiffness_basis"]
+    assert "station-specific" in first_model.metadata["transverse_stiffness_basis"]

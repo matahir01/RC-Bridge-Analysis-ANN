@@ -18,6 +18,7 @@ Implemented so far:
 - Physical rectangular, T and I girder profiles with automatic precast-girder self-weight when a complete profile is defined
 - Automatic edge-aware gross composite longitudinal `A`, `J`, `Iy` and `Iz` derivation for every rectangular, T or I girder line, including participating deck concrete and physical overhang tributaries
 - Automatic station-specific transverse deck-strip properties for native/verification grillages, with exact bridge-length recovery, explicit expert overrides and stiffness assumptions recorded in model metadata
+- Native LM1 and FLM3 grillage searches can now consume those physical properties directly when explicit expert section overrides are omitted
 - Edge-aware deck tributary widths and permanent-load protection against conflicting/double-counted explicit girder self-weight
 - Physical-position-aware surfacing layers and barrier/service/other line actions with transverse allocation, explicit longitudinal extents, construction-stage tags/filters and category-level double-count protection
 - Exact simple-span segmented permanent-load reactions, shear and zero-shear moment extrema; the same permanent moment field feeds native service-deflection curvature

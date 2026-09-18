@@ -531,16 +531,22 @@ def generate_lm1_search_placements(
 def run_project_native_lm1_grillage_search(
     project: ProjectInput,
     *,
-    longitudinal_sections_by_span: tuple[GrillageSectionProperties, ...],
-    transverse_section: GrillageSectionProperties,
     transverse_stations_m: tuple[float, ...],
+    longitudinal_sections_by_span: tuple[GrillageSectionProperties, ...] | None = None,
+    transverse_section: GrillageSectionProperties | None = None,
     factors: LM1AdjustmentFactors | None = None,
     longitudinal_step_m: float = 0.5,
     max_exhaustive_tandem_combinations: int = 5000,
     include_spanwise_udl_patterns: bool = True,
     name: str = "EN 1991-2 LM1 native grillage automated search",
 ) -> ProjectNativeLM1GrillageSearchResult:
-    """Run automated LM1 placement search and envelope M/V/T by girder."""
+    """Run automated LM1 placement search and envelope M/V/T by girder.
+
+    When explicit grillage sections are omitted, physical longitudinal and
+    transverse gross properties are derived from the project geometry by the
+    common verification-model builder. Explicit section inputs remain available
+    as expert overrides and are preserved in exported benchmark models.
+    """
     plan = _generate_lm1_search_plan(
         project,
         longitudinal_step_m=longitudinal_step_m,
