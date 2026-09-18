@@ -254,6 +254,8 @@ def test_native_lm1_can_design_all_girders_and_identify_governing_lines() -> Non
         key=lambda item: abs(item.combinations.persistent_uls.effects.torsion_knm),
     ).combinations.girder_index
     assert result.search_strategy == search.search_strategy
+    assert result.governing_fatigue_reinforcement_girder_index is None
+    assert result.governing_fatigue_concrete_girder_index is None
 
 
 
