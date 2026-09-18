@@ -96,14 +96,22 @@ class ProjectNativeFLM3GrillageSearchResult:
 
     cases: tuple[NativeFLM3CaseResult, ...]
     girders: tuple[NativeFLM3GirderMomentRange, ...]
-    shears: tuple[NativeFLM3GirderShearRange, ...]
     span_m: float
     vehicle_centre_y_m: float | None
-    vehicle_centres_y_m: tuple[float, ...]
     axle_load_factor: float
     movement_step_m: float
     section_step_m: float
     status: str
+    shears: tuple[NativeFLM3GirderShearRange, ...] = ()
+    vehicle_centres_y_m: tuple[float, ...] = ()
+
+    def __post_init__(self) -> None:
+        if not self.vehicle_centres_y_m and self.vehicle_centre_y_m is not None:
+            object.__setattr__(
+                self,
+                "vehicle_centres_y_m",
+                (float(self.vehicle_centre_y_m),),
+            )
 
     def range_for_girder(self, girder_index: int) -> NativeFLM3GirderMomentRange:
         match = next(
