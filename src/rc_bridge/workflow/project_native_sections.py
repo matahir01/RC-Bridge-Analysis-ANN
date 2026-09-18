@@ -290,6 +290,13 @@ def run_project_layered_girder_from_native_lm1(
             concrete_alpha_cc=fatigue_design.concrete_alpha_cc,
             concrete_k1=fatigue_design.concrete_k1,
             concrete_beta_cc_t0=fatigue_design.concrete_beta_cc_t0,
+            shear_link_characteristic_fatigue_strength_mpa=(
+                fatigue_design.shear_link_characteristic_fatigue_strength_mpa
+            ),
+            shear_link_lambda_s=fatigue_design.shear_link_lambda_s,
+            shear_link_phi_fat=fatigue_design.shear_link_phi_fat,
+            shear_link_z_factor=fatigue_design.shear_link_z_factor,
+            shear_link_cot_theta=fatigue_design.shear_link_cot_theta,
         )
     shear_torsion: NativeLM1MatchedShearTorsionResult | None = None
     if torsion_cell is not None:
@@ -341,7 +348,7 @@ def run_project_layered_girder_from_native_lm1(
             "V-T interaction and a drawing-level closed-link/perimeter-bar torsion cage "
             "family are generated. "
             "When a dedicated FLM3 search/design input is supplied, layered fatigue is "
-            "evaluated without substituting LM1."
+            "evaluated without substituting LM1, including optional provided-link fatigue."
         ),
     )
 

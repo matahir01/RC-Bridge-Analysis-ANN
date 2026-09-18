@@ -125,3 +125,51 @@ def test_native_flm3_can_envelope_notional_lane_centre_candidates() -> None:
     assert len({case.vehicle_centre_y_m for case in result.cases}) == 4
     assert result.range_for_girder(4).moment_range_knm > 0.0
     assert result.shear_range_for_girder(4).shear_range_kn > 0.0
+
+
+def test_native_flm3_can_check_actual_shear_link_fatigue() -> None:
+    project = ProjectInput()
+    search = _search()
+    base = _section()
+    section = TGirderDesignInput(
+        effective_flange_width_m=base.effective_flange_width_m,
+        flange_thickness_m=base.flange_thickness_m,
+        web_width_m=base.web_width_m,
+        total_depth_m=base.total_depth_m,
+        effective_depth_m=base.effective_depth_m,
+        steel_area_mm2=base.steel_area_mm2,
+        bar_diameter_mm=base.bar_diameter_mm,
+        bar_spacing_mm=base.bar_spacing_mm,
+        cover_mm=base.cover_mm,
+        provided_shear_asw_per_s_mm2_per_m=1200.0,
+    )
+    result = run_project_t_girder_fatigue_from_native_flm3(
+        project,
+        search=search,
+        girder_index=4,
+        section=section,
+        lambda_s=0.90,
+        characteristic_fatigue_strength_mpa=162.5,
+        shear_link_characteristic_fatigue_strength_mpa=162.5,
+        shear_link_lambda_s=0.90,
+    )
+
+    assert result.shear_links is not None
+    assert result.shear_links.traffic_range.shear_range_kn > 0.0
+    assert result.shear_links.reference_link_stress_range_mpa > 0.0
+    assert result.shear_links.fatigue.reference_stress_range_mpa == pytest.approx(
+        result.shear_links.reference_link_stress_range_mpa
+    )
+
+
+def test_shear_link_fatigue_requires_actual_provided_links() -> None:
+    with pytest.raises(ValueError, match="actual provided"):
+        run_project_t_girder_fatigue_from_native_flm3(
+            ProjectInput(),
+            search=_search(),
+            girder_index=4,
+            section=_section(),
+            lambda_s=0.90,
+            characteristic_fatigue_strength_mpa=162.5,
+            shear_link_characteristic_fatigue_strength_mpa=162.5,
+        )

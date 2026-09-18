@@ -541,6 +541,13 @@ def run_project_t_girder_from_native_lm1(
             concrete_alpha_cc=fatigue_design.concrete_alpha_cc,
             concrete_k1=fatigue_design.concrete_k1,
             concrete_beta_cc_t0=fatigue_design.concrete_beta_cc_t0,
+            shear_link_characteristic_fatigue_strength_mpa=(
+                fatigue_design.shear_link_characteristic_fatigue_strength_mpa
+            ),
+            shear_link_lambda_s=fatigue_design.shear_link_lambda_s,
+            shear_link_phi_fat=fatigue_design.shear_link_phi_fat,
+            shear_link_z_factor=fatigue_design.shear_link_z_factor,
+            shear_link_cot_theta=fatigue_design.shear_link_cot_theta,
         )
 
     shear_torsion: NativeLM1MatchedShearTorsionResult | None = None
@@ -580,8 +587,9 @@ def run_project_t_girder_from_native_lm1(
             "when explicit torsion-cell geometry is supplied. Physical native searches also "
             "produce section-by-section bar-curtailment and link-spacing zones from co-located "
             "ULS envelopes. When a dedicated native FLM3 search/design input is supplied, the "
-            "same production result also carries longitudinal reinforcement and concrete fatigue "
-            "checks without reusing LM1. Service deflection uses the co-located native LM1 "
+            "same production result also carries longitudinal reinforcement, concrete and "
+            "optional provided-link fatigue checks without reusing LM1. Service deflection "
+            "uses the co-located native LM1 "
             "curvature field."
         ),
     )
