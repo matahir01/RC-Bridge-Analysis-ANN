@@ -7,7 +7,10 @@ from rc_bridge.analysis.lane_distribution import (
     equal_lane_distribution,
     equal_remaining_area_distribution,
 )
-from rc_bridge.analysis.loads import deck_self_weight_per_girder_kn_m
+from rc_bridge.analysis.loads import (
+    deck_self_weight_per_girder_kn_m,
+    section_self_weight_kn_m,
+)
 from rc_bridge.analysis.simple_span import udl_simple_span
 from rc_bridge.codes.common import FactoredCombination, LoadEffects
 from rc_bridge.codes.eurocode.combinations import (
@@ -189,6 +192,17 @@ def internal_girder_deck_self_weight_kn_m(project: ProjectInput) -> float:
     return girder_deck_self_weight_kn_m(project, girder_index=2)
 
 
+def physical_girder_self_weight_kn_m(project: ProjectInput) -> float | None:
+    """Return physical precast girder self-weight when a complete profile is defined."""
+    area_m2 = project.geometry.girder_profile_area_m2
+    if area_m2 is None:
+        return None
+    return section_self_weight_kn_m(
+        area_m2=area_m2,
+        concrete_density_kn_m3=float(project.materials.concrete_density_kn_m3),
+    )
+
+
 def girder_characteristic_permanent_effects(
     project: ProjectInput,
     *,
@@ -199,9 +213,10 @@ def girder_characteristic_permanent_effects(
     """Return simple-span characteristic permanent effects for any girder.
 
     Deck self-weight uses the physical deck tributary width of the selected
-    girder. Girder own weight, surfacing, barriers/services and other permanent
-    actions remain explicit line-load inputs so they cannot be silently
-    double-counted.
+    girder. Girder self-weight is derived automatically when a complete physical
+    girder profile is present; otherwise an explicit girder line load may be
+    supplied. Surfacing, barriers/services and other permanent actions remain
+    explicit so they cannot be silently double-counted.
     """
     if project.geometry.support_system != SupportSystem.SIMPLY_SUPPORTED:
         raise ValueError("This permanent-load adapter currently supports simple spans only.")
@@ -210,8 +225,27 @@ def girder_characteristic_permanent_effects(
 
     span_m = float(project.geometry.span_lengths_m[span_index])
     deck_kn_m = girder_deck_self_weight_kn_m(project, girder_index=girder_index)
-    extra_kn_m = (additional or UniformPermanentLoadInput()).total_additional_kn_m
-    result = udl_simple_span(span_m, deck_kn_m + extra_kn_m)
+    extra = additional or UniformPermanentLoadInput()
+    profile_self_weight_kn_m = physical_girder_self_weight_kn_m(project)
+    if profile_self_weight_kn_m is not None and extra.girder_self_weight_kn_m > 0.0:
+        raise ValueError(
+            "Girder self-weight is already derived from the physical girder profile; "
+            "do not also supply girder_self_weight_kn_m."
+        )
+    girder_self_weight_kn_m = (
+        profile_self_weight_kn_m
+        if profile_self_weight_kn_m is not None
+        else extra.girder_self_weight_kn_m
+    )
+    other_permanent_kn_m = (
+        extra.surfacing_and_finishes_kn_m
+        + extra.assigned_barrier_and_services_kn_m
+        + extra.other_kn_m
+    )
+    result = udl_simple_span(
+        span_m,
+        deck_kn_m + girder_self_weight_kn_m + other_permanent_kn_m,
+    )
     return LoadEffects(
         moment_knm=result.max_moment_knm,
         shear_kn=result.max_shear_kn,
