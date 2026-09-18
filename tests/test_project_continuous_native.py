@@ -12,15 +12,15 @@ from rc_bridge.core.models import (
 from rc_bridge.workflow.eurocode_layered_girder import LayeredGirderDesignInput
 from rc_bridge.workflow.grillage_verification_export import GrillageSectionProperties
 from rc_bridge.workflow.project_construction import PermanentGrillageStageInput
-from rc_bridge.workflow.project_continuous_detailing import (
-    ContinuousLongitudinalDetailingInput,
-    run_project_continuous_native_detailing,
-)
 from rc_bridge.workflow.project_continuous_design import (
     ContinuousShearDesignInput,
     NegativeSupportRectangularDesignInput,
     PositiveCompositeTSectionDesignInput,
     run_continuous_eurocode_uls_design,
+)
+from rc_bridge.workflow.project_continuous_detailing import (
+    ContinuousLongitudinalDetailingInput,
+    run_project_continuous_native_detailing,
 )
 from rc_bridge.workflow.project_continuous_native import (
     run_project_continuous_native_lm1_envelope,
