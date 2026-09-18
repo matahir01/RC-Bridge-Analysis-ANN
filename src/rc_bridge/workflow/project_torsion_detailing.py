@@ -19,9 +19,12 @@ from rc_bridge.workflow.project_torsion import TorsionCellInput
 @dataclass(frozen=True)
 class ProjectNativeTorsionCageDetailingResult:
     cage: TorsionCageDetailingResult
-    governing_transverse_case_id: int
-    governing_transverse_member_id: int
-    governing_transverse_member_end: str
+    governing_shear_case_id: int
+    governing_shear_member_id: int
+    governing_shear_member_end: str
+    governing_torsion_link_case_id: int
+    governing_torsion_link_member_id: int
+    governing_torsion_link_member_end: str
     governing_longitudinal_case_id: int
     governing_longitudinal_member_id: int
     governing_longitudinal_member_end: str
@@ -39,12 +42,13 @@ def run_project_native_torsion_cage_detailing(
     if not matched.evaluated_points:
         raise ValueError("Matched native shear-torsion result contains no evaluated points.")
 
-    transverse_point = max(
+    shear_point = max(
         matched.evaluated_points,
-        key=lambda item: (
-            item.shear_strut.asw_per_s_mm2_per_m,
-            item.torsion.transverse_asw_per_s_mm2_per_m,
-        ),
+        key=lambda item: item.shear_strut.asw_per_s_mm2_per_m,
+    )
+    torsion_link_point = max(
+        matched.evaluated_points,
+        key=lambda item: item.torsion.transverse_asw_per_s_mm2_per_m,
     )
     # The link family must satisfy the independent maxima of shear total-leg
     # demand and torsion one-leg demand. This is conservative when they occur at
@@ -77,9 +81,12 @@ def run_project_native_torsion_cage_detailing(
     )
     return ProjectNativeTorsionCageDetailingResult(
         cage=cage,
-        governing_transverse_case_id=transverse_point.case_id,
-        governing_transverse_member_id=transverse_point.member_id,
-        governing_transverse_member_end=transverse_point.member_end,
+        governing_shear_case_id=shear_point.case_id,
+        governing_shear_member_id=shear_point.member_id,
+        governing_shear_member_end=shear_point.member_end,
+        governing_torsion_link_case_id=torsion_link_point.case_id,
+        governing_torsion_link_member_id=torsion_link_point.member_id,
+        governing_torsion_link_member_end=torsion_link_point.member_end,
         governing_longitudinal_case_id=longitudinal_point.case_id,
         governing_longitudinal_member_id=longitudinal_point.member_id,
         governing_longitudinal_member_end=longitudinal_point.member_end,

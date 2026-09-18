@@ -65,15 +65,15 @@ from rc_bridge.workflow.project_native_lm1_torsion import (
     NativeLM1ShearTorsionPoint,
     check_project_native_lm1_matched_shear_torsion,
 )
-from rc_bridge.workflow.project_torsion_detailing import (
-    ProjectNativeTorsionCageDetailingResult,
-    run_project_native_torsion_cage_detailing,
-)
 from rc_bridge.workflow.project_native_sections import (
     NativeLM1ProjectLayeredGirderResult,
     ProjectNativeLM1LayeredGirderDesignSuite,
     run_project_all_layered_girders_from_native_lm1,
     run_project_layered_girder_from_native_lm1,
+)
+from rc_bridge.workflow.project_torsion_detailing import (
+    ProjectNativeTorsionCageDetailingResult,
+    run_project_native_torsion_cage_detailing,
 )
 from rc_bridge.workflow.verification_export import (
     build_moving_train_snapshot_verification_model,
