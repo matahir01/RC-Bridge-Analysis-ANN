@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 from dataclasses import dataclass
+from itertools import pairwise
 from math import sqrt
 
 from rc_bridge.analysis.grillage_solver import GrillageNodeResult
@@ -126,7 +127,7 @@ def longitudinal_displacement_field(
         raise ValueError(
             f"No longitudinal displacement field found at y={target_y_m:.6g} m."
         )
-    for previous, current in zip(pieces, pieces[1:], strict=False):
+    for previous, current in pairwise(pieces):
         if abs(previous.x_end_m - current.x_start_m) > tolerance_m:
             raise ValueError("Longitudinal displacement field contains a gap.")
         if current.x_start_m < previous.x_end_m - tolerance_m:
@@ -184,7 +185,7 @@ def combined_longitudinal_deflection_peak(
             best_x = x_m
             best_signed = value_m
 
-    for left, right in zip(ordered, ordered[1:], strict=True):
+    for left, right in pairwise(ordered):
         if right <= left + 1.0e-12:
             continue
         midpoint = 0.5 * (left + right)
@@ -202,11 +203,10 @@ def combined_longitudinal_deflection_peak(
         a3 = p3 + traffic_factor * t3
         length = right - left
 
-        def value(local_x: float) -> float:
-            return a0 + a1 * local_x + a2 * local_x**2 + a3 * local_x**3
-
-        consider(left, value(0.0))
-        consider(right, value(length))
+        left_value = a0
+        right_value = a0 + a1 * length + a2 * length**2 + a3 * length**3
+        consider(left, left_value)
+        consider(right, right_value)
 
         # Stationary points solve dv/dx = a1 + 2*a2*u + 3*a3*u^2 = 0.
         qa = 3.0 * a3
@@ -228,7 +228,13 @@ def combined_longitudinal_deflection_peak(
                 )
         for local_x in roots:
             if 1.0e-10 < local_x < length - 1.0e-10:
-                consider(left + local_x, value(local_x))
+                root_value = (
+                    a0
+                    + a1 * local_x
+                    + a2 * local_x**2
+                    + a3 * local_x**3
+                )
+                consider(left + local_x, root_value)
 
     return CombinedLongitudinalDeflectionPeak(
         maximum_absolute_deflection_m=best_abs,
