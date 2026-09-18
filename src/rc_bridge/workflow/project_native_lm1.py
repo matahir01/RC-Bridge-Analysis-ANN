@@ -38,6 +38,10 @@ from rc_bridge.workflow.project_bridge import (
     project_eurocode_material_input,
     project_serviceability_from_combinations,
 )
+from rc_bridge.workflow.project_detailing import (
+    ProjectTGirderDetailingResult,
+    run_project_t_girder_detailing,
+)
 
 
 @dataclass(frozen=True)
@@ -48,6 +52,7 @@ class NativeLM1ProjectTGirderResult:
     serviceability: ProjectServiceabilitySelection
     materials: EurocodeMaterialInput
     design: EurocodeTGirderWorkflowResult
+    detailing: ProjectTGirderDetailingResult
     traffic_trace: LM1GirderGoverningEnvelope
     benchmark_source: str
     status: str
@@ -310,17 +315,24 @@ def run_project_t_girder_from_native_lm1(
         uls_factors=uls_factors,
         cot_theta=cot_theta,
     )
+    detailing = run_project_t_girder_detailing(
+        project,
+        section=section,
+        design=design,
+    )
     trace = next(item for item in search.girders if item.girder_index == girder_index)
     return NativeLM1ProjectTGirderResult(
         combinations=combinations,
         serviceability=serviceability,
         materials=materials,
         design=design,
+        detailing=detailing,
         traffic_trace=trace,
         benchmark_source=benchmark_report.source_name,
         status=(
-            "Simple-span Eurocode girder design driven by externally benchmarked native LM1 "
-            "per-girder traffic envelopes; independent M/V/T governing case IDs are retained."
+            "Simple-span Eurocode girder design and current reinforcement detailing driven by "
+            "externally benchmarked native LM1 per-girder traffic envelopes; independent M/V/T "
+            "governing case IDs are retained."
         ),
     )
 
