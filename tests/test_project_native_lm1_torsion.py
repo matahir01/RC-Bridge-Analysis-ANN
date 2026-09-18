@@ -25,6 +25,9 @@ from rc_bridge.workflow.project_native_fatigue import (
     run_project_native_flm3_grillage_search,
 )
 from rc_bridge.workflow.project_native_lm1 import run_project_t_girder_from_native_lm1
+from rc_bridge.workflow.project_native_sections import (
+    run_project_layered_girder_from_native_lm1,
+)
 from rc_bridge.workflow.project_native_lm1_torsion import (
     check_project_native_lm1_matched_shear_torsion,
 )
@@ -277,3 +280,48 @@ def test_matched_native_lm1_torsion_accepts_physical_layered_section(
     assert result.evaluated_points
     assert result.governing_interaction.interaction.utilization >= 0.0
     assert "physical rectangular/T/I profile" in result.status
+
+
+
+def test_native_layered_production_builds_envelope_detailing_from_physical_search(
+    native_benchmark_case,
+) -> None:
+    _, search, suite, report = native_benchmark_case
+    project = ProjectInput(
+        geometry=BridgeGeometry(
+            section_type=SectionType.T,
+            girder_profile=TGirderProfile(
+                flange_width_m=0.70,
+                flange_thickness_m=0.15,
+                web_width_m=0.30,
+                total_depth_m=0.95,
+            ),
+        )
+    )
+    section = LayeredGirderDesignInput(
+        composite_slab_width_m=1.70,
+        effective_depth_m=1.10,
+        steel_area_mm2=6500.0,
+        bar_diameter_mm=32.0,
+        bar_spacing_mm=150.0,
+        cover_mm=50.0,
+    )
+    result = run_project_layered_girder_from_native_lm1(
+        project,
+        search=search,
+        benchmark_suite=suite,
+        benchmark_report=report,
+        girder_index=4,
+        section=section,
+        sls_factors=ServiceabilityPsiFactors(psi1_traffic=0.75, psi2_traffic=0.30),
+        crack_combination=SLSCombinationChoice.FREQUENT,
+        deflection_combination=SLSCombinationChoice.QUASI_PERMANENT,
+        crack_limit_mm=0.30,
+        allowable_deflection_mm=60.0,
+    )
+
+    assert result.envelope_detailing is not None
+    assert result.envelope_detailing.longitudinal_zones
+    assert result.envelope_detailing.link_zones
+    assert result.envelope_detailing.stations[0].x_m == pytest.approx(0.0)
+    assert result.envelope_detailing.stations[-1].x_m == pytest.approx(15.0)

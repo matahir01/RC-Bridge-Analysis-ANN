@@ -32,6 +32,13 @@ from rc_bridge.workflow.project_layered_detailing import (
     ProjectLayeredGirderDetailingResult,
     run_project_layered_girder_detailing,
 )
+from rc_bridge.workflow.project_layered_envelope_detailing import (
+    ProjectLayeredGirderEnvelopeDetailingResult,
+    run_project_layered_girder_envelope_detailing,
+)
+from rc_bridge.workflow.project_envelope_detailing import (
+    native_lm1_uls_detailing_envelope,
+)
 from rc_bridge.workflow.project_native_fatigue import (
     NativeFLM3FatigueDesignInput,
     NativeFLM3LayeredGirderFatigueResult,
@@ -60,6 +67,7 @@ class NativeLM1ProjectLayeredGirderResult:
     materials: EurocodeMaterialInput
     design: EurocodeLayeredGirderWorkflowResult
     detailing: ProjectLayeredGirderDetailingResult
+    envelope_detailing: ProjectLayeredGirderEnvelopeDetailingResult | None
     fatigue: NativeFLM3LayeredGirderFatigueResult | None
     shear_torsion: NativeLM1MatchedShearTorsionResult | None
     traffic_trace: LM1GirderGoverningEnvelope
@@ -241,6 +249,22 @@ def run_project_layered_girder_from_native_lm1(
         section=section,
         design=design,
     )
+    envelope_detailing: ProjectLayeredGirderEnvelopeDetailingResult | None = None
+    if all(hasattr(case, "model") and hasattr(case, "analysis") for case in search.cases):
+        detailing_envelope = native_lm1_uls_detailing_envelope(
+            project,
+            search=search,
+            girder_index=girder_index,
+            additional_permanent=additional_permanent,
+            uls_factors=uls_factors,
+        )
+        envelope_detailing = run_project_layered_girder_envelope_detailing(
+            project,
+            section=section,
+            envelope=detailing_envelope,
+            cot_theta=cot_theta,
+        )
+
     fatigue: NativeFLM3LayeredGirderFatigueResult | None = None
     if fatigue_search is not None and fatigue_design is not None:
         fatigue = run_project_layered_girder_fatigue_from_native_flm3(
@@ -288,6 +312,7 @@ def run_project_layered_girder_from_native_lm1(
         materials=materials,
         design=design,
         detailing=detailing,
+        envelope_detailing=envelope_detailing,
         fatigue=fatigue,
         shear_torsion=shear_torsion,
         traffic_trace=trace,
@@ -296,8 +321,9 @@ def run_project_layered_girder_from_native_lm1(
             "Externally benchmark-gated native LM1 simple-span EC2 design using the "
             "physical rectangular/T/I layered section for flexure, shear, cracking, "
             "deflection and practical reinforcement quantity/detail selection. Generic "
-            "advanced envelope curtailment remains separate follow-on scope. When an "
-            "explicit torsion cell is supplied, matched co-located V-T interaction is checked. "
+            "physical native searches also produce envelope-driven bar-curtailment and "
+            "link-spacing zones. When an explicit torsion cell is supplied, matched co-located "
+            "V-T interaction is checked. "
             "When a dedicated FLM3 search/design input is supplied, layered fatigue is "
             "evaluated without substituting LM1."
         ),
