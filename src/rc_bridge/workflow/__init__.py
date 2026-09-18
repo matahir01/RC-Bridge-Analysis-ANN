@@ -29,8 +29,10 @@ from rc_bridge.workflow.project_layered_detailing import (
 )
 from rc_bridge.workflow.project_native_fatigue import (
     NativeFLM3FatigueDesignInput,
+    NativeFLM3LayeredGirderFatigueResult,
     NativeFLM3TGirderFatigueResult,
     ProjectNativeFLM3GrillageSearchResult,
+    run_project_layered_girder_fatigue_from_native_flm3,
     run_project_native_flm3_grillage_search,
     run_project_t_girder_fatigue_from_native_flm3,
 )
@@ -67,6 +69,7 @@ __all__ = [
     "GrillageVerificationLoadCase",
     "LayeredGirderDesignInput",
     "NativeFLM3FatigueDesignInput",
+    "NativeFLM3LayeredGirderFatigueResult",
     "NativeFLM3TGirderFatigueResult",
     "NativeLM1MatchedShearTorsionResult",
     "NativeLM1ProjectLayeredGirderResult",
@@ -93,6 +96,7 @@ __all__ = [
     "run_project_all_layered_girders_from_native_lm1",
     "run_project_all_t_girders_from_native_lm1",
     "run_project_layered_girder_detailing",
+    "run_project_layered_girder_fatigue_from_native_flm3",
     "run_project_layered_girder_from_native_lm1",
     "run_project_native_flm3_grillage_search",
     "run_project_native_lm1_grillage_search",

@@ -8,11 +8,17 @@ from rc_bridge.analysis.grillage_solver import (
     solve_vertical_grillage,
 )
 from rc_bridge.analysis.moving_loads import positioned_axles
+from rc_bridge.analysis.physical_sections import (
+    composite_concrete_layers,
+    composite_section_total_depth_m,
+)
 from rc_bridge.codes.eurocode.fatigue_traffic import fatigue_load_model_3
 from rc_bridge.core.models import DesignCode, ProjectInput, SupportSystem
 from rc_bridge.design.eurocode_cracking import cracked_t_section_sls
+from rc_bridge.design.eurocode_layered_section import cracked_layered_section_sls
 from rc_bridge.export.verification_model import VerificationModel
 from rc_bridge.workflow.eurocode_girder import TGirderDesignInput
+from rc_bridge.workflow.eurocode_layered_girder import LayeredGirderDesignInput
 from rc_bridge.workflow.grillage_verification_export import (
     GrillagePointLoad,
     GrillageSectionProperties,
@@ -88,6 +94,22 @@ class ProjectNativeFLM3GrillageSearchResult:
 @dataclass(frozen=True)
 class NativeFLM3TGirderFatigueResult:
     """EC2 longitudinal reinforcement/concrete fatigue check from native FLM3."""
+
+    girder_index: int
+    traffic_range: NativeFLM3GirderMomentRange
+    permanent_moment_knm: float
+    minimum_total_moment_knm: float
+    maximum_total_moment_knm: float
+    reference_steel_stress_range_mpa: float
+    minimum_concrete_compression_mpa: float
+    maximum_concrete_compression_mpa: float
+    fatigue: ProjectFatigueResult
+    status: str
+
+
+@dataclass(frozen=True)
+class NativeFLM3LayeredGirderFatigueResult:
+    """EC2 fatigue result for a physical rectangular/T/I layered girder."""
 
     girder_index: int
     traffic_range: NativeFLM3GirderMomentRange
@@ -504,10 +526,18 @@ def run_project_t_girder_fatigue_from_native_flm3(
         0.0,
     )
 
-    x_mm = maximum_state.neutral_axis_from_top_mm
-    inertia_mm4 = maximum_state.second_moment_mm4
-    concrete_min = minimum_total * 1.0e6 * x_mm / inertia_mm4
-    concrete_max = maximum_total * 1.0e6 * x_mm / inertia_mm4
+    concrete_min = (
+        minimum_total
+        * 1.0e6
+        * minimum_state.neutral_axis_from_top_mm
+        / minimum_state.second_moment_mm4
+    )
+    concrete_max = (
+        maximum_total
+        * 1.0e6
+        * maximum_state.neutral_axis_from_top_mm
+        / maximum_state.second_moment_mm4
+    )
 
     minimum_case = (
         "unloaded-zero baseline"
@@ -565,5 +595,157 @@ def run_project_t_girder_fatigue_from_native_flm3(
             "moving analysis, not LM1. Longitudinal reinforcement and concrete compression "
             "are checked; fatigue-lane/NA choices, shear-reinforcement fatigue, local deck "
             "fatigue and independent MIDAS/STAAD validation remain explicit later scope."
+        ),
+    )
+
+
+
+def run_project_layered_girder_fatigue_from_native_flm3(
+    project: ProjectInput,
+    *,
+    search: ProjectNativeFLM3GrillageSearchResult,
+    girder_index: int,
+    section: LayeredGirderDesignInput,
+    lambda_s: float,
+    characteristic_fatigue_strength_mpa: float,
+    additional_permanent: UniformPermanentLoadInput | None = None,
+    gamma_s_fat: float = 1.15,
+    phi_fat: float = 1.0,
+    es_mpa: float = 200000.0,
+    check_concrete: bool = True,
+    concrete_gamma_c: float = 1.50,
+    concrete_alpha_cc: float = 1.0,
+    concrete_k1: float = 0.85,
+    concrete_beta_cc_t0: float = 1.0,
+) -> NativeFLM3LayeredGirderFatigueResult:
+    """Run longitudinal reinforcement/concrete fatigue for rectangular/T/I profiles.
+
+    The native FLM3 range is evaluated at one co-located girder section. Cracked
+    transformed properties are recovered from the same physical layered section
+    used by the generic ULS/SLS workflow, including any nonparticipating deck
+    gap. This remains a positive-bending simple-span adapter.
+    """
+    if project.design_code != DesignCode.EUROCODE:
+        raise ValueError("Native FLM3 layered fatigue design currently supports Eurocode only.")
+    if project.geometry.girder_profile is None:
+        raise ValueError("Layered FLM3 fatigue requires a complete physical girder profile.")
+    if abs(search.span_m - float(project.geometry.span_lengths_m[0])) > 1.0e-9:
+        raise ValueError("Native FLM3 search span does not match the project.")
+    if len(search.girders) != int(project.geometry.girder_count):
+        raise ValueError("Native FLM3 search girder count does not match the project.")
+    total_depth_m = composite_section_total_depth_m(project.geometry)
+    if section.effective_depth_m >= total_depth_m:
+        raise ValueError("Fatigue tension steel depth must lie inside the physical section.")
+
+    traffic = search.range_for_girder(girder_index)
+    permanent_moment = girder_permanent_moments_knm_at(
+        project,
+        girder_index=girder_index,
+        stations_m=(traffic.section_position_m,),
+        additional=additional_permanent,
+    )[0]
+    minimum_total = permanent_moment + traffic.minimum_moment_knm
+    maximum_total = permanent_moment + traffic.maximum_moment_knm
+    if minimum_total < -1.0e-8:
+        raise ValueError(
+            "Native FLM3 fatigue range causes total moment reversal; the current "
+            "layered positive-bending fatigue model is not valid for hogging."
+        )
+    minimum_total = max(minimum_total, 0.0)
+    maximum_total = max(maximum_total, minimum_total)
+
+    materials = project_eurocode_material_input(project, es_mpa=es_mpa)
+    modular_ratio = materials.es_mpa / materials.ecm_mpa
+    layers = composite_concrete_layers(
+        project.geometry,
+        slab_width_m=section.composite_slab_width_m,
+    )
+    minimum_state = cracked_layered_section_sls(
+        layers=layers,
+        steel_area_mm2=section.steel_area_mm2,
+        steel_depth_m=section.effective_depth_m,
+        modular_ratio=modular_ratio,
+        service_moment_knm=minimum_total,
+    )
+    maximum_state = cracked_layered_section_sls(
+        layers=layers,
+        steel_area_mm2=section.steel_area_mm2,
+        steel_depth_m=section.effective_depth_m,
+        modular_ratio=modular_ratio,
+        service_moment_knm=maximum_total,
+    )
+    steel_range = max(
+        maximum_state.steel_stress_mpa - minimum_state.steel_stress_mpa,
+        0.0,
+    )
+    concrete_min = (
+        minimum_total
+        * 1.0e6
+        * minimum_state.neutral_axis_from_top_mm
+        / minimum_state.second_moment_mm4
+    )
+    concrete_max = (
+        maximum_total
+        * 1.0e6
+        * maximum_state.neutral_axis_from_top_mm
+        / maximum_state.second_moment_mm4
+    )
+
+    minimum_case = (
+        "unloaded-zero baseline"
+        if traffic.minimum_case_id is None
+        else f"case {traffic.minimum_case_id}"
+    )
+    maximum_case = (
+        "unloaded-zero baseline"
+        if traffic.maximum_case_id is None
+        else f"case {traffic.maximum_case_id}"
+    )
+    source = (
+        f"Native full-width EN 1991-2 FLM3 layered {project.geometry.section_type.value} "
+        f"girder {girder_index}, x={traffic.section_position_m:.6g} m, vehicle centre "
+        f"y={search.vehicle_centre_y_m:.6g} m; range {minimum_case} to {maximum_case}"
+    )
+    concrete_input = (
+        ConcreteFatigueInput(
+            sigma_c_max_mpa=concrete_max,
+            sigma_c_min_mpa=concrete_min,
+            gamma_c=concrete_gamma_c,
+            alpha_cc=concrete_alpha_cc,
+            k1=concrete_k1,
+            beta_cc_t0=concrete_beta_cc_t0,
+        )
+        if check_concrete
+        else None
+    )
+    fatigue = run_project_eurocode_fatigue(
+        project,
+        fatigue=ProjectFatigueInput(
+            source_description=source,
+            reinforcement=ReinforcementFatigueInput(
+                reference_stress_range_mpa=steel_range,
+                lambda_s=lambda_s,
+                characteristic_fatigue_strength_mpa=characteristic_fatigue_strength_mpa,
+                gamma_s_fat=gamma_s_fat,
+                phi_fat=phi_fat,
+            ),
+            concrete=concrete_input,
+        ),
+    )
+    return NativeFLM3LayeredGirderFatigueResult(
+        girder_index=girder_index,
+        traffic_range=traffic,
+        permanent_moment_knm=permanent_moment,
+        minimum_total_moment_knm=minimum_total,
+        maximum_total_moment_knm=maximum_total,
+        reference_steel_stress_range_mpa=steel_range,
+        minimum_concrete_compression_mpa=concrete_min,
+        maximum_concrete_compression_mpa=concrete_max,
+        fatigue=fatigue,
+        status=(
+            "Simple-span rectangular/T/I layered-section fatigue derived from dedicated "
+            "native full-width FLM3 traffic, not LM1. Longitudinal reinforcement and "
+            "concrete compression are checked; fatigue-lane/NA choices, shear/link fatigue, "
+            "local deck fatigue and independent external validation remain explicit scope."
         ),
     )

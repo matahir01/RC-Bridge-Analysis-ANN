@@ -21,6 +21,11 @@ from rc_bridge.workflow.lm1_grillage_search import (
     ProjectNativeLM1GrillageSearchResult,
 )
 from rc_bridge.workflow.project_bridge import SLSCombinationChoice
+from rc_bridge.workflow.project_native_fatigue import (
+    NativeFLM3FatigueDesignInput,
+    NativeFLM3GirderMomentRange,
+    ProjectNativeFLM3GrillageSearchResult,
+)
 from rc_bridge.workflow.project_native_sections import (
     run_project_all_layered_girders_from_native_lm1,
     run_project_layered_girder_from_native_lm1,
@@ -192,3 +197,68 @@ def test_native_layered_adapter_designs_all_girders_and_reports_governing_lines(
         result.girders,
         key=lambda item: abs(item.combinations.persistent_uls.effects.torsion_knm),
     ).combinations.girder_index
+
+
+
+def _fatigue_search() -> ProjectNativeFLM3GrillageSearchResult:
+    ranges = tuple(
+        NativeFLM3GirderMomentRange(
+            girder_index=index,
+            y_m=-5.1 + (index - 1) * 1.7,
+            section_position_m=7.5,
+            minimum_moment_knm=0.0,
+            maximum_moment_knm=120.0 + 10.0 * index,
+            moment_range_knm=120.0 + 10.0 * index,
+            minimum_case_id=None,
+            maximum_case_id=index,
+            minimum_lead_position_m=None,
+            maximum_lead_position_m=7.5,
+            minimum_member_id=None,
+            maximum_member_id=100 + index,
+        )
+        for index in range(1, 8)
+    )
+    return ProjectNativeFLM3GrillageSearchResult(
+        cases=(),
+        girders=ranges,
+        span_m=15.0,
+        vehicle_centre_y_m=0.0,
+        axle_load_factor=1.0,
+        movement_step_m=0.5,
+        section_step_m=0.5,
+        status="synthetic fatigue-range fixture",
+    )
+
+
+@pytest.mark.parametrize("section_type,profile", _profiles())
+def test_native_layered_adapter_can_carry_flm3_fatigue_for_all_profiles(
+    section_type, profile
+) -> None:
+    project = ProjectInput(
+        geometry=BridgeGeometry(section_type=section_type, girder_profile=profile)
+    )
+    search = _search()
+    suite, report = _benchmark(search)
+    result = run_project_layered_girder_from_native_lm1(
+        project,
+        search=search,
+        benchmark_suite=suite,
+        benchmark_report=report,
+        girder_index=4,
+        section=_section(),
+        sls_factors=ServiceabilityPsiFactors(psi1_traffic=0.75, psi2_traffic=0.30),
+        crack_combination=SLSCombinationChoice.FREQUENT,
+        deflection_combination=SLSCombinationChoice.QUASI_PERMANENT,
+        crack_limit_mm=0.30,
+        allowable_deflection_mm=60.0,
+        fatigue_search=_fatigue_search(),
+        fatigue_design=NativeFLM3FatigueDesignInput(
+            lambda_s=0.90,
+            characteristic_fatigue_strength_mpa=162.5,
+        ),
+    )
+
+    assert result.fatigue is not None
+    assert result.fatigue.reference_steel_stress_range_mpa > 0.0
+    assert "FLM3" in result.fatigue.fatigue.source_description
+    assert project.geometry.section_type.value in result.fatigue.fatigue.source_description

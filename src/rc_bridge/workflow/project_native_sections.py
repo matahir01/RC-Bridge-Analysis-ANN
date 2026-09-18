@@ -31,6 +31,12 @@ from rc_bridge.workflow.project_layered_detailing import (
     ProjectLayeredGirderDetailingResult,
     run_project_layered_girder_detailing,
 )
+from rc_bridge.workflow.project_native_fatigue import (
+    NativeFLM3FatigueDesignInput,
+    NativeFLM3LayeredGirderFatigueResult,
+    ProjectNativeFLM3GrillageSearchResult,
+    run_project_layered_girder_fatigue_from_native_flm3,
+)
 from rc_bridge.workflow.project_native_lm1 import (
     native_lm1_service_moment_diagram,
     project_girder_combinations_from_native_lm1,
@@ -47,6 +53,7 @@ class NativeLM1ProjectLayeredGirderResult:
     materials: EurocodeMaterialInput
     design: EurocodeLayeredGirderWorkflowResult
     detailing: ProjectLayeredGirderDetailingResult
+    fatigue: NativeFLM3LayeredGirderFatigueResult | None
     traffic_trace: LM1GirderGoverningEnvelope
     benchmark_source: str
     status: str
@@ -90,6 +97,31 @@ class ProjectNativeLM1LayeredGirderDesignSuite:
         ).combinations.girder_index
 
 
+    @property
+    def governing_fatigue_reinforcement_girder_index(self) -> int | None:
+        checked = tuple(item for item in self.girders if item.fatigue is not None)
+        if not checked:
+            return None
+        return max(
+            checked,
+            key=lambda item: item.fatigue.fatigue.reinforcement.utilization,
+        ).combinations.girder_index
+
+    @property
+    def governing_fatigue_concrete_girder_index(self) -> int | None:
+        checked = tuple(
+            item
+            for item in self.girders
+            if item.fatigue is not None and item.fatigue.fatigue.concrete is not None
+        )
+        if not checked:
+            return None
+        return max(
+            checked,
+            key=lambda item: item.fatigue.fatigue.concrete.utilization,
+        ).combinations.girder_index
+
+
 def run_project_layered_girder_from_native_lm1(
     project: ProjectInput,
     *,
@@ -111,6 +143,8 @@ def run_project_layered_girder_from_native_lm1(
     deflection_beta: float = 0.5,
     crack_kt: float = 0.4,
     cot_theta: float = 2.0,
+    fatigue_search: ProjectNativeFLM3GrillageSearchResult | None = None,
+    fatigue_design: NativeFLM3FatigueDesignInput | None = None,
 ) -> NativeLM1ProjectLayeredGirderResult:
     """Run the benchmark-gated physical-section simple-span Eurocode path.
 
@@ -123,6 +157,10 @@ def run_project_layered_girder_from_native_lm1(
     if project.geometry.girder_profile is None:
         raise ValueError(
             "Layered native LM1 design requires a complete physical girder profile."
+        )
+    if (fatigue_search is None) != (fatigue_design is None):
+        raise ValueError(
+            "fatigue_search and fatigue_design must either both be supplied or both be omitted."
         )
     combinations = project_girder_combinations_from_native_lm1(
         project,
@@ -183,6 +221,27 @@ def run_project_layered_girder_from_native_lm1(
         section=section,
         design=design,
     )
+    fatigue: NativeFLM3LayeredGirderFatigueResult | None = None
+    if fatigue_search is not None and fatigue_design is not None:
+        fatigue = run_project_layered_girder_fatigue_from_native_flm3(
+            project,
+            search=fatigue_search,
+            girder_index=girder_index,
+            section=section,
+            lambda_s=fatigue_design.lambda_s,
+            characteristic_fatigue_strength_mpa=(
+                fatigue_design.characteristic_fatigue_strength_mpa
+            ),
+            additional_permanent=additional_permanent,
+            gamma_s_fat=fatigue_design.gamma_s_fat,
+            phi_fat=fatigue_design.phi_fat,
+            es_mpa=es_mpa,
+            check_concrete=fatigue_design.check_concrete,
+            concrete_gamma_c=fatigue_design.concrete_gamma_c,
+            concrete_alpha_cc=fatigue_design.concrete_alpha_cc,
+            concrete_k1=fatigue_design.concrete_k1,
+            concrete_beta_cc_t0=fatigue_design.concrete_beta_cc_t0,
+        )
     trace = next(item for item in search.girders if item.girder_index == girder_index)
     return NativeLM1ProjectLayeredGirderResult(
         section_type=project.geometry.section_type,
@@ -191,14 +250,16 @@ def run_project_layered_girder_from_native_lm1(
         materials=materials,
         design=design,
         detailing=detailing,
+        fatigue=fatigue,
         traffic_trace=trace,
         benchmark_source=benchmark_report.source_name,
         status=(
             "Externally benchmark-gated native LM1 simple-span EC2 design using the "
             "physical rectangular/T/I layered section for flexure, shear, cracking, "
             "deflection and practical reinforcement quantity/detail selection. Generic "
-            "envelope curtailment, matched torsion and FLM3 fatigue adapters remain "
-            "separate follow-on scope."
+            "envelope curtailment and matched torsion remain separate follow-on scope. "
+            "When a dedicated FLM3 search/design input is supplied, layered fatigue is "
+            "evaluated without substituting LM1."
         ),
     )
 
@@ -223,6 +284,8 @@ def run_project_all_layered_girders_from_native_lm1(
     deflection_beta: float = 0.5,
     crack_kt: float = 0.4,
     cot_theta: float = 2.0,
+    fatigue_search: ProjectNativeFLM3GrillageSearchResult | None = None,
+    fatigue_design: NativeFLM3FatigueDesignInput | None = None,
 ) -> ProjectNativeLM1LayeredGirderDesignSuite:
     """Run the physical rectangular/T/I native-LM1 path for all girder lines."""
     girder_count = int(project.geometry.girder_count)
@@ -259,6 +322,8 @@ def run_project_all_layered_girders_from_native_lm1(
             deflection_beta=deflection_beta,
             crack_kt=crack_kt,
             cot_theta=cot_theta,
+            fatigue_search=fatigue_search,
+            fatigue_design=fatigue_design,
         )
         for girder_index in range(1, girder_count + 1)
     )
