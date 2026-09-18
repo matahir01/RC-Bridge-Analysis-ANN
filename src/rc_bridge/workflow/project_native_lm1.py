@@ -130,6 +130,31 @@ class ProjectNativeLM1TGirderDesignSuite:
         ).combinations.girder_index
 
 
+    @property
+    def governing_fatigue_reinforcement_girder_index(self) -> int | None:
+        checked = tuple(item for item in self.girders if item.fatigue is not None)
+        if not checked:
+            return None
+        return max(
+            checked,
+            key=lambda item: item.fatigue.fatigue.reinforcement.utilization,
+        ).combinations.girder_index
+
+    @property
+    def governing_fatigue_concrete_girder_index(self) -> int | None:
+        checked = tuple(
+            item
+            for item in self.girders
+            if item.fatigue is not None and item.fatigue.fatigue.concrete is not None
+        )
+        if not checked:
+            return None
+        return max(
+            checked,
+            key=lambda item: item.fatigue.fatigue.concrete.utilization,
+        ).combinations.girder_index
+
+
 def _require_simple_span_native_design_project(project: ProjectInput) -> None:
     if project.design_code != DesignCode.EUROCODE:
         raise ValueError("Native LM1 girder design currently supports Eurocode projects only.")
