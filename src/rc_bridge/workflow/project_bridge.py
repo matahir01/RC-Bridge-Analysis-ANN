@@ -228,10 +228,11 @@ def girder_characteristic_permanent_effects(
     extra = additional or UniformPermanentLoadInput()
     profile_self_weight_kn_m = physical_girder_self_weight_kn_m(project)
     if profile_self_weight_kn_m is not None and extra.girder_self_weight_kn_m > 0.0:
-        raise ValueError(
-            "Girder self-weight is already derived from the physical girder profile; "
-            "do not also supply girder_self_weight_kn_m."
-        )
+        if abs(extra.girder_self_weight_kn_m - profile_self_weight_kn_m) > 1.0e-9:
+            raise ValueError(
+                "Explicit girder_self_weight_kn_m conflicts with the value derived "
+                "from the physical girder profile."
+            )
     girder_self_weight_kn_m = (
         profile_self_weight_kn_m
         if profile_self_weight_kn_m is not None
