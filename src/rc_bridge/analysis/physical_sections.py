@@ -208,6 +208,61 @@ def precast_girder_properties(geometry: BridgeGeometry) -> PhysicalSectionProper
     )
 
 
+def deck_construction_girder_properties(
+    geometry: BridgeGeometry,
+    *,
+    slab_width_m: float,
+    false_slab_participates: bool = False,
+) -> PhysicalSectionProperties:
+    """Return longitudinal stiffness while the in-situ deck concrete is not hardened.
+
+    The wet in-situ slab is never credited to stiffness in this construction
+    state. By default the precast false slab is also weight-only. It may be
+    included only when the caller explicitly requests it and the project
+    geometry itself declares verified false-slab composite participation.
+    """
+    profile = geometry.girder_profile
+    if profile is None:
+        raise ValueError(
+            "Deck-construction properties require a complete physical girder profile."
+        )
+    width = float(slab_width_m)
+    if width <= 0.0:
+        raise ValueError("Deck-construction slab strip width must be positive.")
+    if not false_slab_participates:
+        return precast_girder_properties(geometry)
+    if not geometry.deck_construction.false_slab_composite_participation:
+        raise ValueError(
+            "False-slab construction-stage stiffness was requested, but the project "
+            "does not declare false_slab_composite_participation=True."
+        )
+
+    false_depth = float(geometry.deck_construction.precast_false_slab_depth_m)
+    layers = (
+        ConcreteSectionLayer(
+            width_m=width,
+            top_m=0.0,
+            bottom_m=false_depth,
+            label="construction-stage composite precast false slab",
+        ),
+        *_girder_layers(profile, top_m=false_depth),
+    )
+    return _properties_from_rectangles(
+        tuple(
+            _Rectangle(
+                width_m=layer.width_m,
+                depth_m=layer.depth_m,
+                centroid_from_top_m=layer.centroid_from_top_m,
+            )
+            for layer in layers
+        ),
+        basis=(
+            f"deck-construction {profile.section_type.value} girder with explicitly "
+            "participating precast false slab; wet in-situ concrete excluded; "
+            "rectangle-component Saint-Venant J approximation"
+        ),
+    )
+
 def composite_concrete_layers(
     geometry: BridgeGeometry,
     *,

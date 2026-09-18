@@ -3,6 +3,7 @@ import pytest
 from rc_bridge.analysis.physical_sections import (
     composite_concrete_layers,
     composite_girder_properties,
+    deck_construction_girder_properties,
     girder_tributary_slab_widths_m,
     precast_girder_properties,
     rectangular_torsion_constant_m4,
@@ -13,6 +14,7 @@ from rc_bridge.core.models import (
     BridgeGeometry,
     DeckConstruction,
     IGirderProfile,
+    PermanentActionStage,
     ProjectInput,
     RectangularGirderProfile,
     SectionType,
@@ -312,3 +314,89 @@ def test_precast_girder_properties_exclude_deck_build_up() -> None:
     assert result.area_m2 == pytest.approx(0.30 * 0.95)
     assert result.centroid_from_top_m == pytest.approx(0.475)
     assert "gross precast rectangular" in result.basis
+
+
+def test_precast_automatic_stage_uses_girder_only_and_requires_transverse_override() -> None:
+    project = ProjectInput(
+        geometry=BridgeGeometry(
+            section_type=SectionType.T,
+            girder_profile=TGirderProfile(
+                flange_width_m=0.70,
+                flange_thickness_m=0.15,
+                web_width_m=0.30,
+                total_depth_m=0.95,
+            ),
+        )
+    )
+    with pytest.raises(ValueError, match="Automatic transverse deck stiffness"):
+        build_project_grillage_verification_model(
+            project,
+            transverse_stations_m=(7.5,),
+            load_case=GrillageVerificationLoadCase(name="precast no diaphragm"),
+            automatic_section_stage=PermanentActionStage.PRECAST_GIRDER,
+        )
+
+    diaphragm = GrillageSectionProperties("Verified diaphragm", 0.20, 0.01, 0.02, 0.03)
+    model = build_project_grillage_verification_model(
+        project,
+        transverse_section=diaphragm,
+        transverse_stations_m=(7.5,),
+        load_case=GrillageVerificationLoadCase(name="precast with diaphragm"),
+        automatic_section_stage=PermanentActionStage.PRECAST_GIRDER,
+    )
+    expected = precast_girder_properties(project.geometry)
+    assert model.sections[0].area_m2 == pytest.approx(expected.area_m2)
+    assert model.sections[0].iy_m4 == pytest.approx(expected.iy_m4)
+    assert model.metadata["automatic_section_stage"] == "precast_girder"
+    assert "gross precast" in model.metadata["longitudinal_stiffness_basis"]
+
+
+def test_deck_construction_stage_never_credits_wet_in_situ_slab() -> None:
+    project = ProjectInput(
+        geometry=BridgeGeometry(
+            section_type=SectionType.RECTANGULAR,
+            girder_profile=RectangularGirderProfile(width_m=0.30, depth_m=0.95),
+        )
+    )
+    diaphragm = GrillageSectionProperties("Verified construction tie", 0.20, 0.01, 0.02, 0.03)
+    model = build_project_grillage_verification_model(
+        project,
+        transverse_section=diaphragm,
+        transverse_stations_m=(7.5,),
+        load_case=GrillageVerificationLoadCase(name="wet deck"),
+        automatic_section_stage=PermanentActionStage.DECK_CONSTRUCTION,
+    )
+    expected = precast_girder_properties(project.geometry)
+    final = composite_girder_properties(project.geometry, slab_width_m=1.70)
+    assert model.sections[1].area_m2 == pytest.approx(expected.area_m2)
+    assert model.sections[1].area_m2 < final.area_m2
+    assert model.metadata["automatic_section_stage"] == "deck_construction"
+
+
+def test_false_slab_construction_stiffness_requires_explicit_project_and_stage_opt_in() -> None:
+    geometry = BridgeGeometry(
+        section_type=SectionType.RECTANGULAR,
+        girder_profile=RectangularGirderProfile(width_m=0.30, depth_m=0.95),
+    )
+    with pytest.raises(ValueError, match="does not declare"):
+        deck_construction_girder_properties(
+            geometry,
+            slab_width_m=1.70,
+            false_slab_participates=True,
+        )
+
+    participating = BridgeGeometry(
+        section_type=SectionType.RECTANGULAR,
+        girder_profile=RectangularGirderProfile(width_m=0.30, depth_m=0.95),
+        deck_construction=DeckConstruction(false_slab_composite_participation=True),
+    )
+    result = deck_construction_girder_properties(
+        participating,
+        slab_width_m=1.70,
+        false_slab_participates=True,
+    )
+    precast = precast_girder_properties(participating)
+    final = composite_girder_properties(participating, slab_width_m=1.70)
+    assert result.area_m2 == pytest.approx(precast.area_m2 + 1.70 * 0.075)
+    assert result.area_m2 < final.area_m2
+    assert "wet in-situ concrete excluded" in result.basis

@@ -5,12 +5,14 @@ from dataclasses import dataclass
 
 from rc_bridge.analysis.physical_sections import (
     composite_girder_properties,
+    deck_construction_girder_properties,
     girder_tributary_slab_widths_m,
+    precast_girder_properties,
     station_tributary_strip_widths_m,
     transverse_deck_strip_properties,
 )
 from rc_bridge.codes.eurocode.materials import secant_elastic_modulus_mpa
-from rc_bridge.core.models import DesignCode, ProjectInput
+from rc_bridge.core.models import DesignCode, PermanentActionStage, ProjectInput
 from rc_bridge.export.verification_model import (
     VerificationBeam,
     VerificationLoadCase,
@@ -279,11 +281,16 @@ def build_project_grillage_verification_model(
     longitudinal_slab_width_m: float | None = None,
     transverse_strip_width_m: float | None = None,
     stiffness_modifiers: GrillageStiffnessModifiers | None = None,
+    automatic_section_stage: PermanentActionStage = PermanentActionStage.SUPERIMPOSED,
+    deck_construction_false_slab_participates: bool = False,
 ) -> VerificationModel:
     """Build a full bridge beam-grillage model for independent software verification.
 
     Section properties are derived from physical geometry when omitted; explicit
-    values remain available as expert overrides. Every point-load x-coordinate and
+    values remain available as expert overrides. Automatic final-stage sections use
+    the composite deck. PRECAST_GIRDER and DECK_CONSTRUCTION stages deliberately
+    refuse to invent transverse deck stiffness: an explicit verified diaphragm or
+    cross-beam section is required for those stages. Every point-load x-coordinate and
     area-load boundary is inserted as an exact grid line. The transverse grid extends
     to the physical deck edges, so overhang loads are carried by transverse cantilevers.
     """
@@ -330,6 +337,14 @@ def build_project_grillage_verification_model(
     girder_y_indices = tuple(_coordinate_index(y_lines, value) for value in y_girders)
     longitudinal_sections: list[GrillageSectionProperties] = []
     longitudinal_section_ids: list[list[int]] = []
+    if (
+        automatic_section_stage != PermanentActionStage.DECK_CONSTRUCTION
+        and deck_construction_false_slab_participates
+    ):
+        raise ValueError(
+            "deck_construction_false_slab_participates is only valid for "
+            "the DECK_CONSTRUCTION automatic section stage."
+        )
     if longitudinal_sections_by_span is None:
         slab_widths = (
             (float(longitudinal_slab_width_m),) * girder_count
@@ -344,16 +359,27 @@ def build_project_grillage_verification_model(
         for span_index in range(span_count):
             span_ids: list[int] = []
             for girder_index, slab_width in enumerate(slab_widths):
-                generated = composite_girder_properties(
-                    project.geometry,
-                    slab_width_m=slab_width,
-                    slab_width_basis=slab_basis,
-                )
+                if automatic_section_stage == PermanentActionStage.PRECAST_GIRDER:
+                    generated = precast_girder_properties(project.geometry)
+                elif automatic_section_stage == PermanentActionStage.DECK_CONSTRUCTION:
+                    generated = deck_construction_girder_properties(
+                        project.geometry,
+                        slab_width_m=slab_width,
+                        false_slab_participates=(
+                            deck_construction_false_slab_participates
+                        ),
+                    )
+                else:
+                    generated = composite_girder_properties(
+                        project.geometry,
+                        slab_width_m=slab_width,
+                        slab_width_basis=slab_basis,
+                    )
                 longitudinal_sections.append(
                     _apply_stiffness_modifiers(
                         GrillageSectionProperties(
                             name=(
-                                f"Physical composite span {span_index + 1} "
+                                f"Physical {automatic_section_stage.value} span {span_index + 1} "
                                 f"girder {girder_index + 1}"
                             ),
                             area_m2=generated.area_m2,
@@ -368,7 +394,8 @@ def build_project_grillage_verification_model(
                 span_ids.append(len(longitudinal_sections))
             longitudinal_section_ids.append(span_ids)
         longitudinal_basis = (
-            f"{generated.basis}; distinct physical section per span/girder line"
+            f"{generated.basis}; automatic stage={automatic_section_stage.value}; "
+            "distinct physical section per span/girder line"
         )
     else:
         longitudinal_sections.extend(
@@ -386,6 +413,15 @@ def build_project_grillage_verification_model(
 
     transverse_sections: list[GrillageSectionProperties] = []
     transverse_section_ids: list[int] = []
+    if (
+        transverse_section is None
+        and automatic_section_stage != PermanentActionStage.SUPERIMPOSED
+    ):
+        raise ValueError(
+            "Automatic transverse deck stiffness is unavailable before the final "
+            "composite/superimposed stage. Supply an explicit verified transverse "
+            "diaphragm/cross-beam section for construction-stage grillage analysis."
+        )
     if transverse_section is None:
         strip_widths = (
             (float(transverse_strip_width_m),) * len(x_stations)
@@ -617,6 +653,10 @@ def build_project_grillage_verification_model(
             "station_count": str(len(x_stations)),
             "transverse_stiffness_basis": transverse_basis,
             "longitudinal_stiffness_basis": longitudinal_basis,
+            "automatic_section_stage": automatic_section_stage.value,
+            "deck_construction_false_slab_participates": (
+                "true" if deck_construction_false_slab_participates else "false"
+            ),
             "stiffness_modifier_basis": modifiers.basis,
             "longitudinal_bending_factors_by_span": (
                 "1"
