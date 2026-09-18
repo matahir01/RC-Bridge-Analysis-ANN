@@ -20,6 +20,7 @@ from rc_bridge.workflow.project_bridge import (
     girder_characteristic_permanent_effects,
     girder_deck_self_weight_kn_m,
     girder_deck_tributary_width_m,
+    girder_false_slab_self_weight_kn_m,
     girder_permanent_load_segments,
     girder_permanent_moments_knm_at,
     girder_superimposed_permanent_loads_kn_m,
@@ -354,7 +355,13 @@ def test_permanent_moment_field_and_stage_selection_remain_explicit() -> None:
         stations_m=(0.0, 7.5, 15.0),
         included_stages=(PermanentActionStage.PRECAST_GIRDER,),
     )
-    assert moments == pytest.approx((0.0, 232.03125, 0.0))
+    precast_state_load = (
+        physical_girder_self_weight_kn_m(project)
+        + girder_false_slab_self_weight_kn_m(project, girder_index=4)
+    )
+    assert moments == pytest.approx(
+        (0.0, precast_state_load * 15.0**2 / 8.0, 0.0)
+    )
 
 
 def test_project_rejects_permanent_action_beyond_bridge_length() -> None:
