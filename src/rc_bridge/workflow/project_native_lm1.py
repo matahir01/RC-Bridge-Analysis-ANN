@@ -1,0 +1,393 @@
+from __future__ import annotations
+
+from dataclasses import dataclass
+
+from rc_bridge.analysis.grillage_import import (
+    GrillageImportMetadata,
+    ImportedGirderEffect,
+    ImportedGrillageEnvelope,
+)
+from rc_bridge.codes.common import LoadEffects
+from rc_bridge.codes.eurocode.combinations import (
+    EurocodeFactors,
+    ServiceabilityPsiFactors,
+    characteristic_sls,
+    frequent_sls,
+    persistent_uls,
+    quasi_permanent_sls,
+)
+from rc_bridge.core.models import DesignCode, ProjectInput, SupportSystem
+from rc_bridge.research.lm1_benchmark_runner import LM1ExternalBenchmarkSuiteReport
+from rc_bridge.research.lm1_grillage_benchmark import LM1GoverningBenchmarkSuite
+from rc_bridge.workflow.eurocode_girder import (
+    EurocodeMaterialInput,
+    EurocodeTGirderWorkflowResult,
+    TGirderDesignInput,
+    run_eurocode_t_girder_case,
+)
+from rc_bridge.workflow.lm1_grillage_search import (
+    LM1GirderGoverningEnvelope,
+    ProjectNativeLM1GrillageSearchResult,
+)
+from rc_bridge.workflow.project_bridge import (
+    ProjectGirderCombinationSet,
+    ProjectServiceabilitySelection,
+    SLSCombinationChoice,
+    UniformPermanentLoadInput,
+    girder_characteristic_permanent_effects,
+    project_eurocode_material_input,
+    project_serviceability_from_combinations,
+)
+
+
+@dataclass(frozen=True)
+class NativeLM1ProjectTGirderResult:
+    """Eurocode T-girder design driven by the externally benchmarked native LM1 envelope."""
+
+    combinations: ProjectGirderCombinationSet
+    serviceability: ProjectServiceabilitySelection
+    materials: EurocodeMaterialInput
+    design: EurocodeTGirderWorkflowResult
+    traffic_trace: LM1GirderGoverningEnvelope
+    benchmark_source: str
+    status: str
+
+    @property
+    def uls_torsion_knm(self) -> float:
+        return self.combinations.persistent_uls.effects.torsion_knm
+
+
+@dataclass(frozen=True)
+class ProjectNativeLM1TGirderDesignSuite:
+    """Externally benchmarked native-LM1 design results for every project girder."""
+
+    girders: tuple[NativeLM1ProjectTGirderResult, ...]
+    benchmark_source: str
+    search_strategy: str
+
+    def __post_init__(self) -> None:
+        if not self.girders:
+            raise ValueError("Native LM1 design suite requires at least one girder result.")
+
+    @property
+    def governing_moment_girder_index(self) -> int:
+        return max(
+            self.girders,
+            key=lambda item: item.combinations.persistent_uls.effects.moment_knm,
+        ).combinations.girder_index
+
+    @property
+    def governing_shear_girder_index(self) -> int:
+        return max(
+            self.girders,
+            key=lambda item: abs(item.combinations.persistent_uls.effects.shear_kn),
+        ).combinations.girder_index
+
+    @property
+    def governing_torsion_girder_index(self) -> int:
+        return max(
+            self.girders,
+            key=lambda item: abs(item.combinations.persistent_uls.effects.torsion_knm),
+        ).combinations.girder_index
+
+
+def _require_simple_span_native_design_project(project: ProjectInput) -> None:
+    if project.design_code != DesignCode.EUROCODE:
+        raise ValueError("Native LM1 girder design currently supports Eurocode projects only.")
+    if project.geometry.support_system != SupportSystem.SIMPLY_SUPPORTED:
+        raise ValueError(
+            "This native LM1 girder design adapter is the simple-span path; "
+            "continuous design must use the signed continuous-envelope workflow."
+        )
+    if len(project.geometry.span_lengths_m) != 1:
+        raise ValueError(
+            "The current native LM1 simple-span design adapter requires exactly one span."
+        )
+
+
+def require_native_lm1_external_benchmark(
+    search: ProjectNativeLM1GrillageSearchResult,
+    *,
+    benchmark_suite: LM1GoverningBenchmarkSuite,
+    benchmark_report: LM1ExternalBenchmarkSuiteReport,
+) -> None:
+    """Require external evidence for the exact governing cases used by the design search.
+
+    Matching only case numbers is insufficient: each benchmark package must retain
+    the same native search-case object/value as the corresponding governing case.
+    This prevents a passing benchmark from a different grid, load step, geometry,
+    or LM1 search from unlocking a production design run.
+    """
+    if not benchmark_report.passes:
+        failed = ", ".join(str(value) for value in benchmark_report.failed_case_ids)
+        missing = ", ".join(str(value) for value in benchmark_report.missing_case_ids)
+        detail = failed or missing or "benchmark completeness/tolerance requirements"
+        raise RuntimeError(
+            "Native LM1 production design remains locked because the external "
+            f"benchmark has not passed: {detail}."
+        )
+
+    governing_ids = set(search.governing_case_ids)
+    suite_by_id = {item.case_id: item for item in benchmark_suite.cases}
+    report_ids = {item.case_id for item in benchmark_report.case_reports}
+    if set(suite_by_id) != governing_ids or report_ids != governing_ids:
+        raise RuntimeError(
+            "Native LM1 production design remains locked because benchmark case IDs "
+            "do not exactly match the current search governing cases."
+        )
+
+    search_by_id = {item.placement.case_id: item for item in search.cases}
+    for case_id in sorted(governing_ids):
+        if case_id not in search_by_id:
+            raise RuntimeError(
+                f"Native LM1 search is missing its governing case {case_id}."
+            )
+        if suite_by_id[case_id].case != search_by_id[case_id]:
+            raise RuntimeError(
+                "Native LM1 production design remains locked because benchmark case "
+                f"{case_id} was generated from a different native search case."
+            )
+
+
+def native_lm1_characteristic_envelope(
+    search: ProjectNativeLM1GrillageSearchResult,
+    *,
+    benchmark_suite: LM1GoverningBenchmarkSuite,
+    benchmark_report: LM1ExternalBenchmarkSuiteReport,
+) -> ImportedGrillageEnvelope:
+    """Convert verified independent native M/V/T maxima into a design-compatible Qk envelope."""
+    require_native_lm1_external_benchmark(
+        search,
+        benchmark_suite=benchmark_suite,
+        benchmark_report=benchmark_report,
+    )
+    if not search.girders:
+        raise ValueError("Native LM1 search contains no girder envelopes.")
+
+    effects = tuple(
+        ImportedGirderEffect(
+            girder_index=item.girder_index,
+            effects=LoadEffects(
+                moment_knm=item.moment_knm.value,
+                shear_kn=item.shear_kn.value,
+                torsion_knm=item.torsion_knm.value,
+            ),
+        )
+        for item in search.girders
+    )
+    return ImportedGrillageEnvelope(
+        metadata=GrillageImportMetadata(
+            source_software="RC-Bridge native vertical grillage",
+            model_name="Automated EN 1991-2 LM1 governing search",
+            load_case="LM1 characteristic independent per-girder M/V/T envelope",
+            method=(
+                "externally_benchmarked_native_lm1:"
+                + benchmark_report.source_name
+                + ":"
+                + search.search_strategy
+            ),
+        ),
+        girder_effects=effects,
+    )
+
+
+def project_girder_combinations_from_native_lm1(
+    project: ProjectInput,
+    *,
+    search: ProjectNativeLM1GrillageSearchResult,
+    benchmark_suite: LM1GoverningBenchmarkSuite,
+    benchmark_report: LM1ExternalBenchmarkSuiteReport,
+    girder_index: int,
+    sls_factors: ServiceabilityPsiFactors,
+    additional_permanent: UniformPermanentLoadInput | None = None,
+    uls_factors: EurocodeFactors | None = None,
+) -> ProjectGirderCombinationSet:
+    """Assemble EN 1990 combinations from benchmarked native LM1 per-girder effects."""
+    _require_simple_span_native_design_project(project)
+    envelope = native_lm1_characteristic_envelope(
+        search,
+        benchmark_suite=benchmark_suite,
+        benchmark_report=benchmark_report,
+    )
+    if envelope.girder_count != int(project.geometry.girder_count):
+        raise ValueError(
+            "Native LM1 envelope girder count does not match the project layout."
+        )
+    if not 1 <= girder_index <= envelope.girder_count:
+        raise IndexError("girder_index is outside the native LM1 envelope.")
+
+    permanent = girder_characteristic_permanent_effects(
+        project,
+        girder_index=girder_index,
+        additional=additional_permanent,
+    )
+    traffic = envelope.effect_for_girder(girder_index)
+    return ProjectGirderCombinationSet(
+        girder_index=girder_index,
+        permanent_characteristic=permanent,
+        traffic_characteristic=traffic,
+        persistent_uls=persistent_uls(permanent, traffic, uls_factors),
+        characteristic_sls=characteristic_sls(permanent, traffic),
+        frequent_sls=frequent_sls(permanent, traffic, sls_factors),
+        quasi_permanent_sls=quasi_permanent_sls(permanent, traffic, sls_factors),
+        traffic_distribution_method=envelope.metadata.method,
+    )
+
+
+def run_project_t_girder_from_native_lm1(
+    project: ProjectInput,
+    *,
+    search: ProjectNativeLM1GrillageSearchResult,
+    benchmark_suite: LM1GoverningBenchmarkSuite,
+    benchmark_report: LM1ExternalBenchmarkSuiteReport,
+    girder_index: int,
+    section: TGirderDesignInput,
+    sls_factors: ServiceabilityPsiFactors,
+    crack_combination: SLSCombinationChoice,
+    deflection_combination: SLSCombinationChoice,
+    crack_limit_mm: float,
+    allowable_deflection_mm: float,
+    additional_permanent: UniformPermanentLoadInput | None = None,
+    uls_factors: EurocodeFactors | None = None,
+    fct_eff_mpa: float | None = None,
+    es_mpa: float = 200000.0,
+    creep_coefficient: float = 0.0,
+    deflection_beta: float = 0.5,
+    crack_kt: float = 0.4,
+    cot_theta: float = 2.0,
+) -> NativeLM1ProjectTGirderResult:
+    """Run simple-span EC2 flexure/shear/crack/deflection design from native LM1 traffic.
+
+    The traffic M, V and T values are independent characteristic envelope maxima.
+    This is correct for separate component design checks. Combined V-T interaction
+    must later use matched simultaneous case effects rather than combining the
+    independent V and T maxima as if they came from one traffic placement.
+    """
+    _require_simple_span_native_design_project(project)
+    expected_total_depth_m = (
+        float(project.geometry.girder_depth_m) + project.geometry.physical_deck_depth_m
+    )
+    if abs(section.total_depth_m - expected_total_depth_m) > 1.0e-9:
+        raise ValueError(
+            "T-girder total depth must match project girder depth plus physical deck depth."
+        )
+
+    combinations = project_girder_combinations_from_native_lm1(
+        project,
+        search=search,
+        benchmark_suite=benchmark_suite,
+        benchmark_report=benchmark_report,
+        girder_index=girder_index,
+        sls_factors=sls_factors,
+        additional_permanent=additional_permanent,
+        uls_factors=uls_factors,
+    )
+    span_m = float(project.geometry.span_lengths_m[0])
+    materials = project_eurocode_material_input(
+        project,
+        fct_eff_mpa=fct_eff_mpa,
+        es_mpa=es_mpa,
+    )
+    serviceability = project_serviceability_from_combinations(
+        combinations,
+        span_m=span_m,
+        crack_combination=crack_combination,
+        deflection_combination=deflection_combination,
+        crack_limit_mm=crack_limit_mm,
+        allowable_deflection_mm=allowable_deflection_mm,
+        creep_coefficient=creep_coefficient,
+        deflection_beta=deflection_beta,
+        crack_kt=crack_kt,
+    )
+    design = run_eurocode_t_girder_case(
+        girder_index=girder_index,
+        span_m=span_m,
+        permanent_effects=combinations.permanent_characteristic,
+        traffic_effects=combinations.traffic_characteristic,
+        section=section,
+        materials=materials,
+        serviceability=serviceability.input,
+        uls_factors=uls_factors,
+        cot_theta=cot_theta,
+    )
+    trace = next(item for item in search.girders if item.girder_index == girder_index)
+    return NativeLM1ProjectTGirderResult(
+        combinations=combinations,
+        serviceability=serviceability,
+        materials=materials,
+        design=design,
+        traffic_trace=trace,
+        benchmark_source=benchmark_report.source_name,
+        status=(
+            "Simple-span Eurocode girder design driven by externally benchmarked native LM1 "
+            "per-girder traffic envelopes; independent M/V/T governing case IDs are retained."
+        ),
+    )
+
+
+def run_project_all_t_girders_from_native_lm1(
+    project: ProjectInput,
+    *,
+    search: ProjectNativeLM1GrillageSearchResult,
+    benchmark_suite: LM1GoverningBenchmarkSuite,
+    benchmark_report: LM1ExternalBenchmarkSuiteReport,
+    sections_by_girder: dict[int, TGirderDesignInput],
+    sls_factors: ServiceabilityPsiFactors,
+    crack_combination: SLSCombinationChoice,
+    deflection_combination: SLSCombinationChoice,
+    crack_limit_mm: float,
+    allowable_deflection_mm: float,
+    additional_permanent_by_girder: dict[int, UniformPermanentLoadInput] | None = None,
+    uls_factors: EurocodeFactors | None = None,
+    fct_eff_mpa: float | None = None,
+    es_mpa: float = 200000.0,
+    creep_coefficient: float = 0.0,
+    deflection_beta: float = 0.5,
+    crack_kt: float = 0.4,
+    cot_theta: float = 2.0,
+) -> ProjectNativeLM1TGirderDesignSuite:
+    """Run the benchmark-gated native LM1 Eurocode design path for every girder."""
+    _require_simple_span_native_design_project(project)
+    girder_count = int(project.geometry.girder_count)
+    required = set(range(1, girder_count + 1))
+    if set(sections_by_girder) != required:
+        raise ValueError(
+            "sections_by_girder must contain exactly one T-section for every project girder."
+        )
+    additional = additional_permanent_by_girder or {}
+    unexpected_additional = set(additional) - required
+    if unexpected_additional:
+        raise ValueError(
+            "additional_permanent_by_girder contains unknown girder indices: "
+            + ", ".join(str(value) for value in sorted(unexpected_additional))
+        )
+
+    results = tuple(
+        run_project_t_girder_from_native_lm1(
+            project,
+            search=search,
+            benchmark_suite=benchmark_suite,
+            benchmark_report=benchmark_report,
+            girder_index=girder_index,
+            section=sections_by_girder[girder_index],
+            sls_factors=sls_factors,
+            crack_combination=crack_combination,
+            deflection_combination=deflection_combination,
+            crack_limit_mm=crack_limit_mm,
+            allowable_deflection_mm=allowable_deflection_mm,
+            additional_permanent=additional.get(girder_index),
+            uls_factors=uls_factors,
+            fct_eff_mpa=fct_eff_mpa,
+            es_mpa=es_mpa,
+            creep_coefficient=creep_coefficient,
+            deflection_beta=deflection_beta,
+            crack_kt=crack_kt,
+            cot_theta=cot_theta,
+        )
+        for girder_index in range(1, girder_count + 1)
+    )
+    return ProjectNativeLM1TGirderDesignSuite(
+        girders=results,
+        benchmark_source=benchmark_report.source_name,
+        search_strategy=search.search_strategy,
+    )
