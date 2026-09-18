@@ -288,8 +288,10 @@ def test_native_service_deflection_combines_permanent_and_colocated_traffic_fiel
         traffic_diagram.moments_knm,
         strict=True,
     ):
-        expected = permanent_moment + 0.30 * traffic_moment
+        expected = permanent_moment - 0.30 * traffic_moment
         assert actual == pytest.approx(expected)
+    assert min(traffic_diagram.moments_knm) < 0.0
+    assert max(diagram.moments_knm) > max(permanent_moments)
     assert service_moment == pytest.approx(max(abs(value) for value in diagram.moments_knm))
     assert f"case {governing.case_id}" in diagram.source
     assert "software-test fixture" in diagram.source

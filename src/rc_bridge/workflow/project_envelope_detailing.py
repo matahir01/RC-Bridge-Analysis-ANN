@@ -146,8 +146,11 @@ def _native_girder_segments(
         ):
             continue
         end = results[beam.member_id]
-        moment_i = -end.i_vertical_bending_moment_knm
-        moment_j = end.j_vertical_bending_moment_knm
+        # The solver's recovered internal longitudinal convention is negative
+        # for simple-span sagging. Detailing uses the bridge convention of
+        # sagging-positive M so that dM/dx also yields the usual signed shear.
+        moment_i = end.i_vertical_bending_moment_knm
+        moment_j = -end.j_vertical_bending_moment_knm
         if nj.x_m > ni.x_m:
             segments.append(
                 _NativeGirderSegment(

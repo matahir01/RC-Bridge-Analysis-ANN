@@ -345,8 +345,11 @@ def native_lm1_service_moment_diagram(
         stations_m=traffic.stations_m,
         additional=additional_permanent,
     )
+    # The native member-end convention recovered by the raw diagram is
+    # negative for simple-span sagging. Permanent project moments are
+    # sagging-positive, so align the traffic field before combination.
     combined = tuple(
-        permanent_factor * permanent_moment + traffic_factor * traffic_moment
+        permanent_factor * permanent_moment - traffic_factor * traffic_moment
         for permanent_moment, traffic_moment in zip(
             permanent_moments,
             traffic.moments_knm,
@@ -360,6 +363,7 @@ def native_lm1_service_moment_diagram(
             f"native LM1 case {governing.case_id}, girder {girder_index}, "
             f"governing node {governing.node_id} at x={governing.position_m:.6g} m; "
             f"G={permanent_factor:.6g}, Q_traffic={traffic_factor:.6g}; "
+            "native longitudinal moment mapped to sagging-positive; "
             f"external benchmark={benchmark_source}"
         ),
     )

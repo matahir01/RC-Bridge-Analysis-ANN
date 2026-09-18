@@ -139,5 +139,6 @@ def test_native_lm1_detailing_envelope_recovers_stationwise_uls_response() -> No
     assert all(item.moment_case_id > 0 for item in envelope)
     assert all(item.shear_case_id > 0 for item in envelope)
     midspan = min(envelope, key=lambda item: abs(item.x_m - 7.5))
+    assert midspan.traffic_moment_knm > 0.0
     assert midspan.design_moment_knm > envelope[0].design_moment_knm
     assert envelope[0].design_shear_kn > midspan.design_shear_kn
