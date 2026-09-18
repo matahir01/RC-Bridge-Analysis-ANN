@@ -271,8 +271,18 @@ def run_project_native_flm3_grillage_search(
     )
 
     cases: list[NativeFLM3CaseResult] = []
-    for case_id, lead in enumerate(leads, start=1):
+    for lead in leads:
         active_axles = positioned_axles(vehicle.axle_train, lead, span_m)
+        if not any(
+            1.0e-9 < axle.position_m < span_m - 1.0e-9
+            for axle in active_axles
+        ):
+            # A vehicle state carried only directly at simple supports has zero
+            # longitudinal bending and is already represented by the explicit
+            # unloaded zero baseline used when forming fatigue ranges. Skipping
+            # it also avoids creating a degenerate support-only grillage slice.
+            continue
+        case_id = len(cases) + 1
         point_loads = tuple(
             GrillagePointLoad(
                 x_m=axle.position_m,
