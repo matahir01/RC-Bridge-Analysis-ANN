@@ -28,6 +28,9 @@ from rc_bridge.workflow.project_bridge import (
     project_eurocode_material_input,
     project_serviceability_from_combinations,
 )
+from rc_bridge.workflow.project_envelope_detailing import (
+    native_lm1_uls_detailing_envelope,
+)
 from rc_bridge.workflow.project_layered_detailing import (
     ProjectLayeredGirderDetailingResult,
     run_project_layered_girder_detailing,
@@ -35,9 +38,6 @@ from rc_bridge.workflow.project_layered_detailing import (
 from rc_bridge.workflow.project_layered_envelope_detailing import (
     ProjectLayeredGirderEnvelopeDetailingResult,
     run_project_layered_girder_envelope_detailing,
-)
-from rc_bridge.workflow.project_envelope_detailing import (
-    native_lm1_uls_detailing_envelope,
 )
 from rc_bridge.workflow.project_native_fatigue import (
     NativeFLM3FatigueDesignInput,

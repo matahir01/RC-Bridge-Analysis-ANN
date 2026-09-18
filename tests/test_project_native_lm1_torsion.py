@@ -25,11 +25,11 @@ from rc_bridge.workflow.project_native_fatigue import (
     run_project_native_flm3_grillage_search,
 )
 from rc_bridge.workflow.project_native_lm1 import run_project_t_girder_from_native_lm1
-from rc_bridge.workflow.project_native_sections import (
-    run_project_layered_girder_from_native_lm1,
-)
 from rc_bridge.workflow.project_native_lm1_torsion import (
     check_project_native_lm1_matched_shear_torsion,
+)
+from rc_bridge.workflow.project_native_sections import (
+    run_project_layered_girder_from_native_lm1,
 )
 from rc_bridge.workflow.project_torsion import TorsionCellInput
 
