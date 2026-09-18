@@ -200,7 +200,11 @@ def _signed_longitudinal_moment_candidates(
 
         ratio = (x_m - x_i) / (x_j - x_i)
         ratio = min(max(ratio, 0.0), 1.0)
-        moment = moment_i + ratio * (moment_j - moment_i)
+        # The native element end-action convention is opposite to the
+        # sagging-positive bridge-section convention used by the design
+        # workflows. Convert here so a downward FLM3 vehicle on a simple span
+        # produces positive sagging moment.
+        moment = -(moment_i + ratio * (moment_j - moment_i))
         if abs(moment) <= 1.0e-10:
             moment = 0.0
         candidates.append((moment, beam.member_id))
