@@ -160,6 +160,7 @@ def run_project_layered_girder_detailing(
     )
     cage_fit = check_longitudinal_cage_fit(
         arrangement=selected_bars,
+        web_width_mm=tension_width_m * 1000.0,
         section_total_depth_mm=composite_section_total_depth_m(project.geometry) * 1000.0,
         cover_mm=section.cover_mm,
         link_diameter_mm=selected_links.link_diameter_mm,

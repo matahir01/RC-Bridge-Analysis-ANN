@@ -246,12 +246,14 @@ def plan_staggered_lap_splices(
 def check_longitudinal_cage_fit(
     *,
     arrangement: LongitudinalBarArrangement,
+    web_width_mm: float,
     section_total_depth_mm: float,
     cover_mm: float,
     link_diameter_mm: float,
 ) -> LongitudinalCageFitResult:
-    if min(section_total_depth_mm, cover_mm, link_diameter_mm) <= 0.0:
+    if min(web_width_mm, section_total_depth_mm, cover_mm, link_diameter_mm) <= 0.0:
         raise ValueError("Cage-fit geometry must be positive.")
+    available_width = web_width_mm - 2.0 * (cover_mm + link_diameter_mm)
     available_depth = section_total_depth_mm - 2.0 * (cover_mm + link_diameter_mm)
     if available_depth <= 0.0:
         raise ValueError("Cover and links leave no longitudinal-bar cage depth.")
@@ -262,10 +264,7 @@ def check_longitudinal_cage_fit(
     horizontal_fit = arrangement.fits_web
     vertical_fit = required_depth <= available_depth + 1.0e-9
     return LongitudinalCageFitResult(
-        available_inside_link_width_mm=(
-            arrangement.bar_count * 0.0
-            + arrangement.clear_horizontal_spacing_mm
-        ),
+        available_inside_link_width_mm=available_width,
         available_inside_link_depth_mm=available_depth,
         required_stack_depth_mm=required_depth,
         clear_horizontal_spacing_mm=arrangement.clear_horizontal_spacing_mm,
