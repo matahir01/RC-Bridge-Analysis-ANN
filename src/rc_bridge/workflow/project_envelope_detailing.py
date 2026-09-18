@@ -8,9 +8,11 @@ from rc_bridge.codes.eurocode.combinations import EurocodeFactors
 from rc_bridge.codes.eurocode.materials import concrete_properties_ec2
 from rc_bridge.design.eurocode_demand import required_tension_steel_t_section
 from rc_bridge.design.eurocode_detailing import (
+    ContinuousBarCorePlan,
     LinkArrangement,
     LongitudinalBarArrangement,
     anchorage_and_lap_lengths_mm,
+    continuous_bar_core_plan,
     maximum_vertical_link_spacings_mm,
     minimum_tension_reinforcement_mm2,
     minimum_vertical_shear_reinforcement,
@@ -73,6 +75,8 @@ class LongitudinalBarZone:
     anchored_end_m: float
     governing_required_area_mm2: float
     arrangement: LongitudinalBarArrangement
+    continuous_bar_count: int
+    additional_curtailable_bar_count: int
     anchorage_length_mm: float
 
 
@@ -95,6 +99,7 @@ class ProjectTGirderEnvelopeDetailingResult:
     stations: tuple[EnvelopeDetailingStation, ...]
     longitudinal_zones: tuple[LongitudinalBarZone, ...]
     link_zones: tuple[LinkSpacingZone, ...]
+    continuous_longitudinal_core: ContinuousBarCorePlan
     tension_shift_m: float
     status: str
 
@@ -451,6 +456,16 @@ def run_project_t_girder_envelope_detailing(
         for required in shifted_required
     )
 
+    continuous_core = continuous_bar_core_plan(
+        required_continuous_area_mm2=minimum_as,
+        bar_diameter_mm=governing_bars.bar_diameter_mm,
+        governing_arrangement_bar_count=governing_bars.bar_count,
+    )
+    if any(item.bar_count < continuous_core.bar_count for item in selected_bars):
+        raise ValueError(
+            "Envelope bar selection would curtail below the required continuous core."
+        )
+
     minimum_rho_w, _, minimum_asw = minimum_vertical_shear_reinforcement(
         fck_mpa=float(project.materials.fck_mpa),
         fyk_mpa=float(project.materials.fyk_mpa),
@@ -566,6 +581,11 @@ def run_project_t_girder_envelope_detailing(
                     for item in stations[start_index : end_index + 1]
                 ),
                 arrangement=arrangement,
+                continuous_bar_count=continuous_core.bar_count,
+                additional_curtailable_bar_count=max(
+                    arrangement.bar_count - continuous_core.bar_count,
+                    0,
+                ),
                 anchorage_length_mm=anchorage.design_anchorage_length_mm,
             )
         )
@@ -603,12 +623,12 @@ def run_project_t_girder_envelope_detailing(
         stations=stations,
         longitudinal_zones=tuple(longitudinal_zones),
         link_zones=tuple(link_zones),
+        continuous_longitudinal_core=continuous_core,
         tension_shift_m=tension_shift_m,
         status=(
             "Simple-span positive-bending EC2 envelope detailing: native co-located ULS M/V, "
-            "bilateral tension-force shift, one longitudinal bar diameter with curtailed total "
-            "bar counts, anchorage-extended cutoff guidance, and one closed-link family with "
-            "section-by-section spacing zones. Alternate anchorage geometries and drawing-level "
-            "torsion-cage placement remain explicit later detailing tasks."
+            "bilateral tension-force shift, one longitudinal bar diameter with a full-span "
+            "minimum continuous core plus anchorage-extended extra-bar cutoffs, and one "
+            "closed-link family with section-by-section spacing zones."
         ),
     )
