@@ -55,14 +55,33 @@ class GrillageEnvelopeComponentComparison:
 
 
 @dataclass(frozen=True)
+class GrillageMemberEndComponentComparison:
+    member_id: int
+    member_end: str
+    component: str
+    native_magnitude: float
+    external_magnitude: float
+    absolute_difference: float
+    relative_difference: float | None
+    passes: bool
+
+
+@dataclass(frozen=True)
 class LM1ExternalGrillageBenchmarkReport:
     case_id: int
     source_name: str
     comparisons: tuple[GrillageEnvelopeComponentComparison, ...]
+    member_end_comparisons: tuple[GrillageMemberEndComponentComparison, ...] = ()
 
     @property
     def passes(self) -> bool:
         return bool(self.comparisons) and all(item.passes for item in self.comparisons)
+
+    @property
+    def member_end_passes(self) -> bool:
+        return bool(self.member_end_comparisons) and all(
+            item.passes for item in self.member_end_comparisons
+        )
 
     @property
     def failed_components(self) -> tuple[str, ...]:
@@ -70,6 +89,24 @@ class LM1ExternalGrillageBenchmarkReport:
             f"girder {item.girder_index} {item.component}"
             for item in self.comparisons
             if not item.passes
+        )
+
+    def member_end_comparison(
+        self,
+        *,
+        member_id: int,
+        member_end: str,
+        component: str,
+    ) -> GrillageMemberEndComponentComparison | None:
+        return next(
+            (
+                item
+                for item in self.member_end_comparisons
+                if item.member_id == member_id
+                and item.member_end == member_end
+                and item.component == component
+            ),
+            None,
         )
 
 
@@ -406,6 +443,76 @@ def build_lm1_governing_benchmark_suite(
     )
 
 
+def _member_end_magnitude_comparisons(
+    model: VerificationModel,
+    *,
+    native_results_csv: str,
+    external_results_csv: str,
+    tolerance: GrillageEnvelopeTolerance,
+) -> tuple[GrillageMemberEndComponentComparison, ...]:
+    """Compare longitudinal member-end M/V/T magnitudes at identical locations."""
+    native_records = parse_verification_results_csv(native_results_csv)
+    external_records = parse_verification_results_csv(external_results_csv)
+    native = {
+        (int(item.object_id), item.position_m, item.component): item.value
+        for item in native_records
+        if item.result_type == "member_end_force"
+        and item.component in {"V_VERTICAL", "M_VERTICAL", "T"}
+    }
+    external = {
+        (int(item.object_id), item.position_m, item.component): item.value
+        for item in external_records
+        if item.result_type == "member_end_force"
+        and item.component in {"V_VERTICAL", "M_VERTICAL", "T"}
+    }
+    longitudinal_ids = {
+        beam.member_id
+        for _, beams in _longitudinal_groups(model)
+        for beam in beams
+    }
+    absolute_tolerances = {
+        "M_VERTICAL": tolerance.absolute_moment_knm,
+        "V_VERTICAL": tolerance.absolute_shear_kn,
+        "T": tolerance.absolute_torsion_knm,
+    }
+
+    comparisons: list[GrillageMemberEndComponentComparison] = []
+    for member_id in sorted(longitudinal_ids):
+        for member_end in ("I", "J"):
+            for component in ("V_VERTICAL", "M_VERTICAL", "T"):
+                key = (member_id, member_end, component)
+                if key not in native or key not in external:
+                    raise ValueError(
+                        "Detailed LM1 member-end benchmark is missing "
+                        f"member {member_id} end {member_end} component {component}."
+                    )
+                native_value = abs(float(native[key]))
+                external_value = abs(float(external[key]))
+                difference = abs(native_value - external_value)
+                scale = max(native_value, external_value)
+                relative = None if scale <= 1.0e-12 else difference / scale
+                relative_pass = (
+                    relative is not None
+                    and relative <= tolerance.relative_tolerance
+                )
+                comparisons.append(
+                    GrillageMemberEndComponentComparison(
+                        member_id=member_id,
+                        member_end=member_end,
+                        component=component,
+                        native_magnitude=native_value,
+                        external_magnitude=external_value,
+                        absolute_difference=difference,
+                        relative_difference=relative,
+                        passes=(
+                            difference <= absolute_tolerances[component]
+                            or relative_pass
+                        ),
+                    )
+                )
+    return tuple(comparisons)
+
+
 def compare_lm1_external_grillage_case(
     benchmark_case: LM1GoverningBenchmarkCasePackage,
     *,
@@ -452,8 +559,15 @@ def compare_lm1_external_grillage_case(
                 )
             )
 
+    member_end_comparisons = _member_end_magnitude_comparisons(
+        benchmark_case.case.model,
+        native_results_csv=benchmark_case.native_expected_results_csv,
+        external_results_csv=external_results_csv,
+        tolerance=policy,
+    )
     return LM1ExternalGrillageBenchmarkReport(
         case_id=benchmark_case.case_id,
         source_name=source_name,
         comparisons=tuple(comparisons),
+        member_end_comparisons=member_end_comparisons,
     )
