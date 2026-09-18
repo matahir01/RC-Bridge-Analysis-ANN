@@ -103,7 +103,9 @@ def _benchmark(search, *, passes: bool = True):
     return suite, report
 
 
-def _section() -> TGirderDesignInput:
+def _section(
+    provided_shear_asw_per_s_mm2_per_m: float | None = None,
+) -> TGirderDesignInput:
     return TGirderDesignInput(
         effective_flange_width_m=1.70,
         flange_thickness_m=0.175,
@@ -114,6 +116,7 @@ def _section() -> TGirderDesignInput:
         bar_diameter_mm=32.0,
         bar_spacing_mm=150.0,
         cover_mm=50.0,
+        provided_shear_asw_per_s_mm2_per_m=provided_shear_asw_per_s_mm2_per_m,
     )
 
 
@@ -251,3 +254,31 @@ def test_native_lm1_can_design_all_girders_and_identify_governing_lines() -> Non
         key=lambda item: abs(item.combinations.persistent_uls.effects.torsion_knm),
     ).combinations.girder_index
     assert result.search_strategy == search.search_strategy
+
+
+
+def test_native_lm1_design_checks_explicit_provided_shear_links() -> None:
+    project = ProjectInput()
+    search = _search()
+    suite, report = _benchmark(search)
+    provided = 1800.0
+
+    result = run_project_t_girder_from_native_lm1(
+        project,
+        search=search,
+        benchmark_suite=suite,
+        benchmark_report=report,
+        girder_index=4,
+        section=_section(provided),
+        sls_factors=_sls(),
+        crack_combination=SLSCombinationChoice.FREQUENT,
+        deflection_combination=SLSCombinationChoice.QUASI_PERMANENT,
+        crack_limit_mm=0.30,
+        allowable_deflection_mm=60.0,
+    )
+
+    assert result.design.provided_shear is not None
+    assert result.design.provided_shear.provided_asw_per_s_mm2_per_m == pytest.approx(provided)
+    assert result.detailing.provided_shear_asw_per_s_mm2_per_m == pytest.approx(provided)
+    required = result.detailing.detailing.shear.governing_required_asw_per_s_mm2_per_m
+    assert result.detailing.provided_shear_satisfies_requirement is (provided >= required)
