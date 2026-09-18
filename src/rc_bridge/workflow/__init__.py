@@ -19,6 +19,11 @@ from rc_bridge.workflow.project_native_lm1 import (
     run_project_all_t_girders_from_native_lm1,
     run_project_t_girder_from_native_lm1,
 )
+from rc_bridge.workflow.project_native_lm1_torsion import (
+    NativeLM1MatchedShearTorsionResult,
+    NativeLM1ShearTorsionPoint,
+    check_project_native_lm1_matched_shear_torsion,
+)
 from rc_bridge.workflow.verification_export import (
     build_moving_train_snapshot_verification_model,
     build_project_continuous_verification_model,
@@ -28,13 +33,16 @@ __all__ = [
     "GrillagePointLoad",
     "GrillageSectionProperties",
     "GrillageVerificationLoadCase",
+    "NativeLM1MatchedShearTorsionResult",
     "NativeLM1ProjectTGirderResult",
+    "NativeLM1ShearTorsionPoint",
     "ProjectNativeLM1GrillageSearchResult",
     "ProjectNativeLM1TGirderDesignSuite",
     "build_governing_lm1_search_verification_packages",
     "build_moving_train_snapshot_verification_model",
     "build_project_continuous_verification_model",
     "build_project_grillage_verification_model",
+    "check_project_native_lm1_matched_shear_torsion",
     "generate_lm1_search_placements",
     "native_lm1_characteristic_envelope",
     "project_girder_combinations_from_native_lm1",
