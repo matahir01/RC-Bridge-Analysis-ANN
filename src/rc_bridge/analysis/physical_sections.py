@@ -299,6 +299,40 @@ def composite_girder_properties(
     )
 
 
+def girder_web_width_m(geometry: BridgeGeometry) -> float:
+    """Return the physical vertical-web width used for shear/link design."""
+    profile = geometry.girder_profile
+    if profile is None:
+        raise ValueError("Girder web width requires a complete physical girder profile.")
+    if isinstance(profile, RectangularGirderProfile):
+        return float(profile.width_m)
+    if isinstance(profile, TGirderProfile):
+        return float(profile.web_width_m)
+    if isinstance(profile, IGirderProfile):
+        return float(profile.web_width_m)
+    raise TypeError("Unsupported physical girder profile.")
+
+
+def girder_bottom_width_m(geometry: BridgeGeometry) -> float:
+    """Return concrete width available to positive-bending bottom tension bars."""
+    profile = geometry.girder_profile
+    if profile is None:
+        raise ValueError("Girder bottom width requires a complete physical girder profile.")
+    if isinstance(profile, RectangularGirderProfile):
+        return float(profile.width_m)
+    if isinstance(profile, TGirderProfile):
+        return float(profile.web_width_m)
+    if isinstance(profile, IGirderProfile):
+        return float(profile.bottom_flange_width_m)
+    raise TypeError("Unsupported physical girder profile.")
+
+
+def composite_section_total_depth_m(geometry: BridgeGeometry) -> float:
+    """Return physical deck-plus-precast depth for positive-bending design."""
+    if geometry.girder_profile is None:
+        raise ValueError("Composite section depth requires a complete physical girder profile.")
+    return float(geometry.physical_deck_depth_m + geometry.girder_profile.total_depth_m)
+
 def transverse_deck_strip_properties(
     geometry: BridgeGeometry,
     *,
