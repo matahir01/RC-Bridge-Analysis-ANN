@@ -25,6 +25,7 @@ Implemented so far:
 - Edge-aware deck tributary widths and permanent-load protection against conflicting/double-counted explicit girder self-weight
 - Physical-position-aware surfacing layers and barrier/service/other line actions with transverse allocation, explicit longitudinal extents, construction-stage tags/filters and category-level double-count protection
 - Exact simple-span segmented permanent-load reactions, shear and zero-shear moment extrema; the same permanent moment field feeds native service-deflection curvature
+- Incremental native permanent-action grillage analysis on an unchanged grid/support system, with three ordered stiffness stages, exact partial member UDLs, signed cumulative response and separate exact-model MIDAS/STAAD stage packages
 - Separate 75 mm precast false slab and 175 mm in-situ slab construction model
 - Uniform, point and moving axle-train load mechanics
 - Simply supported reactions, shear/moment response and moving-load envelopes
@@ -155,6 +156,14 @@ Eurocode rows preserve `fck_mpa`; BS 5400 rows preserve `fcu_mpa` rather than ap
 
 If design shear exceeds concrete-only resistance, ANN export also requires the **actual provided shear reinforcement** so `g_V` is based on a real resistance rather than the quantity of reinforcement merely required by the design equation.
 
+## Construction-stage analysis boundary
+
+`run_project_construction_grillage` applies each permanent action exactly once, in `PRECAST_GIRDER`, `DECK_CONSTRUCTION`, then `SUPERIMPOSED` order. Each increment uses its own section stiffness; earlier loads are not reapplied to the final composite section. Results retain the stage input, source-to-member load audit, exact analysed model, incremental response and signed cumulative node/member-end response. `build_construction_stage_verification_packages` exports each actual stage model separately, not a fictitious final-stiffness model of the sum.
+
+This is an incremental linear-elastic, unchanged-support/continuity workflow for one simple span or continuous spans. The caller must explicitly document that support/continuity assumption and each stage's stiffness basis. Pre-final stages require an explicit transverse section representing a cross-member at every supplied grid station, including supports; the software does not infer temporary diaphragms. New concrete is assumed initially stress-free in the deformed configuration. Propping, support removal, establishment of continuity after erection, creep redistribution, shrinkage and layer stress histories are not modelled. Stiffness modifiers do not provide a time-dependent construction model.
+
+Permanent actions retain the existing tributary-area/statical-line allocation. This does not recover physical local deck/overhang torsion. Load bounds are clipped exactly to members without adding fictitious cross-beams at load boundaries. Analytical reaction, moment, deflection, load-conservation and export tests are software/mechanics checks only. Project-specific construction validation and genuine independent comparison remain outstanding; production and ANN gates are unchanged.
+
 ## Continuous-span verification boundary
 The current continuous longitudinal solver has automated mechanics benchmarks for classical beam reactions/moments, influence-line response, support continuity, closed-form simply-supported deflection recovery and moving-load symmetry. These tests demonstrate internal numerical consistency but do **not** replace independent MIDAS/STAAD/grillage evidence.
 
@@ -230,7 +239,7 @@ The current equal-share transverse-distribution route is explicitly **verificati
 BS 5400 is retained as a legacy/comparison path and remains isolated from the Eurocode implementation.
 
 ## Remaining major work
-1. **Validate construction-stage stiffness selections.** Automatic longitudinal section states now distinguish precast-girder, wet deck-construction and final composite/superimposed stages. Wet in-situ concrete is never credited to construction-stage stiffness; false-slab participation requires explicit project and stage opt-in; pre-final stages require an explicit verified transverse diaphragm/cross-beam section rather than inventing deck stiffness. Project-specific cracked/creep and construction-sequence assumptions still require final validation.
+1. **Validate and extend construction-stage analysis.** Automatic longitudinal section states and an incremental permanent-load workflow now distinguish precast-girder, wet deck-construction and final composite/superimposed stages on an unchanged support/continuity system. Wet in-situ concrete is never credited to automatic construction-stage stiffness; false-slab participation requires explicit project and stage opt-in; pre-final stages require explicit transverse sections. Exact stage exports and closed-form/software checks exist, not external acceptance. Project-specific cracked/creep assumptions, temporary works, changes of continuity, local transverse permanent actions and construction-sequence validation remain outstanding.
 2. **Complete drawing-level detailing.** Native simple-span section-by-section link spacing and anchorage-extended longitudinal curtailment are now generated from the ULS envelope. Add alternate anchorage geometries, splice staggering/constructability rules and drawing-level torsion-cage placement.
 3. **Complete the remaining fatigue scope.** A dedicated native full-width FLM3 moving-grillage path now drives simple-span T-girder longitudinal-reinforcement and concrete-compression fatigue without reusing LM1, and can be attached directly to the native-LM1 production result. Add code-governed fatigue-lane/National-Annex placement automation, shear-reinforcement and local deck fatigue, continuous-span fatigue and final independent validation.
 4. **Complete simple-span physical-profile acceptance.** Rectangular, T and I physical profiles now share benchmark-gated native-LM1 positive-bending ULS/SLS, envelope-driven bar/link zoning, practical detailing, matched co-located V-T interaction with explicit torsion-cell geometry, and dedicated FLM3 longitudinal/concrete fatigue adapters. Remaining work here is clause-by-clause verification, construction/drawing refinements and final independent external acceptance rather than a T-only production architecture.

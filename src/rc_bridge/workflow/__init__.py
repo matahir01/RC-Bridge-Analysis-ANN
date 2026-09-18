@@ -17,6 +17,12 @@ from rc_bridge.workflow.lm1_grillage_search import (
     generate_lm1_search_placements,
     run_project_native_lm1_grillage_search,
 )
+from rc_bridge.workflow.project_construction import (
+    PermanentGrillageStageInput,
+    ProjectConstructionGrillageResult,
+    build_construction_stage_verification_packages,
+    run_project_construction_grillage,
+)
 from rc_bridge.workflow.project_envelope_detailing import (
     ProjectTGirderEnvelopeDetailingResult,
     ULSDetailingEnvelopePoint,
@@ -79,6 +85,8 @@ __all__ = [
     "NativeLM1ProjectLayeredGirderResult",
     "NativeLM1ProjectTGirderResult",
     "NativeLM1ShearTorsionPoint",
+    "PermanentGrillageStageInput",
+    "ProjectConstructionGrillageResult",
     "ProjectLayeredGirderDetailingResult",
     "ProjectLayeredGirderEnvelopeDetailingResult",
     "ProjectNativeFLM3GrillageSearchResult",
@@ -87,6 +95,7 @@ __all__ = [
     "ProjectNativeLM1TGirderDesignSuite",
     "ProjectTGirderEnvelopeDetailingResult",
     "ULSDetailingEnvelopePoint",
+    "build_construction_stage_verification_packages",
     "build_governing_lm1_search_verification_packages",
     "build_moving_train_snapshot_verification_model",
     "build_project_continuous_verification_model",
@@ -100,6 +109,7 @@ __all__ = [
     "run_eurocode_layered_girder_case",
     "run_project_all_layered_girders_from_native_lm1",
     "run_project_all_t_girders_from_native_lm1",
+    "run_project_construction_grillage",
     "run_project_layered_girder_detailing",
     "run_project_layered_girder_envelope_detailing",
     "run_project_layered_girder_fatigue_from_native_flm3",
