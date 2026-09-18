@@ -7,7 +7,8 @@ from rc_bridge.core.models import ProjectInput
 from rc_bridge.research.lm1_benchmark_runner import LM1ExternalBenchmarkSuiteReport
 from rc_bridge.research.lm1_grillage_benchmark import (
     LM1ExternalGrillageBenchmarkReport,
-    LM1GoverningBenchmarkSuite,
+    build_lm1_benchmark_suite_for_case_ids,
+    compare_lm1_external_grillage_case,
 )
 from rc_bridge.workflow.eurocode_girder import TGirderDesignInput
 from rc_bridge.workflow.grillage_verification_export import GrillageSectionProperties
@@ -64,21 +65,15 @@ def native_benchmark_case():
         transverse_stations_m=(7.5,),
         longitudinal_step_m=15.0,
     )
-    cases_by_id = {case.placement.case_id: case for case in search.cases}
-    all_case_ids = tuple(sorted(cases_by_id))
-    suite = LM1GoverningBenchmarkSuite(
-        cases=tuple(
-            SimpleNamespace(case_id=case_id, case=cases_by_id[case_id])
-            for case_id in all_case_ids
-        )
-    )
+    all_case_ids = tuple(sorted(case.placement.case_id for case in search.cases))
+    suite = build_lm1_benchmark_suite_for_case_ids(search, all_case_ids)
     reports = tuple(
-        LM1ExternalGrillageBenchmarkReport(
-            case_id=case_id,
-            source_name="MIDAS Civil",
-            comparisons=(SimpleNamespace(passes=True),),
+        compare_lm1_external_grillage_case(
+            case,
+            external_results_csv=case.native_expected_results_csv,
+            source_name="MIDAS-format native round trip",
         )
-        for case_id in all_case_ids
+        for case in suite.cases
     )
     report = LM1ExternalBenchmarkSuiteReport(
         source_name="MIDAS Civil",
@@ -136,6 +131,7 @@ def test_matched_native_lm1_torsion_remains_benchmark_gated(
             case_id=item.case_id,
             source_name=item.source_name,
             comparisons=(SimpleNamespace(passes=False),),
+            member_end_comparisons=item.member_end_comparisons,
         )
         for item in report.case_reports
     )
