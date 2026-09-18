@@ -103,7 +103,9 @@ def test_moment_diagram_deflection_finds_interior_peak_between_stations() -> Non
         second_moment_mm4=second_moment_mm4,
     )
 
-    expected_position_m = sqrt((span_m**2 - load_position_m**2) / 3.0)
+    expected_position_m = span_m - sqrt(
+        (span_m**2 - load_position_m**2) / 3.0
+    )
     expected_deflection_mm = simply_supported_deflection_at_x_mm(
         span_m=span_m,
         target_x_m=expected_position_m,
