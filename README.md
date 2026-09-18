@@ -44,6 +44,14 @@ Implemented so far:
 - Dynamic full-width grillage verification export driven by editable girder count, spacing and deck width
 - Grillage deck-edge cantilevers, exact wheel stations and generic rectangular pressure-patch loading
 - EN 1991-2 LM1 full-grillage snapshot generation with explicit lane, remaining-area and tandem placement
+- Native vertical-grillage solver with automated LM1 transverse layouts, independent tandem positions and span-wise UDL search
+- Independent per-girder native LM1 M/V/T envelopes with exact governing-case traceability
+- Governing native LM1 case export to identical MIDAS Civil and STAAD.Pro benchmark models
+- MIDAS/STAAD governing-case result adapters, aggregate completeness checks and engineering benchmark reports
+- Benchmark-gated simple-span Eurocode T-girder production path using native per-girder LM1 effects rather than equal-share traffic
+- Edge-aware permanent deck tributary widths for exterior as well as internal girders
+- Matched co-located native LM1 shear-torsion interaction checks that do not combine unrelated V/T maxima
+- Explicit provided EC2 shear-link resistance and detailing-adequacy checks in the girder workflow
 - Exact static moving-vehicle snapshot export at an internal governing axle position
 - Longitudinal verification bundles with model files, manifest hashes and internal expected-results CSV
 - Full-grillage model-only bundles with exact exported-load audit, requested-result map and normalized return template
@@ -166,9 +174,9 @@ An LM1 grillage snapshot can generate:
 <case>_external_results_template.csv
 ```
 
-This full-grillage bundle intentionally contains **no fabricated internal grillage result set** because the project does not yet contain an independently verified internal full-grillage solver. Its purpose is to reproduce model geometry, stiffness assumptions, supports and traffic placement in MIDAS/STAAD and bring the external results back through a traceable normalized interface.
+The model-only snapshot bundle still does not fabricate internal result files. In parallel, the project now contains a native vertical-grillage solver and an automated LM1 placement/envelope search. That native route identifies the governing per-girder M/V/T cases, packages the exact governing models for MIDAS/STAAD, and will only unlock the simple-span native-LM1 design path when an external benchmark report passes for the exact current search cases.
 
-The export/import/benchmark workflow is covered by synthetic CI fixtures, but those fixtures are software tests—not independent structural validation. Actual parser acceptance and numerical agreement in installed MIDAS Civil/STAAD.Pro remain required evidence.
+The export/import/benchmark workflow and production-lock logic are covered by synthetic CI fixtures, but those fixtures are software tests—not independent structural validation. Genuine numerical agreement from installed MIDAS Civil/STAAD.Pro is still required before the benchmark gate should be treated as real engineering evidence.
 
 ## Installing research/ANN dependencies
 The deterministic bridge solver remains lightweight. TensorFlow is an optional research dependency:
@@ -187,16 +195,15 @@ The current equal-share transverse-distribution route is explicitly **verificati
 BS 5400 is retained as a legacy/comparison path and remains isolated from the Eurocode implementation.
 
 ## Remaining major work
-1. Run the generated controlled `.mct`/`.std` benchmark cases in installed MIDAS Civil/STAAD.Pro and capture genuine external results.
-2. Feed those real results through the round-trip evaluators, establish justified tolerance policies and complete the independent longitudinal benchmark campaign.
-3. Calibrate/confirm member-end `V/M/T` sign conventions with real external output before adding those components to the first-stage acceptance gate.
-4. Validate transverse-member/deck/diaphragm stiffness assumptions and run full-grillage symmetric/eccentric/LM1 external benchmarks.
-5. Independently verify transverse load distribution before promoting `transverse_distribution=True` in the continuous solver profile.
-6. Add validated edge-girder tributary permanent loading and edge-girder traffic effects.
-7. Complete Eurocode continuous-span service traffic deflection using justified traffic combinations and displacement-specific transverse/load-pattern treatment.
-8. Develop cracked/composite effective-stiffness, creep/shrinkage and construction-stage treatment for continuous service analysis.
-9. Complete continuous-region fatigue, torsion and detailing integration where applicable.
-10. Complete the continuous Eurocode verification manifest and keep ANN export locked until all required milestones pass.
-11. Define the continuous-bridge ANN feature schema/topology and justified random-variable distributions/bounds before generating training data.
-12. Train, validate and calibrate ANN surrogate models, then add reliability analysis and RBDO.
-13. Build calculation reports, desktop GUI, project persistence and Windows installer.
+1. Run the generated governing LM1 `.mct`/`.std` cases in installed MIDAS Civil/STAAD.Pro and capture genuine external member-force results for the current native search.
+2. Feed those real results through the LM1 benchmark workflows, confirm member-axis/sign conventions, establish justified tolerances and produce accepted external benchmark evidence.
+3. Validate longitudinal/transverse member, deck-strip and diaphragm stiffness assumptions with symmetric, eccentric and LM1 full-grillage benchmark cases.
+4. Replace the current simple-span equivalent-UDL service-deflection approximation with validated load-pattern/curvature integration suitable for the native traffic solution.
+5. Automate remaining permanent actions from explicit physical inputs, including girder self-weight when a complete physical girder profile is defined, surfacing, barriers and services without double counting.
+6. Extend reinforcement detailing to selected bar/link arrangements, anchorage, laps, curtailment, cover/durability and torsion reinforcement placement.
+7. Add the dedicated Eurocode fatigue-load-model analysis path to the benchmarked simple-span production workflow rather than reusing LM1.
+8. Complete continuous-span native transverse-distribution verification, service traffic deflection, fatigue, torsion and detailing integration.
+9. Complete the code-profile verification manifests and keep ANN export locked until every required milestone has genuine engineering evidence.
+10. Define justified ANN/RBDO random-variable distributions, bounds and feature schemas before large-scale training-data generation.
+11. Train, validate and calibrate the ANN surrogate, then complete reliability analysis and RBDO.
+12. Build calculation reports, desktop GUI, project persistence and Windows installer.
