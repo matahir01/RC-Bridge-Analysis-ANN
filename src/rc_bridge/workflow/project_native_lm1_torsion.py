@@ -2,8 +2,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from rc_bridge.codes.eurocode.combinations import EurocodeFactors
 from rc_bridge.analysis.physical_sections import girder_web_width_m
+from rc_bridge.codes.eurocode.combinations import EurocodeFactors
 from rc_bridge.core.models import DesignCode, ProjectInput, SupportSystem
 from rc_bridge.design.eurocode_shear import (
     ShearReinforcementResult,
