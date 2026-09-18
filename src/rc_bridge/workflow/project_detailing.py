@@ -13,6 +13,8 @@ class ProjectTGirderDetailingResult:
     detailing: BeamDetailingResult
     effective_concrete_area_m2: float
     tension_zone_width_m: float
+    provided_shear_asw_per_s_mm2_per_m: float | None
+    provided_shear_satisfies_requirement: bool | None
     status: str
 
 
@@ -70,12 +72,22 @@ def run_project_t_girder_detailing(
         design_required_asw_per_s_mm2_per_m=required_shear_steel,
     )
 
+    provided_shear = section.provided_shear_asw_per_s_mm2_per_m
+    provided_shear_ok = (
+        None
+        if provided_shear is None
+        else provided_shear >= detailing.shear.governing_required_asw_per_s_mm2_per_m
+    )
+
     return ProjectTGirderDetailingResult(
         detailing=detailing,
         effective_concrete_area_m2=area_m2,
         tension_zone_width_m=section.web_width_m,
+        provided_shear_asw_per_s_mm2_per_m=provided_shear,
+        provided_shear_satisfies_requirement=provided_shear_ok,
         status=(
             "Current EC2 beam reinforcement quantity/spacing checks completed; "
-            "anchorage, laps, curtailment, cover/durability and bar arrangement remain pending"
+            "provided shear links are checked against governing A_sw/s when supplied. "
+            "Anchorage, laps, curtailment, cover/durability and bar arrangement remain pending"
         ),
     )
