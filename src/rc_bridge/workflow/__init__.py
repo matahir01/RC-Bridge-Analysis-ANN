@@ -37,16 +37,16 @@ from rc_bridge.workflow.project_continuous_native_deflection import (
     ContinuousNativeServiceDeflectionResult,
     run_project_continuous_native_service_deflection,
 )
-from rc_bridge.workflow.project_continuous_native_torsion import (
-    ContinuousNativeShearTorsionPoint,
-    ProjectContinuousNativeShearTorsionResult,
-    check_project_continuous_native_matched_shear_torsion,
-)
 from rc_bridge.workflow.project_continuous_native_fatigue import (
     ContinuousFatigueStationResult,
     ContinuousTopSteelFatigueInput,
     ProjectContinuousNativeFatigueResult,
     run_project_continuous_native_fatigue,
+)
+from rc_bridge.workflow.project_continuous_native_torsion import (
+    ContinuousNativeShearTorsionPoint,
+    ProjectContinuousNativeShearTorsionResult,
+    check_project_continuous_native_matched_shear_torsion,
 )
 from rc_bridge.workflow.project_deck_fatigue import (
     LocalDeckFatigueSourceKind,
