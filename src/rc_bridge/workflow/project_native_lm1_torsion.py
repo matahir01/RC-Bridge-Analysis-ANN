@@ -279,6 +279,33 @@ def check_project_native_lm1_matched_shear_torsion(
         benchmark_report=benchmark_report,
         required_case_ids=required_benchmark_ids,
     )
+
+    reports_by_id = {item.case_id: item for item in benchmark_report.case_reports}
+    detailed_requirements = (
+        (governing_torsion, ("T",)),
+        (governing_interaction, ("V_VERTICAL", "T")),
+    )
+    for point, components in detailed_requirements:
+        case_report = reports_by_id[point.case_id]
+        for component in components:
+            comparison = case_report.member_end_comparison(
+                member_id=point.member_id,
+                member_end=point.member_end,
+                component=component,
+            )
+            if comparison is None:
+                raise RuntimeError(
+                    "Native LM1 production design remains locked because detailed "
+                    f"external member-end evidence is missing for case {point.case_id}, "
+                    f"member {point.member_id} end {point.member_end}, {component}."
+                )
+            if not comparison.passes:
+                raise RuntimeError(
+                    "Native LM1 production design remains locked because detailed "
+                    f"external member-end comparison failed for case {point.case_id}, "
+                    f"member {point.member_id} end {point.member_end}, {component}."
+                )
+
     return NativeLM1MatchedShearTorsionResult(
         girder_index=girder_index,
         governing_torsion=governing_torsion,
@@ -288,7 +315,8 @@ def check_project_native_lm1_matched_shear_torsion(
         status=(
             "EC2 torsion reinforcement uses the maximum native LM1 torsion demand; "
             "shear-torsion strut interaction is governed by co-located V/T from the same "
-            "traffic case and member end, with simple-span permanent UDL shear added "
-            "conservatively by magnitude."
+            "traffic case and member end. The governing local T and V/T member-end "
+            "magnitudes require passing external comparison, and simple-span permanent "
+            "UDL shear is added conservatively by magnitude."
         ),
     )
