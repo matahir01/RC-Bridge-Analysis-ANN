@@ -133,18 +133,88 @@ def project_eurocode_material_input(
     )
 
 
-def internal_girder_deck_self_weight_kn_m(project: ProjectInput) -> float:
-    """Physical deck self-weight on an internal girder tributary width.
+def girder_deck_tributary_width_m(project: ProjectInput, *, girder_index: int) -> float:
+    """Return physical deck tributary width for any longitudinal girder line.
 
-    This includes both precast false slab and in-situ slab because both are
-    permanent weight, regardless of whether the false slab participates in the
-    composite compression flange.
+    Internal girders receive the spacing between adjacent midlines. Exterior
+    girders receive half the adjacent spacing plus the physical deck overhang.
+    This lets the permanent-load path cover edge girders without pretending
+    their deck tributary width equals an internal spacing.
     """
+    geometry = project.geometry
+    girder_count = int(geometry.girder_count)
+    if not 1 <= girder_index <= girder_count:
+        raise IndexError("girder_index is outside the project girder layout.")
+
+    width = float(geometry.deck_width_m)
+    spacing = float(geometry.girder_spacing_m)
+    edge = float(geometry.nominal_edge_overhang_m)
+    first_y = -width / 2.0 + edge
+    coordinates = tuple(first_y + index * spacing for index in range(girder_count))
+    y = coordinates[girder_index - 1]
+    left_boundary = (
+        -width / 2.0
+        if girder_index == 1
+        else 0.5 * (coordinates[girder_index - 2] + y)
+    )
+    right_boundary = (
+        width / 2.0
+        if girder_index == girder_count
+        else 0.5 * (y + coordinates[girder_index])
+    )
+    tributary_width = right_boundary - left_boundary
+    if tributary_width <= 0.0:
+        raise ValueError("Computed girder deck tributary width must be positive.")
+    return tributary_width
+
+
+def girder_deck_self_weight_kn_m(project: ProjectInput, *, girder_index: int) -> float:
+    """Physical deck self-weight carried by one girder tributary strip."""
     geometry = project.geometry
     return deck_self_weight_per_girder_kn_m(
         deck_thickness_m=geometry.physical_deck_depth_m,
-        girder_spacing_m=float(geometry.girder_spacing_m),
+        girder_spacing_m=girder_deck_tributary_width_m(
+            project,
+            girder_index=girder_index,
+        ),
         concrete_density_kn_m3=float(project.materials.concrete_density_kn_m3),
+    )
+
+
+def internal_girder_deck_self_weight_kn_m(project: ProjectInput) -> float:
+    """Physical deck self-weight on the standard internal tributary width."""
+    girder_count = int(project.geometry.girder_count)
+    if girder_count < 3:
+        raise ValueError("An internal girder requires at least three girder lines.")
+    return girder_deck_self_weight_kn_m(project, girder_index=2)
+
+
+def girder_characteristic_permanent_effects(
+    project: ProjectInput,
+    *,
+    girder_index: int,
+    span_index: int = 0,
+    additional: UniformPermanentLoadInput | None = None,
+) -> LoadEffects:
+    """Return simple-span characteristic permanent effects for any girder.
+
+    Deck self-weight uses the physical deck tributary width of the selected
+    girder. Girder own weight, surfacing, barriers/services and other permanent
+    actions remain explicit line-load inputs so they cannot be silently
+    double-counted.
+    """
+    if project.geometry.support_system != SupportSystem.SIMPLY_SUPPORTED:
+        raise ValueError("This permanent-load adapter currently supports simple spans only.")
+    if not 0 <= span_index < len(project.geometry.span_lengths_m):
+        raise IndexError("span_index is outside the project span list.")
+
+    span_m = float(project.geometry.span_lengths_m[span_index])
+    deck_kn_m = girder_deck_self_weight_kn_m(project, girder_index=girder_index)
+    extra_kn_m = (additional or UniformPermanentLoadInput()).total_additional_kn_m
+    result = udl_simple_span(span_m, deck_kn_m + extra_kn_m)
+    return LoadEffects(
+        moment_knm=result.max_moment_knm,
+        shear_kn=result.max_shear_kn,
     )
 
 
@@ -154,25 +224,15 @@ def internal_girder_characteristic_permanent_effects(
     span_index: int = 0,
     additional: UniformPermanentLoadInput | None = None,
 ) -> LoadEffects:
-    """Return simple-span characteristic G effects for an internal girder.
-
-    Deck self-weight is derived from the physical deck build-up. Girder own
-    weight, surfacing, barriers/services, and other permanent loads are explicit
-    inputs until the corresponding section/load models are defined. Edge-girder
-    deck tributary width must be handled separately.
-    """
-    if project.geometry.support_system != SupportSystem.SIMPLY_SUPPORTED:
-        raise ValueError("This permanent-load adapter currently supports simple spans only.")
-    if not 0 <= span_index < len(project.geometry.span_lengths_m):
-        raise IndexError("span_index is outside the project span list.")
-
-    span_m = float(project.geometry.span_lengths_m[span_index])
-    deck_kn_m = internal_girder_deck_self_weight_kn_m(project)
-    extra_kn_m = (additional or UniformPermanentLoadInput()).total_additional_kn_m
-    result = udl_simple_span(span_m, deck_kn_m + extra_kn_m)
-    return LoadEffects(
-        moment_knm=result.max_moment_knm,
-        shear_kn=result.max_shear_kn,
+    """Return simple-span characteristic G effects for a representative internal girder."""
+    girder_count = int(project.geometry.girder_count)
+    if girder_count < 3:
+        raise ValueError("An internal girder requires at least three girder lines.")
+    return girder_characteristic_permanent_effects(
+        project,
+        girder_index=2,
+        span_index=span_index,
+        additional=additional,
     )
 
 
