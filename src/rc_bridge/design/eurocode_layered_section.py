@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from itertools import pairwise
 
 from rc_bridge.analysis.physical_sections import ConcreteSectionLayer
 from rc_bridge.design.eurocode_cracking import effective_tension_depth_mm
@@ -57,13 +58,11 @@ def _validate_layers(
     if effective_depth_m <= 0.0:
         raise ValueError("effective_depth_m must be positive.")
     ordered = tuple(sorted(layers, key=lambda item: (item.top_m, item.bottom_m)))
-    for previous, current in zip(ordered, ordered[1:], strict=False):
+    for previous, current in pairwise(ordered):
         if current.top_m < previous.bottom_m - 1.0e-12:
             raise ValueError("Concrete layers must not overlap through the depth.")
-    if effective_depth_m >= max(item.bottom_m for item in ordered):
-        # Steel may be close to the bottom but must remain inside the physical section.
-        if effective_depth_m > max(item.bottom_m for item in ordered) + 1.0e-12:
-            raise ValueError("Tension steel depth lies outside the layered section.")
+    if effective_depth_m > max(item.bottom_m for item in ordered) + 1.0e-12:
+        raise ValueError("Tension steel depth lies outside the layered section.")
     return ordered
 
 
