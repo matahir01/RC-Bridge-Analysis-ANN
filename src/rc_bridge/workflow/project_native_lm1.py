@@ -133,13 +133,14 @@ def require_native_lm1_external_benchmark(
     *,
     benchmark_suite: LM1GoverningBenchmarkSuite,
     benchmark_report: LM1ExternalBenchmarkSuiteReport,
+    required_case_ids: tuple[int, ...] | None = None,
 ) -> None:
-    """Require external evidence for the exact governing cases used by the design search.
+    """Require passing external evidence for native LM1 cases used by design.
 
-    Matching only case numbers is insufficient: each benchmark package must retain
-    the same native search-case object/value as the corresponding governing case.
-    This prevents a passing benchmark from a different grid, load step, geometry,
-    or LM1 search from unlocking a production design run.
+    The independent M/V/T governing case set is required by default. Callers may
+    require additional interaction cases. A benchmark suite may contain extra
+    cases from the same current native search, but it cannot omit any required
+    case or substitute a case object from another grid/load search.
     """
     if not benchmark_report.passes:
         failed = ", ".join(str(value) for value in benchmark_report.failed_case_ids)
@@ -150,21 +151,45 @@ def require_native_lm1_external_benchmark(
             f"benchmark has not passed: {detail}."
         )
 
-    governing_ids = set(search.governing_case_ids)
-    suite_by_id = {item.case_id: item for item in benchmark_suite.cases}
-    report_ids = {item.case_id for item in benchmark_report.case_reports}
-    if set(suite_by_id) != governing_ids or report_ids != governing_ids:
+    required_ids = (
+        set(search.governing_case_ids)
+        if required_case_ids is None
+        else set(required_case_ids)
+    )
+    required_ids.update(search.governing_case_ids)
+    search_by_id = {item.placement.case_id: item for item in search.cases}
+    search_ids = set(search_by_id)
+    invalid_required = sorted(required_ids - search_ids)
+    if invalid_required:
         raise RuntimeError(
-            "Native LM1 production design remains locked because benchmark case IDs "
-            "do not exactly match the current search governing cases."
+            "Native LM1 production design requested benchmark cases outside the "
+            "current search: " + ", ".join(str(value) for value in invalid_required)
         )
 
-    search_by_id = {item.placement.case_id: item for item in search.cases}
-    for case_id in sorted(governing_ids):
-        if case_id not in search_by_id:
-            raise RuntimeError(
-                f"Native LM1 search is missing its governing case {case_id}."
-            )
+    suite_by_id = {item.case_id: item for item in benchmark_suite.cases}
+    suite_ids = set(suite_by_id)
+    report_ids = {item.case_id for item in benchmark_report.case_reports}
+    if suite_ids != report_ids:
+        raise RuntimeError(
+            "Native LM1 production design remains locked because benchmark suite "
+            "and report case IDs do not match."
+        )
+    unexpected = sorted(suite_ids - search_ids)
+    if unexpected:
+        raise RuntimeError(
+            "Native LM1 production design remains locked because benchmark cases "
+            "are not part of the current native search: "
+            + ", ".join(str(value) for value in unexpected)
+        )
+    missing_required = sorted(required_ids - suite_ids)
+    if missing_required:
+        raise RuntimeError(
+            "Native LM1 production design remains locked because required external "
+            "benchmark cases are missing: "
+            + ", ".join(str(value) for value in missing_required)
+        )
+
+    for case_id in sorted(suite_ids):
         if suite_by_id[case_id].case != search_by_id[case_id]:
             raise RuntimeError(
                 "Native LM1 production design remains locked because benchmark case "
