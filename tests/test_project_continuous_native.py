@@ -23,6 +23,10 @@ from rc_bridge.workflow.project_continuous_native import (
 from rc_bridge.workflow.project_continuous_native_deflection import (
     run_project_continuous_native_service_deflection,
 )
+from rc_bridge.workflow.project_continuous_native_torsion import (
+    check_project_continuous_native_matched_shear_torsion,
+)
+from rc_bridge.workflow.project_torsion import TorsionCellInput
 
 
 def _project() -> ProjectInput:
@@ -69,10 +73,10 @@ def _stages() -> tuple[PermanentGrillageStageInput, ...]:
     )
 
 
-def _run():
+def _run(girder_index: int = 2):
     return run_project_continuous_native_lm1_envelope(
         _project(),
-        girder_index=2,
+        girder_index=girder_index,
         construction_stages=_stages(),
         unchanged_supports_and_continuity_basis=(
             "two-span continuity and supports active throughout the analysed sequence"
@@ -187,3 +191,32 @@ def test_native_continuous_zero_traffic_factor_returns_permanent_only() -> None:
         rel=1.0e-12,
         abs=1.0e-12,
     )
+
+
+
+def test_continuous_native_shear_torsion_keeps_v_and_t_colocated() -> None:
+    production = _run(girder_index=1)
+    result = check_project_continuous_native_matched_shear_torsion(
+        _project(),
+        production=production,
+        section=ContinuousShearDesignInput(
+            web_width_m=0.40,
+            effective_depth_m=1.05,
+            longitudinal_steel_area_mm2=6500.0,
+            provided_asw_per_s_mm2_per_m=1600.0,
+        ),
+        torsion_cell=TorsionCellInput(
+            ak_m2=0.10,
+            uk_m=1.40,
+            tef_m=0.15,
+        ),
+    )
+
+    assert result.evaluated_points
+    assert result.governing_torsion.design_torsion_knm >= 0.0
+    assert result.governing_interaction.interaction.utilization >= 0.0
+    point = result.governing_interaction
+    assert point.member_end in {"I", "J"}
+    assert point.side in {"left", "right"}
+    assert point.gamma_g in {1.0, 1.35}
+    assert "same section" in result.status
