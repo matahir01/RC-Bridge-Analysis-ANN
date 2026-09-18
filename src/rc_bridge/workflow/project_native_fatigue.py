@@ -137,6 +137,49 @@ class ProjectNativeFLM3GrillageSearchResult:
 
 
 @dataclass(frozen=True)
+class NativeFLM3ContinuousStationRange:
+    """Signed FLM3 M/V ranges at one continuous-bridge girder station."""
+
+    girder_index: int
+    y_m: float
+    x_m: float
+    minimum_moment_knm: float
+    maximum_moment_knm: float
+    moment_range_knm: float
+    minimum_shear_kn: float
+    maximum_shear_kn: float
+    shear_range_kn: float
+    minimum_moment_case_id: int | None
+    maximum_moment_case_id: int | None
+    minimum_shear_case_id: int | None
+    maximum_shear_case_id: int | None
+
+
+@dataclass(frozen=True)
+class ProjectNativeFLM3ContinuousGrillageSearchResult:
+    cases: tuple[NativeFLM3CaseResult, ...]
+    station_ranges: tuple[NativeFLM3ContinuousStationRange, ...]
+    total_length_m: float
+    support_positions_m: tuple[float, ...]
+    vehicle_centres_y_m: tuple[float, ...]
+    axle_load_factor: float
+    movement_step_m: float
+    section_step_m: float
+    status: str
+
+    def ranges_for_girder(
+        self,
+        girder_index: int,
+    ) -> tuple[NativeFLM3ContinuousStationRange, ...]:
+        values = tuple(
+            item for item in self.station_ranges if item.girder_index == girder_index
+        )
+        if not values:
+            raise IndexError("girder_index is outside the continuous FLM3 result.")
+        return values
+
+
+@dataclass(frozen=True)
 class NativeFLM3ShearLinkFatigueResult:
     """Conservative vertical-link fatigue check from the native FLM3 shear range."""
 
@@ -283,6 +326,53 @@ def _flm3_lead_positions(
     return tuple(sorted(round(value, 12) for value in positions))
 
 
+def _flm3_lead_positions_for_targets(
+    *,
+    analysis_length_m: float,
+    train_length_m: float,
+    axle_offsets_m: tuple[float, ...],
+    movement_step_m: float,
+    target_positions_m: tuple[float, ...],
+) -> tuple[float, ...]:
+    end = analysis_length_m + train_length_m
+    positions = set(_regular_positions(end, movement_step_m))
+    positions.update((0.0, end))
+    for target in target_positions_m:
+        for offset in axle_offsets_m:
+            lead = target + offset
+            if 0.0 <= lead <= end:
+                positions.add(lead)
+    return tuple(sorted(round(value, 12) for value in positions))
+
+
+def _fatigue_vehicle_centres(
+    project: ProjectInput,
+    *,
+    vehicle_centre_y_m: float | None,
+    transverse_wheel_spacing_m: float,
+) -> tuple[float, ...]:
+    half_wheel = transverse_wheel_spacing_m / 2.0
+    carriageway_left = float(project.geometry.carriageway_left_edge_m)
+    carriageway_right = float(project.geometry.carriageway_right_edge_m)
+    if vehicle_centre_y_m is None:
+        placements = notional_fatigue_lane_placements(
+            carriageway_width_m=float(project.geometry.carriageway_width_m),
+            carriageway_offset_m=float(project.geometry.carriageway_offset_m),
+            transverse_wheel_spacing_m=transverse_wheel_spacing_m,
+        )
+        return tuple(item.centre_y_m for item in placements)
+    centre = float(vehicle_centre_y_m)
+    if (
+        centre - half_wheel < carriageway_left - 1.0e-9
+        or centre + half_wheel > carriageway_right + 1.0e-9
+    ):
+        raise ValueError(
+            "FLM3 wheel centres must lie inside the physical carriageway; choose an "
+            "explicit fatigue-lane vehicle centre consistent with the project/NA."
+        )
+    return (centre,)
+
+
 def _section_positions(
     *,
     span_m: float,
@@ -406,27 +496,11 @@ def run_project_native_flm3_grillage_search(
     span_m = float(project.geometry.span_lengths_m[0])
     vehicle = fatigue_load_model_3(axle_load_factor=axle_load_factor)
     half_wheel_spacing = vehicle.transverse_wheel_spacing_m / 2.0
-    carriageway_left = float(project.geometry.carriageway_left_edge_m)
-    carriageway_right = float(project.geometry.carriageway_right_edge_m)
-    if vehicle_centre_y_m is None:
-        placements = notional_fatigue_lane_placements(
-            carriageway_width_m=float(project.geometry.carriageway_width_m),
-            carriageway_offset_m=float(project.geometry.carriageway_offset_m),
-            transverse_wheel_spacing_m=vehicle.transverse_wheel_spacing_m,
-        )
-        vehicle_centres = tuple(item.centre_y_m for item in placements)
-    else:
-        centre = float(vehicle_centre_y_m)
-        wheel_y = (centre - half_wheel_spacing, centre + half_wheel_spacing)
-        if (
-            wheel_y[0] < carriageway_left - 1.0e-9
-            or wheel_y[1] > carriageway_right + 1.0e-9
-        ):
-            raise ValueError(
-                "FLM3 wheel centres must lie inside the physical carriageway; choose an "
-                "explicit fatigue-lane vehicle centre consistent with the project/NA."
-            )
-        vehicle_centres = (centre,)
+    vehicle_centres = _fatigue_vehicle_centres(
+        project,
+        vehicle_centre_y_m=vehicle_centre_y_m,
+        transverse_wheel_spacing_m=vehicle.transverse_wheel_spacing_m,
+    )
 
     leads = _flm3_lead_positions(
         span_m=span_m,
@@ -591,6 +665,171 @@ def run_project_native_flm3_grillage_search(
             "otherwise every unique left/right-packed notional-lane centre is enveloped. "
             "The candidate envelope does not replace project/National-Annex slow-lane "
             "identification. Independent external validation remains pending."
+        ),
+    )
+
+
+def run_project_native_flm3_continuous_grillage_search(
+    project: ProjectInput,
+    *,
+    transverse_stations_m: tuple[float, ...],
+    vehicle_centre_y_m: float | None = None,
+    longitudinal_sections_by_span: tuple[GrillageSectionProperties, ...] | None = None,
+    transverse_section: GrillageSectionProperties | None = None,
+    axle_load_factor: float = 1.0,
+    stiffness_modifiers: GrillageStiffnessModifiers | None = None,
+    movement_step_m: float = 0.5,
+    section_step_m: float = 0.5,
+    name: str = "EN 1991-2 FLM3 continuous native grillage search",
+) -> ProjectNativeFLM3ContinuousGrillageSearchResult:
+    """Move FLM3 across the full length of an unchanged continuous grillage."""
+    if project.design_code != DesignCode.EUROCODE:
+        raise ValueError("Continuous native FLM3 currently supports Eurocode only.")
+    if project.geometry.support_system != SupportSystem.CONTINUOUS:
+        raise ValueError("Continuous native FLM3 requires a continuous support system.")
+    if len(project.geometry.span_lengths_m) < 2:
+        raise ValueError("Continuous native FLM3 requires at least two spans.")
+    if movement_step_m <= 0.0 or section_step_m <= 0.0:
+        raise ValueError("FLM3 movement and section steps must be positive.")
+
+    spans = tuple(float(value) for value in project.geometry.span_lengths_m)
+    total_length = sum(spans)
+    supports = [0.0]
+    for span in spans:
+        supports.append(supports[-1] + span)
+    support_positions = tuple(supports)
+    span_midpoints = tuple(
+        0.5 * (support_positions[index] + support_positions[index + 1])
+        for index in range(len(spans))
+    )
+
+    vehicle = fatigue_load_model_3(axle_load_factor=axle_load_factor)
+    vehicle_centres = _fatigue_vehicle_centres(
+        project,
+        vehicle_centre_y_m=vehicle_centre_y_m,
+        transverse_wheel_spacing_m=vehicle.transverse_wheel_spacing_m,
+    )
+    half_wheel_spacing = vehicle.transverse_wheel_spacing_m / 2.0
+    leads = _flm3_lead_positions_for_targets(
+        analysis_length_m=total_length,
+        train_length_m=vehicle.axle_train.train_length_m,
+        axle_offsets_m=vehicle.axle_offsets_m,
+        movement_step_m=movement_step_m,
+        target_positions_m=tuple(sorted(set(support_positions + span_midpoints))),
+    )
+    reporting_stations = _section_positions(
+        span_m=total_length,
+        section_step_m=section_step_m,
+        additional_stations_m=tuple(
+            sorted(set(transverse_stations_m + support_positions + span_midpoints))
+        ),
+    )
+
+    cases: list[NativeFLM3CaseResult] = []
+    for centre in vehicle_centres:
+        wheel_y = (centre - half_wheel_spacing, centre + half_wheel_spacing)
+        for lead in leads:
+            active_axles = positioned_axles(vehicle.axle_train, lead, total_length)
+            if not any(
+                1.0e-9 < axle.position_m < total_length - 1.0e-9
+                for axle in active_axles
+            ):
+                continue
+            case_id = len(cases) + 1
+            point_loads = tuple(
+                GrillagePointLoad(
+                    x_m=axle.position_m,
+                    y_m=y_m,
+                    magnitude_kn=axle.magnitude_kn / 2.0,
+                    label=(
+                        f"FLM3 continuous case {case_id} centre {centre:.6g} m "
+                        f"{axle.label} {'left' if wheel_index == 1 else 'right'} wheel"
+                    ),
+                )
+                for axle in active_axles
+                for wheel_index, y_m in enumerate(wheel_y, start=1)
+            )
+            model = build_project_grillage_verification_model(
+                project,
+                longitudinal_sections_by_span=longitudinal_sections_by_span,
+                transverse_section=transverse_section,
+                transverse_stations_m=transverse_stations_m,
+                load_case=GrillageVerificationLoadCase(
+                    name=f"{name} case {case_id}",
+                    point_loads=point_loads,
+                ),
+                stiffness_modifiers=stiffness_modifiers,
+            )
+            cases.append(
+                NativeFLM3CaseResult(
+                    case_id=case_id,
+                    lead_position_m=lead,
+                    vehicle_centre_y_m=centre,
+                    model=model,
+                    analysis=solve_vertical_grillage(model),
+                )
+            )
+
+    ranges: list[NativeFLM3ContinuousStationRange] = []
+    for girder_index, y_m in enumerate(_girder_y_coordinates(project), start=1):
+        for x_m in reporting_stations:
+            min_m = 0.0
+            max_m = 0.0
+            min_v = 0.0
+            max_v = 0.0
+            min_m_case = None
+            max_m_case = None
+            min_v_case = None
+            max_v_case = None
+            for case in cases:
+                for moment, shear, _ in _signed_longitudinal_section_candidates(
+                    case,
+                    target_y_m=y_m,
+                    x_m=x_m,
+                ):
+                    if moment < min_m:
+                        min_m = moment
+                        min_m_case = case.case_id
+                    if moment > max_m:
+                        max_m = moment
+                        max_m_case = case.case_id
+                    if shear < min_v:
+                        min_v = shear
+                        min_v_case = case.case_id
+                    if shear > max_v:
+                        max_v = shear
+                        max_v_case = case.case_id
+            ranges.append(
+                NativeFLM3ContinuousStationRange(
+                    girder_index=girder_index,
+                    y_m=y_m,
+                    x_m=x_m,
+                    minimum_moment_knm=min_m,
+                    maximum_moment_knm=max_m,
+                    moment_range_knm=max_m - min_m,
+                    minimum_shear_kn=min_v,
+                    maximum_shear_kn=max_v,
+                    shear_range_kn=max_v - min_v,
+                    minimum_moment_case_id=min_m_case,
+                    maximum_moment_case_id=max_m_case,
+                    minimum_shear_case_id=min_v_case,
+                    maximum_shear_case_id=max_v_case,
+                )
+            )
+
+    return ProjectNativeFLM3ContinuousGrillageSearchResult(
+        cases=tuple(cases),
+        station_ranges=tuple(ranges),
+        total_length_m=total_length,
+        support_positions_m=support_positions,
+        vehicle_centres_y_m=vehicle_centres,
+        axle_load_factor=axle_load_factor,
+        movement_step_m=movement_step_m,
+        section_step_m=section_step_m,
+        status=(
+            "Native full-width FLM3 traffic search over the complete continuous grillage. "
+            "Signed station-by-station M/V ranges are retained for later top/bottom fatigue "
+            "design; this search alone does not certify a continuous RC fatigue section."
         ),
     )
 

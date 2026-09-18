@@ -1,9 +1,10 @@
 import pytest
 
-from rc_bridge.core.models import ProjectInput
+from rc_bridge.core.models import BridgeGeometry, ProjectInput, SupportSystem
 from rc_bridge.workflow.eurocode_girder import TGirderDesignInput
 from rc_bridge.workflow.grillage_verification_export import GrillageSectionProperties
 from rc_bridge.workflow.project_native_fatigue import (
+    run_project_native_flm3_continuous_grillage_search,
     run_project_native_flm3_grillage_search,
     run_project_t_girder_fatigue_from_native_flm3,
 )
@@ -173,3 +174,31 @@ def test_shear_link_fatigue_requires_actual_provided_links() -> None:
             characteristic_fatigue_strength_mpa=162.5,
             shear_link_characteristic_fatigue_strength_mpa=162.5,
         )
+
+
+
+def test_continuous_native_flm3_preserves_signed_station_ranges() -> None:
+    project = ProjectInput(
+        geometry=BridgeGeometry(
+            span_lengths_m=[10.0, 10.0],
+            support_system=SupportSystem.CONTINUOUS,
+        )
+    )
+    result = run_project_native_flm3_continuous_grillage_search(
+        project,
+        longitudinal_sections_by_span=(_longitudinal(), _longitudinal()),
+        transverse_section=_transverse(),
+        transverse_stations_m=(10.0,),
+        vehicle_centre_y_m=0.0,
+        movement_step_m=10.0,
+        section_step_m=5.0,
+    )
+
+    assert result.cases
+    assert result.total_length_m == pytest.approx(20.0)
+    assert result.support_positions_m == pytest.approx((0.0, 10.0, 20.0))
+    centre = result.ranges_for_girder(4)
+    assert any(abs(item.x_m - 10.0) <= 1.0e-9 for item in centre)
+    assert max(item.moment_range_knm for item in centre) > 0.0
+    assert max(item.shear_range_kn for item in centre) > 0.0
+    assert "does not certify" in result.status
