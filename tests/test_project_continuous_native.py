@@ -20,6 +20,9 @@ from rc_bridge.workflow.project_continuous_design import (
 from rc_bridge.workflow.project_continuous_native import (
     run_project_continuous_native_lm1_envelope,
 )
+from rc_bridge.workflow.project_continuous_native_deflection import (
+    run_project_continuous_native_service_deflection,
+)
 
 
 def _project() -> ProjectInput:
@@ -139,3 +142,48 @@ def test_existing_continuous_uls_design_accepts_native_envelope() -> None:
     assert result.positive_design_moment_knm > 0.0
     assert result.negative_design_moment_knm > 0.0
     assert result.design_shear_kn > 0.0
+
+
+
+def test_native_continuous_service_deflection_combines_staged_g_and_lm1() -> None:
+    production = _run()
+    result = run_project_continuous_native_service_deflection(
+        _project(),
+        construction=production.construction,
+        traffic=production.traffic,
+        girder_index=2,
+        traffic_factor=0.75,
+        allowable_deflection_mm=40.0,
+    )
+
+    assert result.calculated_max_abs_deflection_mm > 0.0
+    assert result.calculated_max_abs_deflection_mm >= (
+        result.permanent_only_max_abs_deflection_mm
+    )
+    assert 0.0 < result.governing_global_position_m < 20.0
+    assert result.utilization == pytest.approx(
+        result.calculated_max_abs_deflection_mm / 40.0
+    )
+    assert result.g_deflection_mm == pytest.approx(
+        40.0 - result.calculated_max_abs_deflection_mm
+    )
+    assert "interior displacement extrema" in result.status
+
+
+def test_native_continuous_zero_traffic_factor_returns_permanent_only() -> None:
+    production = _run()
+    result = run_project_continuous_native_service_deflection(
+        _project(),
+        construction=production.construction,
+        traffic=production.traffic,
+        girder_index=2,
+        traffic_factor=0.0,
+        allowable_deflection_mm=40.0,
+    )
+
+    assert result.governing_case_id is None
+    assert result.calculated_max_abs_deflection_mm == pytest.approx(
+        result.permanent_only_max_abs_deflection_mm,
+        rel=1.0e-12,
+        abs=1.0e-12,
+    )

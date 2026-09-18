@@ -33,6 +33,10 @@ from rc_bridge.workflow.project_continuous_native import (
     ProjectContinuousNativeLM1EnvelopeResult,
     run_project_continuous_native_lm1_envelope,
 )
+from rc_bridge.workflow.project_continuous_native_deflection import (
+    ContinuousNativeServiceDeflectionResult,
+    run_project_continuous_native_service_deflection,
+)
 from rc_bridge.workflow.project_deck_fatigue import (
     LocalDeckFatigueSourceKind,
     LocalDeckReinforcementFatigueInput,
@@ -101,6 +105,7 @@ __all__ = [
     "ConstructionTimeEffectMode",
     "ConstructionTransverseActionMode",
     "ContinuousNativeLM1StationTrace",
+    "ContinuousNativeServiceDeflectionResult",
     "EurocodeLayeredGirderWorkflowResult",
     "GrillagePointLoad",
     "GrillageSectionProperties",
@@ -147,6 +152,7 @@ __all__ = [
     "run_project_all_t_girders_from_native_lm1",
     "run_project_construction_grillage",
     "run_project_continuous_native_lm1_envelope",
+    "run_project_continuous_native_service_deflection",
     "run_project_layered_girder_detailing",
     "run_project_layered_girder_envelope_detailing",
     "run_project_layered_girder_fatigue_from_native_flm3",
