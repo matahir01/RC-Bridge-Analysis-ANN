@@ -100,3 +100,53 @@ def test_project_t_girder_detailing_uses_design_shear_and_ec2_materials() -> Non
     assert result.detailing.shear.governing_required_asw_per_s_mm2_per_m >= (
         result.detailing.shear.minimum_asw_per_s_mm2_per_m
     )
+
+
+
+def test_project_t_girder_detailing_checks_explicit_provided_shear_links() -> None:
+    design = _verification_design()
+    required = run_project_t_girder_detailing(
+        ProjectInput(),
+        section=_section(),
+        design=design.design,
+    ).detailing.shear.governing_required_asw_per_s_mm2_per_m
+
+    supplied = TGirderDesignInput(
+        effective_flange_width_m=1.70,
+        flange_thickness_m=0.175,
+        web_width_m=0.30,
+        total_depth_m=1.20,
+        effective_depth_m=1.10,
+        steel_area_mm2=6500.0,
+        bar_diameter_mm=32.0,
+        bar_spacing_mm=150.0,
+        cover_mm=50.0,
+        provided_shear_asw_per_s_mm2_per_m=required * 1.10,
+    )
+    result = run_project_t_girder_detailing(
+        ProjectInput(),
+        section=supplied,
+        design=design.design,
+    )
+
+    assert result.provided_shear_asw_per_s_mm2_per_m == pytest.approx(required * 1.10)
+    assert result.provided_shear_satisfies_requirement is True
+
+    insufficient = TGirderDesignInput(
+        effective_flange_width_m=1.70,
+        flange_thickness_m=0.175,
+        web_width_m=0.30,
+        total_depth_m=1.20,
+        effective_depth_m=1.10,
+        steel_area_mm2=6500.0,
+        bar_diameter_mm=32.0,
+        bar_spacing_mm=150.0,
+        cover_mm=50.0,
+        provided_shear_asw_per_s_mm2_per_m=required * 0.90,
+    )
+    failed = run_project_t_girder_detailing(
+        ProjectInput(),
+        section=insufficient,
+        design=design.design,
+    )
+    assert failed.provided_shear_satisfies_requirement is False
