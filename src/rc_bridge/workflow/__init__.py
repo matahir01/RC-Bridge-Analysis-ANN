@@ -3,10 +3,6 @@ from rc_bridge.workflow.eurocode_layered_girder import (
     LayeredGirderDesignInput,
     run_eurocode_layered_girder_case,
 )
-from rc_bridge.workflow.project_layered_detailing import (
-    ProjectLayeredGirderDetailingResult,
-    run_project_layered_girder_detailing,
-)
 from rc_bridge.workflow.grillage_verification_export import (
     GrillagePointLoad,
     GrillageSectionProperties,
@@ -26,6 +22,10 @@ from rc_bridge.workflow.project_envelope_detailing import (
     ULSDetailingEnvelopePoint,
     native_lm1_uls_detailing_envelope,
     run_project_t_girder_envelope_detailing,
+)
+from rc_bridge.workflow.project_layered_detailing import (
+    ProjectLayeredGirderDetailingResult,
+    run_project_layered_girder_detailing,
 )
 from rc_bridge.workflow.project_native_fatigue import (
     NativeFLM3FatigueDesignInput,
