@@ -46,6 +46,11 @@ from rc_bridge.workflow.project_detailing import (
     ProjectTGirderDetailingResult,
     run_project_t_girder_detailing,
 )
+from rc_bridge.workflow.project_envelope_detailing import (
+    ProjectTGirderEnvelopeDetailingResult,
+    native_lm1_uls_detailing_envelope,
+    run_project_t_girder_envelope_detailing,
+)
 from rc_bridge.workflow.project_torsion import TorsionCellInput
 
 if TYPE_CHECKING:
@@ -63,6 +68,7 @@ class NativeLM1ProjectTGirderResult:
     materials: EurocodeMaterialInput
     design: EurocodeTGirderWorkflowResult
     detailing: ProjectTGirderDetailingResult
+    envelope_detailing: ProjectTGirderEnvelopeDetailingResult | None
     shear_torsion: NativeLM1MatchedShearTorsionResult | None
     traffic_trace: LM1GirderGoverningEnvelope
     benchmark_source: str
@@ -458,6 +464,21 @@ def run_project_t_girder_from_native_lm1(
         section=section,
         design=design,
     )
+    envelope_detailing: ProjectTGirderEnvelopeDetailingResult | None = None
+    if all(hasattr(case, "model") and hasattr(case, "analysis") for case in search.cases):
+        detailing_envelope = native_lm1_uls_detailing_envelope(
+            project,
+            search=search,
+            girder_index=girder_index,
+            additional_permanent=additional_permanent,
+            uls_factors=uls_factors,
+        )
+        envelope_detailing = run_project_t_girder_envelope_detailing(
+            project,
+            section=section,
+            envelope=detailing_envelope,
+            cot_theta=cot_theta,
+        )
     shear_torsion: NativeLM1MatchedShearTorsionResult | None = None
     if torsion_cell is not None:
         from rc_bridge.workflow.project_native_lm1_torsion import (
@@ -483,6 +504,7 @@ def run_project_t_girder_from_native_lm1(
         materials=materials,
         design=design,
         detailing=detailing,
+        envelope_detailing=envelope_detailing,
         shear_torsion=shear_torsion,
         traffic_trace=trace,
         benchmark_source=benchmark_report.source_name,
@@ -490,8 +512,9 @@ def run_project_t_girder_from_native_lm1(
             "Simple-span Eurocode girder design and current reinforcement detailing driven by "
             "externally benchmarked native LM1 per-girder traffic envelopes; independent M/V/T "
             "governing case IDs are retained, with matched co-located V-T interaction checked "
-            "when explicit torsion-cell geometry is supplied. Service deflection uses the "
-            "co-located native LM1 curvature field when the physical search trace is present."
+            "when explicit torsion-cell geometry is supplied. Physical native searches also "
+            "produce section-by-section bar-curtailment and link-spacing zones from co-located "
+            "ULS envelopes. Service deflection uses the co-located native LM1 curvature field."
         ),
     )
 

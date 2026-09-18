@@ -10,6 +10,12 @@ from rc_bridge.workflow.lm1_grillage_search import (
     generate_lm1_search_placements,
     run_project_native_lm1_grillage_search,
 )
+from rc_bridge.workflow.project_envelope_detailing import (
+    ProjectTGirderEnvelopeDetailingResult,
+    ULSDetailingEnvelopePoint,
+    native_lm1_uls_detailing_envelope,
+    run_project_t_girder_envelope_detailing,
+)
 from rc_bridge.workflow.project_native_lm1 import (
     NativeLM1ProjectTGirderResult,
     ProjectNativeLM1TGirderDesignSuite,
@@ -38,16 +44,20 @@ __all__ = [
     "NativeLM1ShearTorsionPoint",
     "ProjectNativeLM1GrillageSearchResult",
     "ProjectNativeLM1TGirderDesignSuite",
+    "ProjectTGirderEnvelopeDetailingResult",
     "build_governing_lm1_search_verification_packages",
     "build_moving_train_snapshot_verification_model",
     "build_project_continuous_verification_model",
+    "ULSDetailingEnvelopePoint",
     "build_project_grillage_verification_model",
     "check_project_native_lm1_matched_shear_torsion",
     "generate_lm1_search_placements",
     "native_lm1_characteristic_envelope",
+    "native_lm1_uls_detailing_envelope",
     "project_girder_combinations_from_native_lm1",
     "require_native_lm1_external_benchmark",
     "run_project_all_t_girders_from_native_lm1",
     "run_project_native_lm1_grillage_search",
+    "run_project_t_girder_envelope_detailing",
     "run_project_t_girder_from_native_lm1",
 ]

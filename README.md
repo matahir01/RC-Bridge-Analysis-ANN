@@ -43,6 +43,7 @@ Implemented so far:
 - Continuous deterministic and moving-train deflection serviceability checks with explicit limits
 - Eurocode T-girder flexure, shear, torsion, cracking, deflection, fatigue and detailing kernels
 - Practical EC2 discrete longitudinal-bar and vertical-link selection, straight-bar anchorage/lap calculations, explicit durability-cover checks and congestion-aware web fit checks
+- Native simple-span ULS envelope-driven detailing with co-located station M/V recovery, EC2 tension-force shifting, anchorage-extended longitudinal curtailment zones and constant-family link spacing zones
 - Actual provided EC2 vertical-link shear resistance, using the lower of V_Rd,s and V_Rd,max
 - BS 5400 / BD 37/01 HA loading plus Type HB moving-vehicle mechanics
 - BS 5400 rectangular/T-section flexure, shear/link sizing, cracking, deflection, detailing and fatigue-scope mechanics
@@ -219,7 +220,7 @@ BS 5400 is retained as a legacy/comparison path and remains isolated from the Eu
 
 ## Remaining major work
 1. **Complete staged stiffness selection.** Edge-aware longitudinal composite properties and station-specific transverse strips are now derived automatically from physical geometry, while explicit expert overrides remain available. Add validated cracked, creep-adjusted and construction-stage stiffness selections where the applicable analysis requires them; never select these states silently.
-2. **Complete envelope-driven detailing.** Discrete longitudinal bars and closed links, web-fit/congestion, straight-bar anchorage/laps and explicit durability cover are implemented. Add section-by-section link spacing zones, longitudinal curtailment from the final design envelope, alternate anchorage geometries and drawing-level torsion-cage placement.
+2. **Complete drawing-level detailing.** Native simple-span section-by-section link spacing and anchorage-extended longitudinal curtailment are now generated from the ULS envelope. Add alternate anchorage geometries, splice staggering/constructability rules and drawing-level torsion-cage placement.
 3. **Add the dedicated Eurocode fatigue traffic path.** Implement the appropriate fatigue-load-model moving analysis and integrate it into the simple-span production workflow rather than reusing LM1.
 4. **Generalize the native simple-span production workflow.** Extend the benchmark-gated design path from its current T-girder adapter to the supported rectangular, T and I non-prestressed RC girder profiles.
 5. **Complete the continuous-span production workflow.** Integrate native transverse distribution, staged/nonuniform permanent actions, signed sagging/hogging/shear envelopes, service traffic deflection, torsion, fatigue and detailing with the existing continuous analysis/design kernels.

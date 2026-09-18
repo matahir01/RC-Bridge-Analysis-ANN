@@ -177,6 +177,9 @@ def test_native_lm1_girder_design_can_include_matched_shear_torsion(
     )
 
     assert result.shear_torsion is not None
+    assert result.envelope_detailing is not None
+    assert result.envelope_detailing.longitudinal_zones
+    assert result.envelope_detailing.link_zones
     assert result.shear_torsion.governing_torsion.design_torsion_knm == pytest.approx(
         1.50 * search.girders[3].torsion_knm.value
     )
