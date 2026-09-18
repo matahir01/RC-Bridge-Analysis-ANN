@@ -5,6 +5,7 @@ from rc_bridge.core.models import (
     BridgeGeometry,
     MaterialProperties,
     PermanentActionModel,
+    PermanentActionStage,
     PermanentLineAction,
     PermanentLineActionCategory,
     ProjectInput,
@@ -19,6 +20,8 @@ from rc_bridge.workflow.project_bridge import (
     girder_characteristic_permanent_effects,
     girder_deck_self_weight_kn_m,
     girder_deck_tributary_width_m,
+    girder_permanent_load_segments,
+    girder_permanent_moments_knm_at,
     girder_superimposed_permanent_loads_kn_m,
     internal_girder_characteristic_permanent_effects,
     internal_girder_deck_self_weight_kn_m,
@@ -288,6 +291,87 @@ def test_physical_surfacing_band_uses_exact_girder_tributary_overlap() -> None:
 
     assert edge[0] == pytest.approx(0.0)
     assert internal[0] == pytest.approx(0.08 * 23.0 * 1.70)
+
+
+def test_partial_surfacing_retains_longitudinal_extent_and_exact_response() -> None:
+    project = ProjectInput(
+        permanent_actions=PermanentActionModel(
+            surfacing_layers=[
+                SurfacingLayer(
+                    name="Half-span finish",
+                    thickness_m=0.10,
+                    density_kn_m3=20.0,
+                    y_start_m=-5.5,
+                    y_end_m=5.5,
+                    x_start_m=0.0,
+                    x_end_m=7.5,
+                )
+            ]
+        )
+    )
+
+    segments = girder_permanent_load_segments(
+        project,
+        girder_index=4,
+        included_stages=(PermanentActionStage.SUPERIMPOSED,),
+    )
+    assert len(segments) == 1
+    assert segments[0].magnitude_kn_m == pytest.approx(3.4)
+    assert segments[0].x_start_m == pytest.approx(0.0)
+    assert segments[0].x_end_m == pytest.approx(7.5)
+    summary = girder_superimposed_permanent_loads_kn_m(project, girder_index=4)
+    assert summary[0] == pytest.approx(1.7)
+
+    effects = girder_characteristic_permanent_effects(
+        project,
+        girder_index=4,
+        included_stages=(PermanentActionStage.SUPERIMPOSED,),
+    )
+    assert effects.moment_knm == pytest.approx(53.7890625)
+    assert effects.shear_kn == pytest.approx(19.125)
+
+
+def test_permanent_moment_field_and_stage_selection_remain_explicit() -> None:
+    project = ProjectInput(
+        geometry=BridgeGeometry(
+            girder_profile=TGirderProfile(
+                flange_width_m=0.60,
+                flange_thickness_m=0.15,
+                web_width_m=0.30,
+                total_depth_m=0.95,
+            )
+        )
+    )
+
+    segments = girder_permanent_load_segments(project, girder_index=4)
+    assert {segment.stage for segment in segments} == {
+        PermanentActionStage.PRECAST_GIRDER,
+        PermanentActionStage.DECK_CONSTRUCTION,
+    }
+    moments = girder_permanent_moments_knm_at(
+        project,
+        girder_index=4,
+        stations_m=(0.0, 7.5, 15.0),
+        included_stages=(PermanentActionStage.PRECAST_GIRDER,),
+    )
+    assert moments == pytest.approx((0.0, 232.03125, 0.0))
+
+
+def test_project_rejects_permanent_action_beyond_bridge_length() -> None:
+    with pytest.raises(ValueError, match="outside the bridge length"):
+        ProjectInput(
+            permanent_actions=PermanentActionModel(
+                line_actions=[
+                    PermanentLineAction(
+                        name="Overlong service",
+                        magnitude_kn_m=1.0,
+                        y_m=0.0,
+                        category=PermanentLineActionCategory.SERVICES,
+                        x_end_m=15.1,
+                    )
+                ]
+            )
+        )
 
 
 def test_positioned_barriers_and_services_conserve_line_load() -> None:

@@ -22,6 +22,7 @@ from rc_bridge.workflow.lm1_grillage_search import (
 from rc_bridge.workflow.project_bridge import (
     ProjectGirderCombinationSet,
     SLSCombinationChoice,
+    girder_permanent_moments_knm_at,
 )
 from rc_bridge.workflow.project_native_lm1 import native_lm1_service_moment_diagram
 
@@ -232,8 +233,9 @@ def test_governing_cases_can_be_exported_as_identical_midas_and_staad_models() -
 
 
 def test_native_service_deflection_combines_permanent_and_colocated_traffic_fields() -> None:
+    project = _project()
     result = run_project_native_lm1_grillage_search(
-        _project(),
+        project,
         longitudinal_sections_by_span=(_longitudinal(),),
         transverse_section=_transverse(),
         transverse_stations_m=(7.5,),
@@ -259,6 +261,7 @@ def test_native_service_deflection_combines_permanent_and_colocated_traffic_fiel
     )
 
     traced = native_lm1_service_moment_diagram(
+        project,
         result,
         combinations=combinations,
         deflection_combination=SLSCombinationChoice.QUASI_PERMANENT,
@@ -274,14 +277,18 @@ def test_native_service_deflection_combines_permanent_and_colocated_traffic_fiel
         girder_index=4,
         case_id=governing.case_id,
     )
-    for x_m, actual, traffic_moment in zip(
-        diagram.stations_m,
+    permanent_moments = girder_permanent_moments_knm_at(
+        project,
+        girder_index=4,
+        stations_m=diagram.stations_m,
+    )
+    for permanent_moment, actual, traffic_moment in zip(
+        permanent_moments,
         diagram.moments_knm,
         traffic_diagram.moments_knm,
         strict=True,
     ):
-        expected = 4.0 * 300.0 * x_m * (15.0 - x_m) / 15.0**2
-        expected += 0.30 * traffic_moment
+        expected = permanent_moment + 0.30 * traffic_moment
         assert actual == pytest.approx(expected)
     assert service_moment == pytest.approx(max(abs(value) for value in diagram.moments_knm))
     assert f"case {governing.case_id}" in diagram.source

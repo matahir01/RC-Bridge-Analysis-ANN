@@ -30,6 +30,14 @@ class PermanentLineActionCategory(str, Enum):
     OTHER = "other"
 
 
+class PermanentActionStage(str, Enum):
+    """Construction state at which a permanent action first acts."""
+
+    PRECAST_GIRDER = "precast_girder"
+    DECK_CONSTRUCTION = "deck_construction"
+    SUPERIMPOSED = "superimposed"
+
+
 class RectangularGirderProfile(BaseModel):
     shape: Literal["rectangular"] = "rectangular"
     width_m: PositiveFloat
@@ -124,13 +132,16 @@ class MaterialProperties(BaseModel):
 
 
 class SurfacingLayer(BaseModel):
-    """One uniform superimposed permanent layer over a transverse deck band."""
+    """One permanent area layer with transverse and longitudinal bounds."""
 
     name: str
     thickness_m: PositiveFloat
     density_kn_m3: PositiveFloat
     y_start_m: float
     y_end_m: float
+    x_start_m: float = 0.0
+    x_end_m: float | None = None
+    stage: PermanentActionStage = PermanentActionStage.SUPERIMPOSED
 
     @model_validator(mode="after")
     def validate_band(self) -> SurfacingLayer:
@@ -138,6 +149,10 @@ class SurfacingLayer(BaseModel):
             raise ValueError("Surfacing-layer name cannot be empty.")
         if self.y_end_m <= self.y_start_m:
             raise ValueError("Surfacing-layer transverse bounds must define positive width.")
+        if self.x_start_m < 0.0:
+            raise ValueError("Surfacing-layer longitudinal start cannot be negative.")
+        if self.x_end_m is not None and self.x_end_m <= self.x_start_m:
+            raise ValueError("Surfacing-layer longitudinal bounds must define positive length.")
         return self
 
     @property
@@ -152,11 +167,20 @@ class PermanentLineAction(BaseModel):
     magnitude_kn_m: PositiveFloat
     y_m: float
     category: PermanentLineActionCategory
+    x_start_m: float = 0.0
+    x_end_m: float | None = None
+    stage: PermanentActionStage = PermanentActionStage.SUPERIMPOSED
 
     @model_validator(mode="after")
     def validate_name(self) -> PermanentLineAction:
         if not self.name.strip():
             raise ValueError("Permanent line-action name cannot be empty.")
+        if self.x_start_m < 0.0:
+            raise ValueError("Permanent line-action longitudinal start cannot be negative.")
+        if self.x_end_m is not None and self.x_end_m <= self.x_start_m:
+            raise ValueError(
+                "Permanent line-action longitudinal bounds must define positive length."
+            )
         return self
 
 
@@ -312,10 +336,19 @@ class ProjectInput(BaseModel):
     @model_validator(mode="after")
     def validate_permanent_action_positions(self) -> ProjectInput:
         half_width = float(self.geometry.deck_width_m) / 2.0
+        total_length = sum(float(value) for value in self.geometry.span_lengths_m)
         for layer in self.permanent_actions.surfacing_layers:
             if layer.y_start_m < -half_width or layer.y_end_m > half_width:
                 raise ValueError("Surfacing layer lies outside the physical deck width.")
+            if layer.x_start_m >= total_length or (
+                layer.x_end_m is not None and layer.x_end_m > total_length
+            ):
+                raise ValueError("Surfacing layer lies outside the bridge length.")
         for action in self.permanent_actions.line_actions:
             if action.y_m < -half_width or action.y_m > half_width:
                 raise ValueError("Permanent line action lies outside the physical deck width.")
+            if action.x_start_m >= total_length or (
+                action.x_end_m is not None and action.x_end_m > total_length
+            ):
+                raise ValueError("Permanent line action lies outside the bridge length.")
         return self

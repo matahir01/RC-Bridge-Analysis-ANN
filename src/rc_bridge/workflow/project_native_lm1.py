@@ -38,6 +38,7 @@ from rc_bridge.workflow.project_bridge import (
     SLSCombinationChoice,
     UniformPermanentLoadInput,
     girder_characteristic_permanent_effects,
+    girder_permanent_moments_knm_at,
     project_eurocode_material_input,
     project_serviceability_from_combinations,
 )
@@ -285,20 +286,22 @@ def project_girder_combinations_from_native_lm1(
 
 
 def native_lm1_service_moment_diagram(
+    project: ProjectInput,
     search: ProjectNativeLM1GrillageSearchResult,
     *,
     combinations: ProjectGirderCombinationSet,
     deflection_combination: SLSCombinationChoice,
     span_m: float,
     benchmark_source: str,
+    additional_permanent: UniformPermanentLoadInput | None = None,
 ) -> tuple[SimpleSpanMomentDiagram, float] | None:
     """Combine Gk with one co-located native LM1 deflection-case moment field.
 
-    Current permanent actions are uniform along the simple span, so their exact
-    parabolic response is reconstructed from the calculated Gk midspan moment.
-    The traffic field comes directly from the native case that governs vertical
-    displacement for this girder. Member-end jumps at transverse intersections
-    are retained as duplicate stations and integrate over zero length.
+    Permanent response is recovered from the physical segmented action pattern
+    at the same stations. The traffic field comes directly from the native case
+    that governs vertical displacement for this girder. Member-end jumps at
+    transverse intersections are retained as duplicate stations and integrate
+    over zero length.
 
     Synthetic/legacy search fixtures without native displacement traces return
     ``None`` and remain on the explicitly labelled compatibility adapter.
@@ -330,17 +333,16 @@ def native_lm1_service_moment_diagram(
         )
     permanent_factor = selected.factors["G"]
     traffic_factor = selected.factors["Q_traffic"]
-    permanent_midspan_moment = combinations.permanent_characteristic.moment_knm
+    permanent_moments = girder_permanent_moments_knm_at(
+        project,
+        girder_index=girder_index,
+        stations_m=traffic.stations_m,
+        additional=additional_permanent,
+    )
     combined = tuple(
-        permanent_factor
-        * 4.0
-        * permanent_midspan_moment
-        * x_m
-        * (span_m - x_m)
-        / span_m**2
-        + traffic_factor * traffic_moment
-        for x_m, traffic_moment in zip(
-            traffic.stations_m,
+        permanent_factor * permanent_moment + traffic_factor * traffic_moment
+        for permanent_moment, traffic_moment in zip(
+            permanent_moments,
             traffic.moments_knm,
             strict=True,
         )
@@ -415,11 +417,13 @@ def run_project_t_girder_from_native_lm1(
         es_mpa=es_mpa,
     )
     deflection_trace = native_lm1_service_moment_diagram(
+        project,
         search,
         combinations=combinations,
         deflection_combination=deflection_combination,
         span_m=span_m,
         benchmark_source=benchmark_report.source_name,
+        additional_permanent=additional_permanent,
     )
     serviceability = project_serviceability_from_combinations(
         combinations,

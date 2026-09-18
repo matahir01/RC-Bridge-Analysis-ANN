@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass
 from enum import Enum
 
@@ -11,7 +12,11 @@ from rc_bridge.analysis.loads import (
     deck_self_weight_per_girder_kn_m,
     section_self_weight_kn_m,
 )
-from rc_bridge.analysis.simple_span import udl_simple_span
+from rc_bridge.analysis.simple_span import (
+    DistributedLoadSegment,
+    simple_span_distributed_load_response,
+    simple_span_distributed_response_at_x,
+)
 from rc_bridge.codes.common import FactoredCombination, LoadEffects
 from rc_bridge.codes.eurocode.combinations import (
     EurocodeFactors,
@@ -25,6 +30,7 @@ from rc_bridge.codes.eurocode.en1991_2 import notional_lane_layout
 from rc_bridge.codes.eurocode.materials import concrete_properties_ec2
 from rc_bridge.core.models import (
     DesignCode,
+    PermanentActionStage,
     PermanentLineActionCategory,
     ProjectInput,
     SupportSystem,
@@ -70,6 +76,30 @@ class UniformPermanentLoadInput:
             + self.assigned_barrier_and_services_kn_m
             + self.other_kn_m
         )
+
+
+@dataclass(frozen=True)
+class ProjectPermanentLoadSegment:
+    """One auditable per-girder permanent line-load segment in global x."""
+
+    source: str
+    category: str
+    stage: PermanentActionStage
+    magnitude_kn_m: float
+    x_start_m: float
+    x_end_m: float
+
+    def __post_init__(self) -> None:
+        if not self.source.strip() or not self.category.strip():
+            raise ValueError("Permanent-load segment source and category are required.")
+        if self.magnitude_kn_m < 0.0:
+            raise ValueError("Permanent-load segment magnitude cannot be negative.")
+        if self.x_start_m < 0.0 or self.x_end_m <= self.x_start_m:
+            raise ValueError("Permanent-load segment bounds must define a positive length.")
+
+    @property
+    def total_load_kn(self) -> float:
+        return self.magnitude_kn_m * (self.x_end_m - self.x_start_m)
 
 
 @dataclass(frozen=True)
@@ -185,60 +215,128 @@ def girder_deck_tributary_bounds_m(
     return left, right
 
 
-def girder_superimposed_permanent_loads_kn_m(
+def _girder_line_action_share(
     project: ProjectInput,
     *,
     girder_index: int,
-) -> tuple[float, float, float]:
-    """Return physical surfacing, barrier/service and other loads on one girder.
+    y_m: float,
+) -> float:
+    """Return the statical share of one positioned longitudinal line action."""
+    girder_count = int(project.geometry.girder_count)
+    if not 1 <= girder_index <= girder_count:
+        raise IndexError("girder_index is outside the project girder layout.")
+    width = float(project.geometry.deck_width_m)
+    spacing = float(project.geometry.girder_spacing_m)
+    first_y = -width / 2.0 + float(project.geometry.nominal_edge_overhang_m)
+    coordinates = tuple(first_y + index * spacing for index in range(girder_count))
+    shares = [0.0] * girder_count
+    if y_m <= coordinates[0]:
+        shares[0] = 1.0
+    elif y_m >= coordinates[-1]:
+        shares[-1] = 1.0
+    else:
+        left_index = next(
+            index
+            for index in range(girder_count - 1)
+            if coordinates[index] <= y_m <= coordinates[index + 1]
+        )
+        fraction_right = (y_m - coordinates[left_index]) / spacing
+        shares[left_index] = 1.0 - fraction_right
+        shares[left_index + 1] = fraction_right
+    return shares[girder_index - 1]
+
+
+def girder_superimposed_permanent_segments(
+    project: ProjectInput,
+    *,
+    girder_index: int,
+) -> tuple[ProjectPermanentLoadSegment, ...]:
+    """Return positioned physical superimposed actions allocated to one girder.
 
     Area layers are assigned by exact overlap with the girder tributary band.
     Longitudinal line actions between girder lines are shared by linear statics;
     actions on deck overhangs are assigned to the adjacent exterior girder. The
     latter captures vertical load allocation only—local overhang bending remains
-    a transverse-deck design action.
+    a transverse-deck design action. Longitudinal bounds and construction stage
+    are retained rather than collapsed into an equivalent full-span UDL.
     """
     girder_count = int(project.geometry.girder_count)
     if not 1 <= girder_index <= girder_count:
         raise IndexError("girder_index is outside the project girder layout.")
     left, right = girder_deck_tributary_bounds_m(project, girder_index=girder_index)
-    surfacing = sum(
-        max(0.0, min(right, layer.y_end_m) - max(left, layer.y_start_m))
-        * layer.pressure_kn_m2
-        for layer in project.permanent_actions.surfacing_layers
-    )
-
-    width = float(project.geometry.deck_width_m)
-    spacing = float(project.geometry.girder_spacing_m)
-    first_y = -width / 2.0 + float(project.geometry.nominal_edge_overhang_m)
-    coordinates = tuple(first_y + index * spacing for index in range(girder_count))
-    by_category = {
-        PermanentLineActionCategory.BARRIER: 0.0,
-        PermanentLineActionCategory.SERVICES: 0.0,
-        PermanentLineActionCategory.OTHER: 0.0,
-    }
-    for action in project.permanent_actions.line_actions:
-        shares = [0.0] * girder_count
-        if action.y_m <= coordinates[0]:
-            shares[0] = 1.0
-        elif action.y_m >= coordinates[-1]:
-            shares[-1] = 1.0
-        else:
-            left_index = next(
-                index
-                for index in range(girder_count - 1)
-                if coordinates[index] <= action.y_m <= coordinates[index + 1]
+    total_length = sum(float(value) for value in project.geometry.span_lengths_m)
+    segments: list[ProjectPermanentLoadSegment] = []
+    for layer in project.permanent_actions.surfacing_layers:
+        overlap = max(0.0, min(right, layer.y_end_m) - max(left, layer.y_start_m))
+        magnitude = overlap * layer.pressure_kn_m2
+        if magnitude <= 0.0:
+            continue
+        segments.append(
+            ProjectPermanentLoadSegment(
+                source=layer.name,
+                category="surfacing",
+                stage=layer.stage,
+                magnitude_kn_m=magnitude,
+                x_start_m=float(layer.x_start_m),
+                x_end_m=(total_length if layer.x_end_m is None else float(layer.x_end_m)),
             )
-            fraction_right = (action.y_m - coordinates[left_index]) / spacing
-            shares[left_index] = 1.0 - fraction_right
-            shares[left_index + 1] = fraction_right
-        by_category[action.category] += float(action.magnitude_kn_m) * shares[girder_index - 1]
+        )
+    for action in project.permanent_actions.line_actions:
+        share = _girder_line_action_share(
+            project,
+            girder_index=girder_index,
+            y_m=float(action.y_m),
+        )
+        magnitude = float(action.magnitude_kn_m) * share
+        if magnitude <= 0.0:
+            continue
+        segments.append(
+            ProjectPermanentLoadSegment(
+                source=action.name,
+                category=action.category.value,
+                stage=action.stage,
+                magnitude_kn_m=magnitude,
+                x_start_m=float(action.x_start_m),
+                x_end_m=(
+                    total_length if action.x_end_m is None else float(action.x_end_m)
+                ),
+            )
+        )
+    return tuple(segments)
 
+
+def girder_superimposed_permanent_loads_kn_m(
+    project: ProjectInput,
+    *,
+    girder_index: int,
+) -> tuple[float, float, float]:
+    """Return full-bridge equivalent line loads for the legacy summary API.
+
+    Longitudinally partial actions are divided by total bridge length. Analysis
+    uses :func:`girder_superimposed_permanent_segments` and does not replace
+    those actions with this equivalent value.
+    """
+    total_length = sum(float(value) for value in project.geometry.span_lengths_m)
+    by_category = {
+        "surfacing": 0.0,
+        PermanentLineActionCategory.BARRIER.value: 0.0,
+        PermanentLineActionCategory.SERVICES.value: 0.0,
+        PermanentLineActionCategory.OTHER.value: 0.0,
+    }
+    for segment in girder_superimposed_permanent_segments(
+        project,
+        girder_index=girder_index,
+    ):
+        by_category[segment.category] += segment.total_load_kn / total_length
     barriers_and_services = (
-        by_category[PermanentLineActionCategory.BARRIER]
-        + by_category[PermanentLineActionCategory.SERVICES]
+        by_category[PermanentLineActionCategory.BARRIER.value]
+        + by_category[PermanentLineActionCategory.SERVICES.value]
     )
-    return surfacing, barriers_and_services, by_category[PermanentLineActionCategory.OTHER]
+    return (
+        by_category["surfacing"],
+        barriers_and_services,
+        by_category[PermanentLineActionCategory.OTHER.value],
+    )
 
 
 def girder_deck_self_weight_kn_m(project: ProjectInput, *, girder_index: int) -> float:
@@ -273,28 +371,24 @@ def physical_girder_self_weight_kn_m(project: ProjectInput) -> float | None:
     )
 
 
-def girder_characteristic_permanent_effects(
+def girder_permanent_load_segments(
     project: ProjectInput,
     *,
     girder_index: int,
-    span_index: int = 0,
     additional: UniformPermanentLoadInput | None = None,
-) -> LoadEffects:
-    """Return simple-span characteristic permanent effects for any girder.
+    included_stages: Sequence[PermanentActionStage] | None = None,
+) -> tuple[ProjectPermanentLoadSegment, ...]:
+    """Build the auditable global-x permanent load pattern for one girder.
 
-    Deck self-weight uses the physical deck tributary width of the selected
-    girder. Girder self-weight is derived automatically when a complete physical
-    girder profile is present; otherwise an explicit girder line load may be
-    supplied. Surfacing, barriers/services and other permanent actions remain
-    explicit so they cannot be silently double-counted.
+    Physical girder and deck self-weight remain distinct construction stages.
+    Positioned surfacing/line actions retain their longitudinal extents and
+    stages. Legacy explicit overrides are full-length actions and are rejected
+    whenever they would duplicate an automated physical category.
     """
-    if project.geometry.support_system != SupportSystem.SIMPLY_SUPPORTED:
-        raise ValueError("This permanent-load adapter currently supports simple spans only.")
-    if not 0 <= span_index < len(project.geometry.span_lengths_m):
-        raise IndexError("span_index is outside the project span list.")
-
-    span_m = float(project.geometry.span_lengths_m[span_index])
-    deck_kn_m = girder_deck_self_weight_kn_m(project, girder_index=girder_index)
+    girder_count = int(project.geometry.girder_count)
+    if not 1 <= girder_index <= girder_count:
+        raise IndexError("girder_index is outside the project girder layout.")
+    total_length = sum(float(value) for value in project.geometry.span_lengths_m)
     extra = additional or UniformPermanentLoadInput()
     profile_self_weight_kn_m = physical_girder_self_weight_kn_m(project)
     if (
@@ -306,37 +400,193 @@ def girder_characteristic_permanent_effects(
             "Explicit girder_self_weight_kn_m conflicts with the value derived "
             "from the physical girder profile."
         )
+
+    automated = girder_superimposed_permanent_segments(
+        project,
+        girder_index=girder_index,
+    )
+    automated_categories = {segment.category for segment in automated}
+    if "surfacing" in automated_categories and extra.surfacing_and_finishes_kn_m > 0.0:
+        raise ValueError("Explicit surfacing load would double count physical surfacing layers.")
+    if (
+        automated_categories
+        & {
+            PermanentLineActionCategory.BARRIER.value,
+            PermanentLineActionCategory.SERVICES.value,
+        }
+        and extra.assigned_barrier_and_services_kn_m > 0.0
+    ):
+        raise ValueError(
+            "Explicit barrier/services load would double count positioned line actions."
+        )
+    if (
+        PermanentLineActionCategory.OTHER.value in automated_categories
+        and extra.other_kn_m > 0.0
+    ):
+        raise ValueError("Explicit other permanent load would double count physical line actions.")
+
+    segments = [
+        ProjectPermanentLoadSegment(
+            source="physical deck self-weight",
+            category="deck_self_weight",
+            stage=PermanentActionStage.DECK_CONSTRUCTION,
+            magnitude_kn_m=girder_deck_self_weight_kn_m(
+                project,
+                girder_index=girder_index,
+            ),
+            x_start_m=0.0,
+            x_end_m=total_length,
+        )
+    ]
     girder_self_weight_kn_m = (
         profile_self_weight_kn_m
         if profile_self_weight_kn_m is not None
         else extra.girder_self_weight_kn_m
     )
-    automated_surfacing, automated_barrier_services, automated_other = (
-        girder_superimposed_permanent_loads_kn_m(project, girder_index=girder_index)
-    )
-    if automated_surfacing > 0.0 and extra.surfacing_and_finishes_kn_m > 0.0:
-        raise ValueError("Explicit surfacing load would double count physical surfacing layers.")
-    if automated_barrier_services > 0.0 and extra.assigned_barrier_and_services_kn_m > 0.0:
-        raise ValueError(
-            "Explicit barrier/services load would double count positioned line actions."
+    if girder_self_weight_kn_m > 0.0:
+        segments.append(
+            ProjectPermanentLoadSegment(
+                source=(
+                    "physical girder profile self-weight"
+                    if profile_self_weight_kn_m is not None
+                    else "explicit girder self-weight"
+                ),
+                category="girder_self_weight",
+                stage=PermanentActionStage.PRECAST_GIRDER,
+                magnitude_kn_m=girder_self_weight_kn_m,
+                x_start_m=0.0,
+                x_end_m=total_length,
+            )
         )
-    if automated_other > 0.0 and extra.other_kn_m > 0.0:
-        raise ValueError("Explicit other permanent load would double count physical line actions.")
-    other_permanent_kn_m = (
-        automated_surfacing
-        + automated_barrier_services
-        + automated_other
-        + extra.surfacing_and_finishes_kn_m
-        + extra.assigned_barrier_and_services_kn_m
-        + extra.other_kn_m
+    segments.extend(automated)
+    for source, category, magnitude in (
+        (
+            "explicit surfacing and finishes",
+            "surfacing",
+            extra.surfacing_and_finishes_kn_m,
+        ),
+        (
+            "explicit assigned barriers and services",
+            "barriers_and_services",
+            extra.assigned_barrier_and_services_kn_m,
+        ),
+        ("explicit other permanent action", "other", extra.other_kn_m),
+    ):
+        if magnitude > 0.0:
+            segments.append(
+                ProjectPermanentLoadSegment(
+                    source=source,
+                    category=category,
+                    stage=PermanentActionStage.SUPERIMPOSED,
+                    magnitude_kn_m=magnitude,
+                    x_start_m=0.0,
+                    x_end_m=total_length,
+                )
+            )
+
+    if included_stages is None:
+        return tuple(segments)
+    stages = {PermanentActionStage(value) for value in included_stages}
+    return tuple(segment for segment in segments if segment.stage in stages)
+
+
+def girder_span_permanent_load_segments(
+    project: ProjectInput,
+    *,
+    girder_index: int,
+    span_index: int = 0,
+    additional: UniformPermanentLoadInput | None = None,
+    included_stages: Sequence[PermanentActionStage] | None = None,
+) -> tuple[DistributedLoadSegment, ...]:
+    """Clip global permanent segments to one span and return local coordinates."""
+    if not 0 <= span_index < len(project.geometry.span_lengths_m):
+        raise IndexError("span_index is outside the project span list.")
+    span_start = sum(
+        float(value) for value in project.geometry.span_lengths_m[:span_index]
     )
-    result = udl_simple_span(
+    span_length = float(project.geometry.span_lengths_m[span_index])
+    span_end = span_start + span_length
+    local: list[DistributedLoadSegment] = []
+    for segment in girder_permanent_load_segments(
+        project,
+        girder_index=girder_index,
+        additional=additional,
+        included_stages=included_stages,
+    ):
+        start = max(segment.x_start_m, span_start)
+        end = min(segment.x_end_m, span_end)
+        if end <= start:
+            continue
+        local.append(
+            DistributedLoadSegment(
+                magnitude_kn_m=segment.magnitude_kn_m,
+                start_m=start - span_start,
+                end_m=end - span_start,
+                label=f"{segment.category}: {segment.source}",
+                stage=segment.stage.value,
+            )
+        )
+    return tuple(local)
+
+
+def girder_permanent_moments_knm_at(
+    project: ProjectInput,
+    *,
+    girder_index: int,
+    stations_m: Sequence[float],
+    span_index: int = 0,
+    additional: UniformPermanentLoadInput | None = None,
+    included_stages: Sequence[PermanentActionStage] | None = None,
+) -> tuple[float, ...]:
+    """Return the exact simple-span permanent moment field at local stations."""
+    span_m = float(project.geometry.span_lengths_m[span_index])
+    loads = girder_span_permanent_load_segments(
+        project,
+        girder_index=girder_index,
+        span_index=span_index,
+        additional=additional,
+        included_stages=included_stages,
+    )
+    return tuple(
+        simple_span_distributed_response_at_x(span_m, loads, float(x_m))[0]
+        for x_m in stations_m
+    )
+
+
+def girder_characteristic_permanent_effects(
+    project: ProjectInput,
+    *,
+    girder_index: int,
+    span_index: int = 0,
+    additional: UniformPermanentLoadInput | None = None,
+    included_stages: Sequence[PermanentActionStage] | None = None,
+) -> LoadEffects:
+    """Return simple-span characteristic permanent effects for any girder.
+
+    Deck self-weight uses the physical deck tributary width of the selected
+    girder. Longitudinal action extents are analysed directly using exact
+    segmented-load reactions and zero-shear moment extrema. Construction stages
+    can be selected explicitly; omission means all permanent stages.
+    """
+    if project.geometry.support_system != SupportSystem.SIMPLY_SUPPORTED:
+        raise ValueError("This permanent-load adapter currently supports simple spans only.")
+    if not 0 <= span_index < len(project.geometry.span_lengths_m):
+        raise IndexError("span_index is outside the project span list.")
+
+    span_m = float(project.geometry.span_lengths_m[span_index])
+    result = simple_span_distributed_load_response(
         span_m,
-        deck_kn_m + girder_self_weight_kn_m + other_permanent_kn_m,
+        girder_span_permanent_load_segments(
+            project,
+            girder_index=girder_index,
+            span_index=span_index,
+            additional=additional,
+            included_stages=included_stages,
+        ),
     )
     return LoadEffects(
         moment_knm=result.max_moment_knm,
-        shear_kn=result.max_shear_kn,
+        shear_kn=result.max_abs_shear_kn,
     )
 
 
@@ -345,6 +595,7 @@ def internal_girder_characteristic_permanent_effects(
     *,
     span_index: int = 0,
     additional: UniformPermanentLoadInput | None = None,
+    included_stages: Sequence[PermanentActionStage] | None = None,
 ) -> LoadEffects:
     """Return simple-span characteristic G effects for a representative internal girder."""
     girder_count = int(project.geometry.girder_count)
@@ -355,6 +606,7 @@ def internal_girder_characteristic_permanent_effects(
         girder_index=2,
         span_index=span_index,
         additional=additional,
+        included_stages=included_stages,
     )
 
 
