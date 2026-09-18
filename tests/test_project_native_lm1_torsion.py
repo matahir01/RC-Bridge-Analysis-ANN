@@ -2,6 +2,7 @@ from types import SimpleNamespace
 
 import pytest
 
+from rc_bridge.codes.eurocode.combinations import ServiceabilityPsiFactors
 from rc_bridge.core.models import ProjectInput
 from rc_bridge.research.lm1_benchmark_runner import LM1ExternalBenchmarkSuiteReport
 from rc_bridge.research.lm1_grillage_benchmark import (
@@ -11,6 +12,8 @@ from rc_bridge.research.lm1_grillage_benchmark import (
 from rc_bridge.workflow.eurocode_girder import TGirderDesignInput
 from rc_bridge.workflow.grillage_verification_export import GrillageSectionProperties
 from rc_bridge.workflow.lm1_grillage_search import run_project_native_lm1_grillage_search
+from rc_bridge.workflow.project_bridge import SLSCombinationChoice
+from rc_bridge.workflow.project_native_lm1 import run_project_t_girder_from_native_lm1
 from rc_bridge.workflow.project_native_lm1_torsion import (
     check_project_native_lm1_matched_shear_torsion,
 )
@@ -152,3 +155,33 @@ def test_matched_native_lm1_torsion_remains_benchmark_gated(
             section=_section(),
             torsion_cell=TorsionCellInput(ak_m2=0.10, uk_m=1.40, tef_m=0.15),
         )
+
+
+def test_native_lm1_girder_design_can_include_matched_shear_torsion(
+    native_benchmark_case,
+) -> None:
+    project, search, suite, report = native_benchmark_case
+    result = run_project_t_girder_from_native_lm1(
+        project,
+        search=search,
+        benchmark_suite=suite,
+        benchmark_report=report,
+        girder_index=4,
+        section=_section(),
+        sls_factors=ServiceabilityPsiFactors(
+            psi1_traffic=0.75,
+            psi2_traffic=0.30,
+        ),
+        crack_combination=SLSCombinationChoice.FREQUENT,
+        deflection_combination=SLSCombinationChoice.QUASI_PERMANENT,
+        crack_limit_mm=0.30,
+        allowable_deflection_mm=60.0,
+        torsion_cell=TorsionCellInput(ak_m2=0.10, uk_m=1.40, tef_m=0.15),
+    )
+
+    assert result.shear_torsion is not None
+    assert result.shear_torsion.governing_torsion.design_torsion_knm == pytest.approx(
+        1.50 * search.girders[3].torsion_knm.value
+    )
+    assert result.shear_torsion.governing_interaction.interaction.utilization >= 0.0
+    assert "matched co-located V-T interaction" in result.status
