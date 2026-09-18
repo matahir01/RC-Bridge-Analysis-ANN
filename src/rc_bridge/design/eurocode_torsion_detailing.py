@@ -15,7 +15,9 @@ class TorsionCageLinkArrangement:
     provided_torsion_leg_asw_per_s_mm2_per_m: float
     satisfies_shear: bool
     satisfies_torsion: bool
+    maximum_torsion_link_spacing_mm: float
     satisfies_longitudinal_spacing: bool
+    satisfies_torsion_link_spacing: bool
     satisfies_transverse_leg_spacing: bool
     status: str
 
@@ -29,6 +31,8 @@ class TorsionLongitudinalArrangement:
     provided_area_mm2: float
     required_area_mm2: float
     nominal_perimeter_spacing_mm: float
+    maximum_perimeter_spacing_mm: float
+    satisfies_perimeter_spacing: bool
     status: str
 
 
@@ -40,6 +44,8 @@ class TorsionCageDetailingResult:
     links: TorsionCageLinkArrangement
     longitudinal: TorsionLongitudinalArrangement | None
     torsion_cell_perimeter_m: float
+    maximum_torsion_link_spacing_mm: float
+    maximum_longitudinal_torsion_bar_spacing_mm: float
     status: str
 
 
@@ -53,6 +59,8 @@ def select_torsion_cage_detailing(
     cover_mm: float,
     maximum_longitudinal_spacing_mm: float,
     maximum_transverse_leg_spacing_mm: float,
+    maximum_torsion_link_spacing_mm: float,
+    maximum_longitudinal_torsion_bar_spacing_mm: float = 350.0,
     available_link_diameters_mm: tuple[float, ...] = (8.0, 10.0, 12.0, 16.0),
     available_link_legs: tuple[int, ...] = (2, 4, 6),
     available_link_spacings_mm: tuple[float, ...] = (
@@ -80,7 +88,9 @@ def select_torsion_cage_detailing(
     the closed torsion link per spacing, while shear uses the sum of effective
     vertical legs. This avoids silently adding quantities with different link
     semantics. Longitudinal torsion steel is distributed around the verified
-    torsion-cell perimeter with at least one bar at each of four corners.
+    torsion-cell perimeter with at least one bar at each of four corners and an
+    explicit maximum perimeter spacing. Torsion-link spacing is checked against
+    a separate explicit torsion limit rather than reusing shear spacing alone.
     """
     if min(
         torsion_cell_perimeter_m,
@@ -88,6 +98,8 @@ def select_torsion_cage_detailing(
         cover_mm,
         maximum_longitudinal_spacing_mm,
         maximum_transverse_leg_spacing_mm,
+        maximum_torsion_link_spacing_mm,
+        maximum_longitudinal_torsion_bar_spacing_mm,
     ) <= 0.0:
         raise ValueError("Torsion-cage geometry and spacing limits must be positive.")
     if min(
@@ -117,6 +129,8 @@ def select_torsion_cage_detailing(
                     raise ValueError("Available link spacings must be positive.")
                 if spacing > maximum_longitudinal_spacing_mm + 1.0e-9:
                     continue
+                if spacing > maximum_torsion_link_spacing_mm + 1.0e-9:
+                    continue
                 torsion_provided = area / spacing * 1000.0
                 shear_provided = legs * area / spacing * 1000.0
                 if shear_provided + 1.0e-9 < required_shear_asw_per_s_mm2_per_m:
@@ -135,11 +149,14 @@ def select_torsion_cage_detailing(
                         provided_torsion_leg_asw_per_s_mm2_per_m=torsion_provided,
                         satisfies_shear=True,
                         satisfies_torsion=True,
+                        maximum_torsion_link_spacing_mm=maximum_torsion_link_spacing_mm,
                         satisfies_longitudinal_spacing=True,
+                        satisfies_torsion_link_spacing=True,
                         satisfies_transverse_leg_spacing=True,
                         status=(
                             "Closed-link family selected with shear checked using all effective "
-                            "vertical legs and torsion checked using one closed-link leg area."
+                            "vertical legs, torsion checked using one closed-link leg area, and "
+                            "the explicit torsion-link spacing cap enforced."
                         ),
                     )
                 )
@@ -169,6 +186,7 @@ def select_torsion_cage_detailing(
             count = max(
                 minimum_corner_bar_count,
                 ceil(required_torsion_longitudinal_area_mm2 / area),
+                ceil(perimeter_mm / maximum_longitudinal_torsion_bar_spacing_mm),
             )
             candidates.append(
                 TorsionLongitudinalArrangement(
@@ -179,10 +197,18 @@ def select_torsion_cage_detailing(
                     provided_area_mm2=count * area,
                     required_area_mm2=required_torsion_longitudinal_area_mm2,
                     nominal_perimeter_spacing_mm=perimeter_mm / count,
+                    maximum_perimeter_spacing_mm=(
+                        maximum_longitudinal_torsion_bar_spacing_mm
+                    ),
+                    satisfies_perimeter_spacing=(
+                        perimeter_mm / count
+                        <= maximum_longitudinal_torsion_bar_spacing_mm + 1.0e-9
+                    ),
                     status=(
                         "One longitudinal torsion bar is assigned to each cage corner; "
                         "remaining bars are to be distributed around the verified torsion-cell "
-                        "perimeter. Exact coordinates require the final section drawing."
+                        "perimeter within the specified maximum spacing. Exact coordinates "
+                        "require the final section drawing."
                     ),
                 )
             )
@@ -206,6 +232,10 @@ def select_torsion_cage_detailing(
         links=links,
         longitudinal=longitudinal,
         torsion_cell_perimeter_m=torsion_cell_perimeter_m,
+        maximum_torsion_link_spacing_mm=maximum_torsion_link_spacing_mm,
+        maximum_longitudinal_torsion_bar_spacing_mm=(
+            maximum_longitudinal_torsion_bar_spacing_mm
+        ),
         status=(
             "Drawing-level torsion cage family selected from the externally benchmark-gated "
             "co-located V-T demand. Corner/perimeter bar coordinates, bends, laps and local "

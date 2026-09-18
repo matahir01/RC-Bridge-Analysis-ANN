@@ -371,9 +371,15 @@ def test_native_layered_production_generates_drawing_level_torsion_cage(
     cage = result.torsion_cage_detailing.cage
     assert cage.links.satisfies_shear
     assert cage.links.satisfies_torsion
+    assert cage.links.satisfies_torsion_link_spacing
+    assert cage.links.spacing_mm <= cage.maximum_torsion_link_spacing_mm + 1.0e-9
     if cage.required_torsion_longitudinal_area_mm2 > 0.0:
         assert cage.longitudinal is not None
         assert cage.longitudinal.corner_bar_count >= 4
         assert cage.longitudinal.provided_area_mm2 >= (
             cage.required_torsion_longitudinal_area_mm2
+        )
+        assert cage.longitudinal.satisfies_perimeter_spacing
+        assert cage.longitudinal.nominal_perimeter_spacing_mm <= (
+            cage.maximum_longitudinal_torsion_bar_spacing_mm + 1.0e-9
         )

@@ -69,6 +69,12 @@ def run_project_native_torsion_cage_detailing(
     max_longitudinal_spacing, max_transverse_spacing = maximum_vertical_link_spacings_mm(
         effective_depth_m=section.effective_depth_m
     )
+    # EC2 torsion links require a stricter longitudinal spacing than ordinary
+    # shear links. The code rule is based on the outer effective-section
+    # perimeter. Only the verified torsion-cell centre-line perimeter uk is
+    # available here; uk/8 is therefore used as an explicitly conservative cap
+    # (uk is not larger than the corresponding outer perimeter).
+    conservative_torsion_link_spacing_mm = torsion_cell.uk_m * 1000.0 / 8.0
     cage = select_torsion_cage_detailing(
         required_shear_asw_per_s_mm2_per_m=required_shear,
         required_torsion_leg_asw_per_s_mm2_per_m=required_torsion_transverse,
@@ -78,6 +84,8 @@ def run_project_native_torsion_cage_detailing(
         cover_mm=section.cover_mm,
         maximum_longitudinal_spacing_mm=max_longitudinal_spacing,
         maximum_transverse_leg_spacing_mm=max_transverse_spacing,
+        maximum_torsion_link_spacing_mm=conservative_torsion_link_spacing_mm,
+        maximum_longitudinal_torsion_bar_spacing_mm=350.0,
     )
     return ProjectNativeTorsionCageDetailingResult(
         cage=cage,
@@ -93,6 +101,8 @@ def run_project_native_torsion_cage_detailing(
         status=(
             "Full-span drawing cage family uses separately enveloped reinforcement demands "
             "from benchmark-gated matched V-T points. It does not claim that independent "
-            "shear and torsion maxima are a simultaneous structural action."
+            "shear and torsion maxima are a simultaneous structural action. Torsion links "
+            "also use the conservative verified-cell uk/8 spacing cap, and longitudinal "
+            "torsion bars are limited to 350 mm nominal perimeter spacing."
         ),
     )
