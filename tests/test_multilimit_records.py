@@ -31,7 +31,7 @@ def _fully_verified() -> DeterministicSolverVerification:
     )
 
 
-def _narrow_web_case():
+def _narrow_web_case(provided_shear_asw_per_s_mm2_per_m: float | None = None):
     project = ProjectInput()
     section = TGirderDesignInput(
         effective_flange_width_m=1.70,
@@ -43,6 +43,7 @@ def _narrow_web_case():
         bar_diameter_mm=32.0,
         bar_spacing_mm=150.0,
         cover_mm=50.0,
+        provided_shear_asw_per_s_mm2_per_m=provided_shear_asw_per_s_mm2_per_m,
     )
     result = run_project_internal_t_girder_verification(
         project,
@@ -115,3 +116,31 @@ def test_multilimit_record_carries_four_continuous_limit_state_reserves() -> Non
     )
     assert record.provided_shear_steel_mm2_per_m == pytest.approx(1500.0)
     assert "equal_share" in record.traffic_distribution_method
+
+
+
+def test_multilimit_record_uses_shear_links_stored_on_section() -> None:
+    project, section, result = _narrow_web_case(1500.0)
+    record = eurocode_multilimit_record_from_project(
+        result,
+        project=project,
+        section=section,
+        verification=_fully_verified(),
+    )
+
+    assert record.provided_shear_steel_mm2_per_m == pytest.approx(1500.0)
+    assert record.g_shear_kn == pytest.approx(
+        record.shear_resistance_kn - record.design_shear_kn
+    )
+
+
+def test_multilimit_record_rejects_conflicting_shear_link_sources() -> None:
+    project, section, result = _narrow_web_case(1500.0)
+    with pytest.raises(ValueError, match="Conflicting provided shear reinforcement"):
+        eurocode_multilimit_record_from_project(
+            result,
+            project=project,
+            section=section,
+            verification=_fully_verified(),
+            provided_shear_steel_mm2_per_m=1400.0,
+        )
