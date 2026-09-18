@@ -1,0 +1,269 @@
+from __future__ import annotations
+
+from dataclasses import dataclass
+
+from rc_bridge.codes.eurocode.combinations import (
+    EurocodeFactors,
+    ServiceabilityPsiFactors,
+)
+from rc_bridge.core.models import ProjectInput, SectionType
+from rc_bridge.research.lm1_benchmark_runner import LM1ExternalBenchmarkSuiteReport
+from rc_bridge.research.lm1_grillage_benchmark import LM1GoverningBenchmarkSuite
+from rc_bridge.workflow.eurocode_girder import EurocodeMaterialInput
+from rc_bridge.workflow.eurocode_layered_girder import (
+    EurocodeLayeredGirderWorkflowResult,
+    LayeredGirderDesignInput,
+    run_eurocode_layered_girder_case,
+)
+from rc_bridge.workflow.lm1_grillage_search import (
+    LM1GirderGoverningEnvelope,
+    ProjectNativeLM1GrillageSearchResult,
+)
+from rc_bridge.workflow.project_bridge import (
+    ProjectGirderCombinationSet,
+    ProjectServiceabilitySelection,
+    SLSCombinationChoice,
+    UniformPermanentLoadInput,
+    project_eurocode_material_input,
+    project_serviceability_from_combinations,
+)
+from rc_bridge.workflow.project_layered_detailing import (
+    ProjectLayeredGirderDetailingResult,
+    run_project_layered_girder_detailing,
+)
+from rc_bridge.workflow.project_native_lm1 import (
+    native_lm1_service_moment_diagram,
+    project_girder_combinations_from_native_lm1,
+)
+
+
+@dataclass(frozen=True)
+class NativeLM1ProjectLayeredGirderResult:
+    """Benchmark-gated native-LM1 design for one physical rectangular/T/I girder."""
+
+    section_type: SectionType
+    combinations: ProjectGirderCombinationSet
+    serviceability: ProjectServiceabilitySelection
+    materials: EurocodeMaterialInput
+    design: EurocodeLayeredGirderWorkflowResult
+    detailing: ProjectLayeredGirderDetailingResult
+    traffic_trace: LM1GirderGoverningEnvelope
+    benchmark_source: str
+    status: str
+
+    @property
+    def uls_torsion_knm(self) -> float:
+        return self.combinations.persistent_uls.effects.torsion_knm
+
+
+@dataclass(frozen=True)
+class ProjectNativeLM1LayeredGirderDesignSuite:
+    """Native-LM1 layered-section results for every physical girder line."""
+
+    girders: tuple[NativeLM1ProjectLayeredGirderResult, ...]
+    benchmark_source: str
+    search_strategy: str
+
+    def __post_init__(self) -> None:
+        if not self.girders:
+            raise ValueError("Native LM1 layered design suite requires at least one girder.")
+
+    @property
+    def governing_moment_girder_index(self) -> int:
+        return max(
+            self.girders,
+            key=lambda item: item.combinations.persistent_uls.effects.moment_knm,
+        ).combinations.girder_index
+
+    @property
+    def governing_shear_girder_index(self) -> int:
+        return max(
+            self.girders,
+            key=lambda item: abs(item.combinations.persistent_uls.effects.shear_kn),
+        ).combinations.girder_index
+
+    @property
+    def governing_torsion_girder_index(self) -> int:
+        return max(
+            self.girders,
+            key=lambda item: abs(item.combinations.persistent_uls.effects.torsion_knm),
+        ).combinations.girder_index
+
+
+def run_project_layered_girder_from_native_lm1(
+    project: ProjectInput,
+    *,
+    search: ProjectNativeLM1GrillageSearchResult,
+    benchmark_suite: LM1GoverningBenchmarkSuite,
+    benchmark_report: LM1ExternalBenchmarkSuiteReport,
+    girder_index: int,
+    section: LayeredGirderDesignInput,
+    sls_factors: ServiceabilityPsiFactors,
+    crack_combination: SLSCombinationChoice,
+    deflection_combination: SLSCombinationChoice,
+    crack_limit_mm: float,
+    allowable_deflection_mm: float,
+    additional_permanent: UniformPermanentLoadInput | None = None,
+    uls_factors: EurocodeFactors | None = None,
+    fct_eff_mpa: float | None = None,
+    es_mpa: float = 200000.0,
+    creep_coefficient: float = 0.0,
+    deflection_beta: float = 0.5,
+    crack_kt: float = 0.4,
+    cot_theta: float = 2.0,
+) -> NativeLM1ProjectLayeredGirderResult:
+    """Run the benchmark-gated physical-section simple-span Eurocode path.
+
+    This is the common positive-bending adapter for rectangular, T and I
+    non-prestressed precast profiles. It retains the same externally benchmarked
+    native LM1 traffic envelope and co-located service-deflection trace as the
+    legacy T-only adapter, while section ULS/SLS mechanics come from the actual
+    physical concrete layers.
+    """
+    if project.geometry.girder_profile is None:
+        raise ValueError(
+            "Layered native LM1 design requires a complete physical girder profile."
+        )
+    combinations = project_girder_combinations_from_native_lm1(
+        project,
+        search=search,
+        benchmark_suite=benchmark_suite,
+        benchmark_report=benchmark_report,
+        girder_index=girder_index,
+        sls_factors=sls_factors,
+        additional_permanent=additional_permanent,
+        uls_factors=uls_factors,
+    )
+    span_m = float(project.geometry.span_lengths_m[0])
+    materials = project_eurocode_material_input(
+        project,
+        fct_eff_mpa=fct_eff_mpa,
+        es_mpa=es_mpa,
+    )
+    deflection_trace = native_lm1_service_moment_diagram(
+        project,
+        search,
+        combinations=combinations,
+        deflection_combination=deflection_combination,
+        span_m=span_m,
+        benchmark_source=benchmark_report.source_name,
+        additional_permanent=additional_permanent,
+    )
+    serviceability = project_serviceability_from_combinations(
+        combinations,
+        span_m=span_m,
+        crack_combination=crack_combination,
+        deflection_combination=deflection_combination,
+        crack_limit_mm=crack_limit_mm,
+        allowable_deflection_mm=allowable_deflection_mm,
+        creep_coefficient=creep_coefficient,
+        deflection_beta=deflection_beta,
+        crack_kt=crack_kt,
+        deflection_moment_diagram=(
+            None if deflection_trace is None else deflection_trace[0]
+        ),
+        deflection_service_moment_knm=(
+            None if deflection_trace is None else deflection_trace[1]
+        ),
+    )
+    design = run_eurocode_layered_girder_case(
+        project,
+        girder_index=girder_index,
+        span_m=span_m,
+        permanent_effects=combinations.permanent_characteristic,
+        traffic_effects=combinations.traffic_characteristic,
+        section=section,
+        materials=materials,
+        serviceability=serviceability.input,
+        uls_factors=uls_factors,
+        cot_theta=cot_theta,
+    )
+    detailing = run_project_layered_girder_detailing(
+        project,
+        section=section,
+        design=design,
+    )
+    trace = next(item for item in search.girders if item.girder_index == girder_index)
+    return NativeLM1ProjectLayeredGirderResult(
+        section_type=project.geometry.section_type,
+        combinations=combinations,
+        serviceability=serviceability,
+        materials=materials,
+        design=design,
+        detailing=detailing,
+        traffic_trace=trace,
+        benchmark_source=benchmark_report.source_name,
+        status=(
+            "Externally benchmark-gated native LM1 simple-span EC2 design using the "
+            "physical rectangular/T/I layered section for flexure, shear, cracking, "
+            "deflection and practical reinforcement quantity/detail selection. Generic "
+            "envelope curtailment, matched torsion and FLM3 fatigue adapters remain "
+            "separate follow-on scope."
+        ),
+    )
+
+
+def run_project_all_layered_girders_from_native_lm1(
+    project: ProjectInput,
+    *,
+    search: ProjectNativeLM1GrillageSearchResult,
+    benchmark_suite: LM1GoverningBenchmarkSuite,
+    benchmark_report: LM1ExternalBenchmarkSuiteReport,
+    sections_by_girder: dict[int, LayeredGirderDesignInput],
+    sls_factors: ServiceabilityPsiFactors,
+    crack_combination: SLSCombinationChoice,
+    deflection_combination: SLSCombinationChoice,
+    crack_limit_mm: float,
+    allowable_deflection_mm: float,
+    additional_permanent_by_girder: dict[int, UniformPermanentLoadInput] | None = None,
+    uls_factors: EurocodeFactors | None = None,
+    fct_eff_mpa: float | None = None,
+    es_mpa: float = 200000.0,
+    creep_coefficient: float = 0.0,
+    deflection_beta: float = 0.5,
+    crack_kt: float = 0.4,
+    cot_theta: float = 2.0,
+) -> ProjectNativeLM1LayeredGirderDesignSuite:
+    """Run the physical rectangular/T/I native-LM1 path for all girder lines."""
+    girder_count = int(project.geometry.girder_count)
+    required = set(range(1, girder_count + 1))
+    if set(sections_by_girder) != required:
+        raise ValueError(
+            "sections_by_girder must contain exactly one layered section for every girder."
+        )
+    additional = additional_permanent_by_girder or {}
+    unexpected = set(additional) - required
+    if unexpected:
+        raise ValueError(
+            "additional_permanent_by_girder contains unknown girder indices: "
+            + ", ".join(str(value) for value in sorted(unexpected))
+        )
+    results = tuple(
+        run_project_layered_girder_from_native_lm1(
+            project,
+            search=search,
+            benchmark_suite=benchmark_suite,
+            benchmark_report=benchmark_report,
+            girder_index=girder_index,
+            section=sections_by_girder[girder_index],
+            sls_factors=sls_factors,
+            crack_combination=crack_combination,
+            deflection_combination=deflection_combination,
+            crack_limit_mm=crack_limit_mm,
+            allowable_deflection_mm=allowable_deflection_mm,
+            additional_permanent=additional.get(girder_index),
+            uls_factors=uls_factors,
+            fct_eff_mpa=fct_eff_mpa,
+            es_mpa=es_mpa,
+            creep_coefficient=creep_coefficient,
+            deflection_beta=deflection_beta,
+            crack_kt=crack_kt,
+            cot_theta=cot_theta,
+        )
+        for girder_index in range(1, girder_count + 1)
+    )
+    return ProjectNativeLM1LayeredGirderDesignSuite(
+        girders=results,
+        benchmark_source=benchmark_report.source_name,
+        search_strategy=search.search_strategy,
+    )
