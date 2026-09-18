@@ -34,6 +34,36 @@ class PhysicalSectionProperties:
 
 
 @dataclass(frozen=True)
+class ConcreteSectionLayer:
+    """One non-overlapping concrete width band in a longitudinal section."""
+
+    width_m: float
+    top_m: float
+    bottom_m: float
+    label: str
+
+    def __post_init__(self) -> None:
+        if self.width_m <= 0.0:
+            raise ValueError("Concrete layer width must be positive.")
+        if self.top_m < 0.0 or self.bottom_m <= self.top_m:
+            raise ValueError("Concrete layer vertical bounds are invalid.")
+        if not self.label.strip():
+            raise ValueError("Concrete layer label cannot be empty.")
+
+    @property
+    def depth_m(self) -> float:
+        return self.bottom_m - self.top_m
+
+    @property
+    def centroid_from_top_m(self) -> float:
+        return 0.5 * (self.top_m + self.bottom_m)
+
+    @property
+    def area_m2(self) -> float:
+        return self.width_m * self.depth_m
+
+
+@dataclass(frozen=True)
 class _Rectangle:
     width_m: float
     depth_m: float
@@ -60,59 +90,80 @@ def rectangular_torsion_constant_m4(width_m: float, depth_m: float) -> float:
     )
 
 
-def _girder_rectangles(
+def _girder_layers(
     profile: GirderProfile,
     *,
     top_m: float,
-) -> tuple[_Rectangle, ...]:
+) -> tuple[ConcreteSectionLayer, ...]:
     if isinstance(profile, RectangularGirderProfile):
+        depth = float(profile.depth_m)
         return (
-            _Rectangle(
+            ConcreteSectionLayer(
                 width_m=float(profile.width_m),
-                depth_m=float(profile.depth_m),
-                centroid_from_top_m=top_m + float(profile.depth_m) / 2.0,
+                top_m=top_m,
+                bottom_m=top_m + depth,
+                label="precast rectangular girder",
             ),
         )
     if isinstance(profile, TGirderProfile):
         flange_depth = float(profile.flange_thickness_m)
-        web_depth = float(profile.total_depth_m - profile.flange_thickness_m)
+        total_depth = float(profile.total_depth_m)
         return (
-            _Rectangle(
+            ConcreteSectionLayer(
                 width_m=float(profile.flange_width_m),
-                depth_m=flange_depth,
-                centroid_from_top_m=top_m + flange_depth / 2.0,
+                top_m=top_m,
+                bottom_m=top_m + flange_depth,
+                label="precast T-girder top flange",
             ),
-            _Rectangle(
+            ConcreteSectionLayer(
                 width_m=float(profile.web_width_m),
-                depth_m=web_depth,
-                centroid_from_top_m=top_m + flange_depth + web_depth / 2.0,
+                top_m=top_m + flange_depth,
+                bottom_m=top_m + total_depth,
+                label="precast T-girder web",
             ),
         )
     if isinstance(profile, IGirderProfile):
         top_depth = float(profile.top_flange_thickness_m)
         web_depth = float(profile.web_depth_m)
         bottom_depth = float(profile.bottom_flange_thickness_m)
+        z1 = top_m + top_depth
+        z2 = z1 + web_depth
         return (
-            _Rectangle(
+            ConcreteSectionLayer(
                 width_m=float(profile.top_flange_width_m),
-                depth_m=top_depth,
-                centroid_from_top_m=top_m + top_depth / 2.0,
+                top_m=top_m,
+                bottom_m=z1,
+                label="precast I-girder top flange",
             ),
-            _Rectangle(
+            ConcreteSectionLayer(
                 width_m=float(profile.web_width_m),
-                depth_m=web_depth,
-                centroid_from_top_m=top_m + top_depth + web_depth / 2.0,
+                top_m=z1,
+                bottom_m=z2,
+                label="precast I-girder web",
             ),
-            _Rectangle(
+            ConcreteSectionLayer(
                 width_m=float(profile.bottom_flange_width_m),
-                depth_m=bottom_depth,
-                centroid_from_top_m=(
-                    top_m + top_depth + web_depth + bottom_depth / 2.0
-                ),
+                top_m=z2,
+                bottom_m=z2 + bottom_depth,
+                label="precast I-girder bottom flange",
             ),
         )
     raise TypeError("Unsupported physical girder profile.")
 
+
+def _girder_rectangles(
+    profile: GirderProfile,
+    *,
+    top_m: float,
+) -> tuple[_Rectangle, ...]:
+    return tuple(
+        _Rectangle(
+            width_m=layer.width_m,
+            depth_m=layer.depth_m,
+            centroid_from_top_m=layer.centroid_from_top_m,
+        )
+        for layer in _girder_layers(profile, top_m=top_m)
+    )
 
 def _properties_from_rectangles(
     rectangles: tuple[_Rectangle, ...],
@@ -143,19 +194,73 @@ def _properties_from_rectangles(
     )
 
 
+def precast_girder_properties(geometry: BridgeGeometry) -> PhysicalSectionProperties:
+    """Return gross elastic properties of the precast girder alone."""
+    profile = geometry.girder_profile
+    if profile is None:
+        raise ValueError("Precast girder properties require a complete physical girder profile.")
+    return _properties_from_rectangles(
+        _girder_rectangles(profile, top_m=0.0),
+        basis=(
+            f"gross precast {profile.section_type.value} girder; "
+            "rectangle-component Saint-Venant J approximation"
+        ),
+    )
+
+
+def composite_concrete_layers(
+    geometry: BridgeGeometry,
+    *,
+    slab_width_m: float,
+) -> tuple[ConcreteSectionLayer, ...]:
+    """Return participating longitudinal layers in their physical vertical order.
+
+    The in-situ slab is above the precast false slab. A false slab excluded
+    from composite action remains permanent weight only. The precast girder
+    begins below the complete physical deck build-up.
+    """
+    profile = geometry.girder_profile
+    if profile is None:
+        raise ValueError(
+            "Automatic longitudinal properties require a complete physical girder profile."
+        )
+    width = float(slab_width_m)
+    if width <= 0.0:
+        raise ValueError("Longitudinal slab strip width must be positive.")
+    deck = geometry.deck_construction
+    in_situ_depth = float(deck.in_situ_slab_depth_m)
+    false_slab_depth = float(deck.precast_false_slab_depth_m)
+    physical_deck_depth = in_situ_depth + false_slab_depth
+    layers: list[ConcreteSectionLayer] = []
+    if deck.in_situ_slab_composite_participation:
+        layers.append(
+            ConcreteSectionLayer(
+                width_m=width,
+                top_m=0.0,
+                bottom_m=in_situ_depth,
+                label="composite in-situ deck slab",
+            )
+        )
+    if deck.false_slab_composite_participation:
+        layers.append(
+            ConcreteSectionLayer(
+                width_m=width,
+                top_m=in_situ_depth,
+                bottom_m=physical_deck_depth,
+                label="composite precast false slab",
+            )
+        )
+    layers.extend(_girder_layers(profile, top_m=physical_deck_depth))
+    return tuple(layers)
+
+
 def composite_girder_properties(
     geometry: BridgeGeometry,
     *,
     slab_width_m: float | None = None,
     slab_width_basis: str | None = None,
 ) -> PhysicalSectionProperties:
-    """Derive gross composite longitudinal properties from project geometry.
-
-    The default slab width is the mean physical deck width per girder. This
-    preserves the full deck area across the grillage while remaining compatible
-    with the current one-longitudinal-section-per-span model. Expert callers may
-    override it with an effective or otherwise verified strip width.
-    """
+    """Derive gross composite longitudinal properties from project geometry."""
     profile = geometry.girder_profile
     if profile is None:
         raise ValueError(
@@ -168,15 +273,16 @@ def composite_girder_properties(
     )
     if width <= 0.0:
         raise ValueError("Longitudinal slab strip width must be positive.")
-    flange_depth = float(geometry.composite_flange_depth_m)
-    if flange_depth <= 0.0:
+    if float(geometry.composite_flange_depth_m) <= 0.0:
         raise ValueError("Automatic composite properties require participating deck concrete.")
-
-    physical_deck_depth = float(geometry.physical_deck_depth_m)
-    slab_centroid = (physical_deck_depth - flange_depth) + flange_depth / 2.0
-    rectangles = (
-        _Rectangle(width, flange_depth, slab_centroid),
-        *_girder_rectangles(profile, top_m=physical_deck_depth),
+    layers = composite_concrete_layers(geometry, slab_width_m=width)
+    rectangles = tuple(
+        _Rectangle(
+            width_m=layer.width_m,
+            depth_m=layer.depth_m,
+            centroid_from_top_m=layer.centroid_from_top_m,
+        )
+        for layer in layers
     )
     source = (
         "mean deck width/girder"
@@ -187,6 +293,7 @@ def composite_girder_properties(
         rectangles,
         basis=(
             f"gross composite {profile.section_type.value} girder; {source}; "
+            "participating deck layers positioned by physical construction order; "
             "rectangle-component Saint-Venant J approximation"
         ),
     )
