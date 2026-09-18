@@ -46,16 +46,16 @@ from rc_bridge.workflow.project_detailing import (
     ProjectTGirderDetailingResult,
     run_project_t_girder_detailing,
 )
+from rc_bridge.workflow.project_envelope_detailing import (
+    ProjectTGirderEnvelopeDetailingResult,
+    native_lm1_uls_detailing_envelope,
+    run_project_t_girder_envelope_detailing,
+)
 from rc_bridge.workflow.project_native_fatigue import (
     NativeFLM3FatigueDesignInput,
     NativeFLM3TGirderFatigueResult,
     ProjectNativeFLM3GrillageSearchResult,
     run_project_t_girder_fatigue_from_native_flm3,
-)
-from rc_bridge.workflow.project_envelope_detailing import (
-    ProjectTGirderEnvelopeDetailingResult,
-    native_lm1_uls_detailing_envelope,
-    run_project_t_girder_envelope_detailing,
 )
 from rc_bridge.workflow.project_torsion import TorsionCellInput
 
