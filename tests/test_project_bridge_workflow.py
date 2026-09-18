@@ -6,6 +6,9 @@ from rc_bridge.workflow.eurocode_girder import TGirderDesignInput
 from rc_bridge.workflow.project_bridge import (
     SLSCombinationChoice,
     UniformPermanentLoadInput,
+    girder_characteristic_permanent_effects,
+    girder_deck_self_weight_kn_m,
+    girder_deck_tributary_width_m,
     internal_girder_characteristic_permanent_effects,
     internal_girder_deck_self_weight_kn_m,
     project_eurocode_material_input,
@@ -57,6 +60,26 @@ def test_project_material_input_respects_explicit_modulus_and_fct_eff() -> None:
 def test_reference_project_internal_girder_deck_self_weight() -> None:
     project = ProjectInput()
     assert internal_girder_deck_self_weight_kn_m(project) == pytest.approx(10.625)
+
+
+
+
+def test_reference_project_edge_girder_tributary_width_and_deck_weight() -> None:
+    project = ProjectInput()
+    assert girder_deck_tributary_width_m(project, girder_index=1) == pytest.approx(1.25)
+    assert girder_deck_tributary_width_m(project, girder_index=7) == pytest.approx(1.25)
+    assert girder_deck_tributary_width_m(project, girder_index=4) == pytest.approx(1.70)
+    assert girder_deck_self_weight_kn_m(project, girder_index=1) == pytest.approx(7.8125)
+    assert girder_deck_self_weight_kn_m(project, girder_index=4) == pytest.approx(10.625)
+
+
+def test_reference_project_edge_girder_permanent_effects_use_edge_tributary_width() -> None:
+    effects = girder_characteristic_permanent_effects(
+        ProjectInput(),
+        girder_index=1,
+    )
+    assert effects.moment_knm == pytest.approx(219.7265625)
+    assert effects.shear_kn == pytest.approx(58.59375)
 
 
 def test_reference_project_deck_only_characteristic_effects() -> None:
