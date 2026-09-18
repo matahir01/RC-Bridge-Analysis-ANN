@@ -103,6 +103,16 @@ class ProjectNativeLM1TGirderDesignSuite:
             key=lambda item: abs(item.combinations.persistent_uls.effects.torsion_knm),
         ).combinations.girder_index
 
+    @property
+    def governing_shear_torsion_interaction_girder_index(self) -> int | None:
+        checked = tuple(item for item in self.girders if item.shear_torsion is not None)
+        if not checked:
+            return None
+        return max(
+            checked,
+            key=lambda item: item.shear_torsion.governing_interaction.interaction.utilization,
+        ).combinations.girder_index
+
 
 def _require_simple_span_native_design_project(project: ProjectInput) -> None:
     if project.design_code != DesignCode.EUROCODE:
@@ -272,10 +282,11 @@ def run_project_t_girder_from_native_lm1(
 ) -> NativeLM1ProjectTGirderResult:
     """Run simple-span EC2 flexure/shear/crack/deflection design from native LM1 traffic.
 
-    The traffic M, V and T values are independent characteristic envelope maxima.
-    This is correct for separate component design checks. Combined V-T interaction
-    must later use matched simultaneous case effects rather than combining the
-    independent V and T maxima as if they came from one traffic placement.
+    The traffic M, V and T values are independent characteristic envelope maxima,
+    which is appropriate for separate component checks. When torsion-cell geometry
+    is supplied, combined V-T interaction is evaluated separately from co-located
+    member-end effects in the same native LM1 traffic case rather than combining
+    unrelated independent maxima.
     """
     _require_simple_span_native_design_project(project)
     expected_total_depth_m = (
