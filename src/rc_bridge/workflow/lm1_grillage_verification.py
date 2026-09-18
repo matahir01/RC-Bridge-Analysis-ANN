@@ -288,7 +288,6 @@ def build_project_lm1_grillage_verification_model(
         lane_placements=lane_placements,
         remaining_area_placements=remaining_area_placements,
         factors=factors,
-        stiffness_modifiers=stiffness_modifiers,
         name=name,
     )
     model = build_project_grillage_verification_model(
@@ -349,6 +348,7 @@ def build_project_lm1_grillage_verification_package(
         lane_placements=lane_placements,
         remaining_area_placements=remaining_area_placements,
         factors=factors,
+        stiffness_modifiers=stiffness_modifiers,
         name=name,
     )
     return build_model_verification_export_package(model)
