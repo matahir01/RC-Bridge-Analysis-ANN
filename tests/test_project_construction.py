@@ -10,6 +10,7 @@ import pytest
 from rc_bridge.analysis.grillage_solver import solve_vertical_grillage
 from rc_bridge.core.models import (
     BridgeGeometry,
+    DeckConstruction,
     DesignCode,
     MaterialProperties,
     PermanentActionModel,
@@ -25,8 +26,18 @@ from rc_bridge.core.models import (
 from rc_bridge.export.midas_mct import export_midas_mct
 from rc_bridge.export.staad_std import export_staad_std
 from rc_bridge.workflow.grillage_verification_export import GrillageSectionProperties
-from rc_bridge.workflow.project_bridge import UniformPermanentLoadInput
+from rc_bridge.workflow.project_bridge import (
+    UniformPermanentLoadInput,
+    girder_deck_self_weight_kn_m,
+    girder_false_slab_self_weight_kn_m,
+    girder_in_situ_deck_self_weight_kn_m,
+)
 from rc_bridge.workflow.project_construction import (
+    ConstructionAnalysisAssumptions,
+    ConstructionContinuityMode,
+    ConstructionProppingMode,
+    ConstructionTimeEffectMode,
+    ConstructionTransverseActionMode,
     PermanentGrillageStageInput,
     build_construction_stage_verification_packages,
     run_project_construction_grillage,
@@ -91,7 +102,11 @@ def _run(project: ProjectInput | None = None, **kwargs):
 
 def test_stage_deflections_match_closed_forms_using_each_stages_actual_ei() -> None:
     result = _run()
-    q_stages = (0.3 * 0.95 * 25.0, 2.0 * 0.25 * 25.0, 2.0 * 0.08 * 24.0)
+    q_stages = (
+        0.3 * 0.95 * 25.0 + 2.0 * 0.075 * 25.0,
+        2.0 * 0.175 * 25.0,
+        2.0 * 0.08 * 24.0,
+    )
     expected_cumulative = 0.0
     for stage, q in zip(result.stages, q_stages, strict=True):
         model = stage.model
@@ -123,7 +138,12 @@ def test_signed_cumulative_end_actions_match_continuous_two_span_closed_form() -
     result = _run(_project(continuous=True))
     model = result.stages[-1].model
     nodes = {n.node_id: n for n in model.nodes}
-    q = 0.3 * 0.95 * 25.0 + 2.0 * 0.25 * 25.0 + 2.0 * 0.08 * 24.0
+    q = (
+        0.3 * 0.95 * 25.0
+        + 2.0 * 0.075 * 25.0
+        + 2.0 * 0.175 * 25.0
+        + 2.0 * 0.08 * 24.0
+    )
     support = next(n for n in model.nodes if n.x_m == 10.0 and n.y_m == 0.0)
     reaction = next(n for n in result.final_response.nodes if n.node_id == support.node_id)
     assert reaction.vertical_reaction_kn == pytest.approx(5.0 * q * 10.0 / 4.0)
@@ -294,3 +314,126 @@ def test_solver_and_construction_workflow_import_in_a_fresh_interpreter(module: 
     # Full-suite collection previously masked an export -> workflow -> solver
     # cycle. Isolated consumers must not depend on a fortunate import order.
     subprocess.run([sys.executable, "-c", f"import {module}"], check=True, capture_output=True)
+
+
+
+def test_deck_self_weight_is_split_by_actual_construction_stiffness_state() -> None:
+    project = _project()
+    false_slab = girder_false_slab_self_weight_kn_m(project, girder_index=2)
+    wet_in_situ = girder_in_situ_deck_self_weight_kn_m(project, girder_index=2)
+    assert false_slab == pytest.approx(2.0 * 0.075 * 25.0)
+    assert wet_in_situ == pytest.approx(2.0 * 0.175 * 25.0)
+    assert girder_deck_self_weight_kn_m(project, girder_index=2) == pytest.approx(
+        false_slab + wet_in_situ
+    )
+
+    result = _run(project)
+    precast_sources = {item.segment.source for item in result.stages[0].assignments}
+    deck_sources = {item.segment.source for item in result.stages[1].assignments}
+    assert "physical precast false slab self-weight" in precast_sources
+    assert "physical wet in-situ deck self-weight" not in precast_sources
+    assert "physical wet in-situ deck self-weight" in deck_sources
+    assert "physical precast false slab self-weight" not in deck_sources
+
+
+def test_verified_false_slab_participation_only_stiffens_the_subsequent_wet_pour() -> None:
+    project = ProjectInput(
+        geometry=BridgeGeometry(
+            span_lengths_m=[10.0],
+            support_system=SupportSystem.SIMPLY_SUPPORTED,
+            deck_width_m=6.0,
+            carriageway_width_m=6.0,
+            girder_count=3,
+            girder_spacing_m=2.0,
+            section_type=SectionType.RECTANGULAR,
+            girder_profile=RectangularGirderProfile(width_m=0.3, depth_m=0.95),
+            deck_construction=DeckConstruction(
+                false_slab_composite_participation=True,
+            ),
+        ),
+    )
+    stages = list(_stages())
+    stages[1] = replace(stages[1], deck_construction_false_slab_participates=True)
+    result = _run(project, stages=tuple(stages))
+
+    precast = result.stages[0]
+    wet_deck = result.stages[1]
+    assert precast.model.sections[0].area_m2 == pytest.approx(0.3 * 0.95)
+    assert wet_deck.model.sections[0].area_m2 == pytest.approx(
+        0.3 * 0.95 + 2.0 * 0.075
+    )
+    assert any(
+        item.segment.source == "physical precast false slab self-weight"
+        for item in precast.assignments
+    )
+    assert all(
+        item.segment.source != "physical precast false slab self-weight"
+        for item in wet_deck.assignments
+    )
+    assert any(
+        item.segment.source == "physical wet in-situ deck self-weight"
+        for item in wet_deck.assignments
+    )
+
+
+@pytest.mark.parametrize(
+    ("assumptions", "message"),
+    [
+        (
+            ConstructionAnalysisAssumptions(
+                propping_mode=ConstructionProppingMode.PROPPED,
+            ),
+            "Propped construction",
+        ),
+        (
+            ConstructionAnalysisAssumptions(
+                support_configuration_unchanged=False,
+            ),
+            "Support installation/removal",
+        ),
+        (
+            ConstructionAnalysisAssumptions(
+                continuity_mode=ConstructionContinuityMode.ESTABLISHED_DURING_CONSTRUCTION,
+            ),
+            "Establishing continuity",
+        ),
+        (
+            ConstructionAnalysisAssumptions(
+                time_effect_mode=ConstructionTimeEffectMode.CREEP_SHRINKAGE,
+            ),
+            "Creep/shrinkage redistribution",
+        ),
+        (
+            ConstructionAnalysisAssumptions(
+                transverse_action_mode=(
+                    ConstructionTransverseActionMode.PHYSICAL_TRANSVERSE
+                ),
+            ),
+            "Physical local transverse",
+        ),
+        (
+            ConstructionAnalysisAssumptions(new_concrete_stress_free=False),
+            "Layer stress-history",
+        ),
+    ],
+)
+def test_unsupported_construction_physics_fail_instead_of_being_approximated(
+    assumptions,
+    message,
+) -> None:
+    with pytest.raises(ValueError, match=message):
+        _run(assumptions=assumptions)
+
+
+def test_supported_construction_scope_is_auditable_in_result_and_exports() -> None:
+    assumptions = ConstructionAnalysisAssumptions()
+    result = _run(assumptions=assumptions)
+    assert result.assumptions == assumptions
+    for stage in result.stages:
+        metadata = json.loads(stage.model.metadata["construction_analysis_assumptions"])
+        assert metadata["propping_mode"] == "unpropped"
+        assert metadata["continuity_mode"] == "unchanged"
+        assert metadata["support_configuration_unchanged"] == "true"
+        assert metadata["time_effect_mode"] == "none"
+        assert metadata["transverse_action_mode"] == "statical_line"
+        assert metadata["new_concrete_stress_free"] == "true"

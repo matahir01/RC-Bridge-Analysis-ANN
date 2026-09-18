@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass, replace
+from enum import Enum
 
 from rc_bridge.analysis.grillage_solver import (
     GrillageAnalysisResult,
@@ -40,6 +41,115 @@ from rc_bridge.workflow.project_bridge import (
     UniformPermanentLoadInput,
     girder_permanent_load_segments,
 )
+
+
+class ConstructionProppingMode(str, Enum):
+    UNPROPPED = "unpropped"
+    PROPPED = "propped"
+
+
+class ConstructionContinuityMode(str, Enum):
+    UNCHANGED = "unchanged"
+    ESTABLISHED_DURING_CONSTRUCTION = "established_during_construction"
+
+
+class ConstructionTimeEffectMode(str, Enum):
+    NONE = "none"
+    CREEP_SHRINKAGE = "creep_shrinkage"
+
+
+class ConstructionTransverseActionMode(str, Enum):
+    STATICAL_LINE = "statical_line"
+    PHYSICAL_TRANSVERSE = "physical_transverse"
+
+
+@dataclass(frozen=True)
+class ConstructionAnalysisAssumptions:
+    """Machine-readable construction-analysis scope.
+
+    Version 1 deliberately supports only an unpropped, incremental linear-elastic
+    sequence with unchanged supports/continuity, no creep/shrinkage redistribution
+    and tributary/statical-line permanent-load allocation. Unsupported requests
+    fail instead of being silently approximated.
+    """
+
+    propping_mode: ConstructionProppingMode = ConstructionProppingMode.UNPROPPED
+    continuity_mode: ConstructionContinuityMode = ConstructionContinuityMode.UNCHANGED
+    support_configuration_unchanged: bool = True
+    time_effect_mode: ConstructionTimeEffectMode = ConstructionTimeEffectMode.NONE
+    transverse_action_mode: ConstructionTransverseActionMode = (
+        ConstructionTransverseActionMode.STATICAL_LINE
+    )
+    new_concrete_stress_free: bool = True
+
+    def __post_init__(self) -> None:
+        object.__setattr__(
+            self,
+            "propping_mode",
+            ConstructionProppingMode(self.propping_mode),
+        )
+        object.__setattr__(
+            self,
+            "continuity_mode",
+            ConstructionContinuityMode(self.continuity_mode),
+        )
+        object.__setattr__(
+            self,
+            "time_effect_mode",
+            ConstructionTimeEffectMode(self.time_effect_mode),
+        )
+        object.__setattr__(
+            self,
+            "transverse_action_mode",
+            ConstructionTransverseActionMode(self.transverse_action_mode),
+        )
+
+    def validate_supported(self) -> None:
+        if self.propping_mode != ConstructionProppingMode.UNPROPPED:
+            raise ValueError(
+                "Propped construction is not supported by the incremental grillage workflow; "
+                "model the prop reactions/removal as separate structural states."
+            )
+        if not self.support_configuration_unchanged:
+            raise ValueError(
+                "Support installation/removal is not supported by the current construction "
+                "workflow; supports must remain unchanged through all increments."
+            )
+        if self.continuity_mode != ConstructionContinuityMode.UNCHANGED:
+            raise ValueError(
+                "Establishing continuity during construction is not supported by this workflow; "
+                "the structural continuity system must already be active and unchanged."
+            )
+        if self.time_effect_mode != ConstructionTimeEffectMode.NONE:
+            raise ValueError(
+                "Creep/shrinkage redistribution is not supported by the current construction "
+                "workflow; stiffness modifiers are not a time-dependent analysis."
+            )
+        if self.transverse_action_mode != ConstructionTransverseActionMode.STATICAL_LINE:
+            raise ValueError(
+                "Physical local transverse/overhang construction-action recovery is not "
+                "supported by this workflow; use the statical-line allocation only and "
+                "check local deck actions separately."
+            )
+        if not self.new_concrete_stress_free:
+            raise ValueError(
+                "Layer stress-history activation is not supported; newly activated concrete "
+                "must be treated as initially stress-free in the deformed configuration."
+            )
+
+    def metadata(self) -> dict[str, str]:
+        return {
+            "propping_mode": self.propping_mode.value,
+            "continuity_mode": self.continuity_mode.value,
+            "support_configuration_unchanged": (
+                "true" if self.support_configuration_unchanged else "false"
+            ),
+            "time_effect_mode": self.time_effect_mode.value,
+            "transverse_action_mode": self.transverse_action_mode.value,
+            "new_concrete_stress_free": (
+                "true" if self.new_concrete_stress_free else "false"
+            ),
+        }
 
 
 @dataclass(frozen=True)
@@ -113,6 +223,7 @@ class PermanentGrillageStageResult:
 class ProjectConstructionGrillageResult:
     stages: tuple[PermanentGrillageStageResult, ...]
     unchanged_supports_and_continuity_basis: str
+    assumptions: ConstructionAnalysisAssumptions
 
     @property
     def final_response(self) -> CumulativePermanentGrillageResponse:
@@ -213,6 +324,7 @@ def run_project_construction_grillage(
     transverse_stations_m: tuple[float, ...],
     unchanged_supports_and_continuity_basis: str,
     additional_permanent_by_girder: tuple[UniformPermanentLoadInput, ...] | None = None,
+    assumptions: ConstructionAnalysisAssumptions | None = None,
 ) -> ProjectConstructionGrillageResult:
     """Analyse all three ordered permanent-action stages without double counting.
 
@@ -223,6 +335,8 @@ def run_project_construction_grillage(
     load boundaries. Both single spans and unchanged-continuity multi-spans are
     supported. No construction sequence, age effects or validation is invented.
     """
+    scope = assumptions or ConstructionAnalysisAssumptions()
+    scope.validate_supported()
     if tuple(item.stage for item in stages) != tuple(PermanentActionStage):
         raise ValueError("Supply each permanent-action stage exactly once in construction order.")
     if not unchanged_supports_and_continuity_basis.strip():
@@ -284,12 +398,16 @@ def run_project_construction_grillage(
                 "purpose": "incremental_elastic_construction_analysis_requires_validation",
                 "construction_stage_basis": stage_input.basis,
                 "unchanged_supports_and_continuity_basis": unchanged_supports_and_continuity_basis,
+                "construction_analysis_assumptions": json.dumps(
+                    scope.metadata(),
+                    sort_keys=True,
+                ),
                 "permanent_transverse_allocation": (
                     "tributary area / statical line allocation; NOT physical overhang torsion"
                 ),
                 "construction_superposition": (
-                    "sum signed stage increments; new concrete initially stress-free; "
-                    "no propping/support changes, creep redistribution or shrinkage"
+                    "sum signed stage increments; unpropped; supports/continuity unchanged; "
+                    "new concrete initially stress-free; no creep/shrinkage redistribution"
                 ),
                 "self_weight_basis": "physical weights included exactly once in stage member UDLs",
                 "permanent_load_audit": json.dumps(
@@ -323,7 +441,9 @@ def run_project_construction_grillage(
             )
         )
     return ProjectConstructionGrillageResult(
-        tuple(results), unchanged_supports_and_continuity_basis
+        stages=tuple(results),
+        unchanged_supports_and_continuity_basis=unchanged_supports_and_continuity_basis,
+        assumptions=scope,
     )
 
 

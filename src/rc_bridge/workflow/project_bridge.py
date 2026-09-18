@@ -339,16 +339,48 @@ def girder_superimposed_permanent_loads_kn_m(
     )
 
 
-def girder_deck_self_weight_kn_m(project: ProjectInput, *, girder_index: int) -> float:
-    """Physical deck self-weight carried by one girder tributary strip."""
-    geometry = project.geometry
+def girder_false_slab_self_weight_kn_m(
+    project: ProjectInput,
+    *,
+    girder_index: int,
+) -> float:
+    """Precast false-slab self-weight on one girder tributary strip."""
     return deck_self_weight_per_girder_kn_m(
-        deck_thickness_m=geometry.physical_deck_depth_m,
+        deck_thickness_m=float(
+            project.geometry.deck_construction.precast_false_slab_depth_m
+        ),
         girder_spacing_m=girder_deck_tributary_width_m(
             project,
             girder_index=girder_index,
         ),
         concrete_density_kn_m3=float(project.materials.concrete_density_kn_m3),
+    )
+
+
+def girder_in_situ_deck_self_weight_kn_m(
+    project: ProjectInput,
+    *,
+    girder_index: int,
+) -> float:
+    """Wet in-situ slab self-weight on one girder tributary strip."""
+    return deck_self_weight_per_girder_kn_m(
+        deck_thickness_m=float(project.geometry.deck_construction.in_situ_slab_depth_m),
+        girder_spacing_m=girder_deck_tributary_width_m(
+            project,
+            girder_index=girder_index,
+        ),
+        concrete_density_kn_m3=float(project.materials.concrete_density_kn_m3),
+    )
+
+
+def girder_deck_self_weight_kn_m(project: ProjectInput, *, girder_index: int) -> float:
+    """Total physical deck self-weight carried by one girder tributary strip."""
+    return girder_false_slab_self_weight_kn_m(
+        project,
+        girder_index=girder_index,
+    ) + girder_in_situ_deck_self_weight_kn_m(
+        project,
+        girder_index=girder_index,
     )
 
 
@@ -380,7 +412,9 @@ def girder_permanent_load_segments(
 ) -> tuple[ProjectPermanentLoadSegment, ...]:
     """Build the auditable global-x permanent load pattern for one girder.
 
-    Physical girder and deck self-weight remain distinct construction stages.
+    Physical girder, precast false-slab and wet in-situ slab weights retain
+    their actual stiffness states. The false slab is loaded before any optional
+    verified false-slab composite participation is activated for the wet pour.
     Positioned surfacing/line actions retain their longitudinal extents and
     stages. Legacy explicit overrides are full-length actions and are rejected
     whenever they would duplicate an automated physical category.
@@ -425,19 +459,7 @@ def girder_permanent_load_segments(
     ):
         raise ValueError("Explicit other permanent load would double count physical line actions.")
 
-    segments = [
-        ProjectPermanentLoadSegment(
-            source="physical deck self-weight",
-            category="deck_self_weight",
-            stage=PermanentActionStage.DECK_CONSTRUCTION,
-            magnitude_kn_m=girder_deck_self_weight_kn_m(
-                project,
-                girder_index=girder_index,
-            ),
-            x_start_m=0.0,
-            x_end_m=total_length,
-        )
-    ]
+    segments: list[ProjectPermanentLoadSegment] = []
     girder_self_weight_kn_m = (
         profile_self_weight_kn_m
         if profile_self_weight_kn_m is not None
@@ -454,6 +476,40 @@ def girder_permanent_load_segments(
                 category="girder_self_weight",
                 stage=PermanentActionStage.PRECAST_GIRDER,
                 magnitude_kn_m=girder_self_weight_kn_m,
+                x_start_m=0.0,
+                x_end_m=total_length,
+            )
+        )
+    # The precast false slab is installed while the girder-only stiffness is
+    # active. Its own weight therefore remains in the PRECAST_GIRDER increment.
+    # If verified composite false-slab participation is later activated for the
+    # wet pour, only the wet in-situ slab benefits from that increased stiffness.
+    false_slab_weight = girder_false_slab_self_weight_kn_m(
+        project,
+        girder_index=girder_index,
+    )
+    if false_slab_weight > 0.0:
+        segments.append(
+            ProjectPermanentLoadSegment(
+                source="physical precast false slab self-weight",
+                category="deck_self_weight",
+                stage=PermanentActionStage.PRECAST_GIRDER,
+                magnitude_kn_m=false_slab_weight,
+                x_start_m=0.0,
+                x_end_m=total_length,
+            )
+        )
+    in_situ_weight = girder_in_situ_deck_self_weight_kn_m(
+        project,
+        girder_index=girder_index,
+    )
+    if in_situ_weight > 0.0:
+        segments.append(
+            ProjectPermanentLoadSegment(
+                source="physical wet in-situ deck self-weight",
+                category="deck_self_weight",
+                stage=PermanentActionStage.DECK_CONSTRUCTION,
+                magnitude_kn_m=in_situ_weight,
                 x_start_m=0.0,
                 x_end_m=total_length,
             )

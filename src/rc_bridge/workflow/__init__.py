@@ -18,6 +18,11 @@ from rc_bridge.workflow.lm1_grillage_search import (
     run_project_native_lm1_grillage_search,
 )
 from rc_bridge.workflow.project_construction import (
+    ConstructionAnalysisAssumptions,
+    ConstructionContinuityMode,
+    ConstructionProppingMode,
+    ConstructionTimeEffectMode,
+    ConstructionTransverseActionMode,
     PermanentGrillageStageInput,
     ProjectConstructionGrillageResult,
     build_construction_stage_verification_packages,
@@ -72,6 +77,11 @@ from rc_bridge.workflow.verification_export import (
 )
 
 __all__ = [
+    "ConstructionAnalysisAssumptions",
+    "ConstructionContinuityMode",
+    "ConstructionProppingMode",
+    "ConstructionTimeEffectMode",
+    "ConstructionTransverseActionMode",
     "EurocodeLayeredGirderWorkflowResult",
     "GrillagePointLoad",
     "GrillageSectionProperties",
