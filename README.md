@@ -17,6 +17,8 @@ Implemented so far:
 - Independently editable deck width, girder count and girder spacing with linked geometry guidance
 - Physical rectangular, T and I girder profiles with automatic precast-girder self-weight when a complete profile is defined
 - Automatic edge-aware gross composite longitudinal `A`, `J`, `Iy` and `Iz` derivation for every rectangular, T or I girder line, including participating deck concrete and physical overhang tributaries
+- Physical longitudinal concrete layers preserve the actual 175 mm in-situ slab above the 75 mm precast false slab; the false slab contributes longitudinal stiffness only when its composite participation is explicitly enabled
+- Gross precast-girder-only section properties are available separately for construction-stage analysis
 - Automatic station-specific transverse deck-strip properties for native/verification grillages, with exact bridge-length recovery, explicit expert overrides and stiffness assumptions recorded in model metadata
 - Native LM1 and FLM3 grillage searches can now consume those physical properties directly when explicit expert section overrides are omitted
 - Explicit span-wise longitudinal and transverse effective-stiffness modifiers, plus a service helper that combines caller-justified cracked inertia ratios and creep without silently choosing them

@@ -1,14 +1,17 @@
 import pytest
 
 from rc_bridge.analysis.physical_sections import (
+    composite_concrete_layers,
     composite_girder_properties,
     girder_tributary_slab_widths_m,
+    precast_girder_properties,
     rectangular_torsion_constant_m4,
     station_tributary_strip_widths_m,
     transverse_deck_strip_properties,
 )
 from rc_bridge.core.models import (
     BridgeGeometry,
+    DeckConstruction,
     IGirderProfile,
     ProjectInput,
     RectangularGirderProfile,
@@ -255,3 +258,57 @@ def test_service_stiffness_helper_requires_explicit_cracked_ratios_and_creep() -
             longitudinal_cracked_inertia_ratios_by_span=(0.60,),
             transverse_cracked_inertia_ratio=0.40,
         )
+
+def test_noncomposite_false_slab_preserves_physical_vertical_order() -> None:
+    geometry = BridgeGeometry(
+        section_type=SectionType.RECTANGULAR,
+        girder_profile=RectangularGirderProfile(width_m=0.30, depth_m=0.95),
+    )
+    layers = composite_concrete_layers(geometry, slab_width_m=1.70)
+
+    assert layers[0].label == "composite in-situ deck slab"
+    assert layers[0].top_m == pytest.approx(0.0)
+    assert layers[0].bottom_m == pytest.approx(0.175)
+    assert layers[1].label == "precast rectangular girder"
+    assert layers[1].top_m == pytest.approx(0.25)
+    assert layers[1].bottom_m == pytest.approx(1.20)
+
+    result = composite_girder_properties(geometry, slab_width_m=1.70)
+    slab_area = 1.70 * 0.175
+    girder_area = 0.30 * 0.95
+    expected_centroid = (
+        slab_area * 0.0875 + girder_area * (0.25 + 0.95 / 2.0)
+    ) / (slab_area + girder_area)
+    assert result.centroid_from_top_m == pytest.approx(expected_centroid)
+
+
+def test_false_slab_participates_only_when_explicitly_enabled() -> None:
+    geometry = BridgeGeometry(
+        section_type=SectionType.RECTANGULAR,
+        girder_profile=RectangularGirderProfile(width_m=0.30, depth_m=0.95),
+        deck_construction=DeckConstruction(
+            false_slab_composite_participation=True,
+        ),
+    )
+    layers = composite_concrete_layers(geometry, slab_width_m=1.70)
+
+    assert [layer.label for layer in layers[:2]] == [
+        "composite in-situ deck slab",
+        "composite precast false slab",
+    ]
+    assert layers[1].top_m == pytest.approx(0.175)
+    assert layers[1].bottom_m == pytest.approx(0.25)
+    result = composite_girder_properties(geometry, slab_width_m=1.70)
+    assert result.area_m2 == pytest.approx(0.30 * 0.95 + 1.70 * 0.25)
+
+
+def test_precast_girder_properties_exclude_deck_build_up() -> None:
+    geometry = BridgeGeometry(
+        section_type=SectionType.RECTANGULAR,
+        girder_profile=RectangularGirderProfile(width_m=0.30, depth_m=0.95),
+    )
+    result = precast_girder_properties(geometry)
+
+    assert result.area_m2 == pytest.approx(0.30 * 0.95)
+    assert result.centroid_from_top_m == pytest.approx(0.475)
+    assert "gross precast rectangular" in result.basis
