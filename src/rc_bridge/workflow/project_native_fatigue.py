@@ -12,7 +12,10 @@ from rc_bridge.analysis.physical_sections import (
     composite_concrete_layers,
     composite_section_total_depth_m,
 )
-from rc_bridge.codes.eurocode.fatigue_traffic import fatigue_load_model_3
+from rc_bridge.codes.eurocode.fatigue_traffic import (
+    fatigue_load_model_3,
+    notional_fatigue_lane_placements,
+)
 from rc_bridge.core.models import DesignCode, ProjectInput, SupportSystem
 from rc_bridge.design.eurocode_cracking import cracked_t_section_sls
 from rc_bridge.design.eurocode_layered_section import cracked_layered_section_sls
@@ -46,6 +49,7 @@ class NativeFLM3CaseResult:
 
     case_id: int
     lead_position_m: float
+    vehicle_centre_y_m: float
     model: VerificationModel
     analysis: GrillageAnalysisResult
 
@@ -69,13 +73,33 @@ class NativeFLM3GirderMomentRange:
 
 
 @dataclass(frozen=True)
+class NativeFLM3GirderShearRange:
+    """Governing signed FLM3 shear range at one physical girder section."""
+
+    girder_index: int
+    y_m: float
+    section_position_m: float
+    minimum_shear_kn: float
+    maximum_shear_kn: float
+    shear_range_kn: float
+    minimum_case_id: int | None
+    maximum_case_id: int | None
+    minimum_lead_position_m: float | None
+    maximum_lead_position_m: float | None
+    minimum_member_id: int | None
+    maximum_member_id: int | None
+
+
+@dataclass(frozen=True)
 class ProjectNativeFLM3GrillageSearchResult:
     """Native full-width FLM3 search with per-girder co-located moment ranges."""
 
     cases: tuple[NativeFLM3CaseResult, ...]
     girders: tuple[NativeFLM3GirderMomentRange, ...]
+    shears: tuple[NativeFLM3GirderShearRange, ...]
     span_m: float
-    vehicle_centre_y_m: float
+    vehicle_centre_y_m: float | None
+    vehicle_centres_y_m: tuple[float, ...]
     axle_load_factor: float
     movement_step_m: float
     section_step_m: float
@@ -88,6 +112,15 @@ class ProjectNativeFLM3GrillageSearchResult:
         )
         if match is None:
             raise IndexError("girder_index is outside the native FLM3 result.")
+        return match
+
+    def shear_range_for_girder(self, girder_index: int) -> NativeFLM3GirderShearRange:
+        match = next(
+            (item for item in self.shears if item.girder_index == girder_index),
+            None,
+        )
+        if match is None:
+            raise IndexError("girder_index is outside the native FLM3 shear result.")
         return match
 
 
@@ -163,6 +196,18 @@ class _RangeState:
     maximum_member_id: int | None = None
 
 
+@dataclass
+class _ShearRangeState:
+    minimum_shear_kn: float = 0.0
+    maximum_shear_kn: float = 0.0
+    minimum_case_id: int | None = None
+    maximum_case_id: int | None = None
+    minimum_lead_position_m: float | None = None
+    maximum_lead_position_m: float | None = None
+    minimum_member_id: int | None = None
+    maximum_member_id: int | None = None
+
+
 def _girder_y_coordinates(project: ProjectInput) -> tuple[float, ...]:
     count = int(project.geometry.girder_count)
     spacing = float(project.geometry.girder_spacing_m)
@@ -212,16 +257,17 @@ def _section_positions(
     return tuple(sorted(round(value, 12) for value in positions))
 
 
-def _signed_longitudinal_moment_candidates(
+def _signed_longitudinal_section_candidates(
     case: NativeFLM3CaseResult,
     *,
     target_y_m: float,
     x_m: float,
     tolerance_m: float = 1.0e-9,
-) -> tuple[tuple[float, int], ...]:
+) -> tuple[tuple[float, float, int], ...]:
+    """Return sagging-positive moment and signed dM/dx shear for one girder."""
     nodes = {node.node_id: node for node in case.model.nodes}
     results = {item.member_id: item for item in case.analysis.members}
-    candidates: list[tuple[float, int]] = []
+    candidates: list[tuple[float, float, int]] = []
 
     for beam in case.model.beams:
         ni = nodes[beam.node_i]
@@ -241,37 +287,54 @@ def _signed_longitudinal_moment_candidates(
         if nj.x_m > ni.x_m:
             x_i = ni.x_m
             x_j = nj.x_m
-            moment_i = -result.i_vertical_bending_moment_knm
-            moment_j = result.j_vertical_bending_moment_knm
+            raw_i = -result.i_vertical_bending_moment_knm
+            raw_j = result.j_vertical_bending_moment_knm
         else:
             x_i = nj.x_m
             x_j = ni.x_m
-            moment_i = result.j_vertical_bending_moment_knm
-            moment_j = -result.i_vertical_bending_moment_knm
+            raw_i = result.j_vertical_bending_moment_knm
+            raw_j = -result.i_vertical_bending_moment_knm
 
         ratio = (x_m - x_i) / (x_j - x_i)
         ratio = min(max(ratio, 0.0), 1.0)
-        # The native element end-action convention is opposite to the
-        # sagging-positive bridge-section convention used by the design
-        # workflows. Convert here so a downward FLM3 vehicle on a simple span
-        # produces positive sagging moment.
-        moment = -(moment_i + ratio * (moment_j - moment_i))
+        moment = -(raw_i + ratio * (raw_j - raw_i))
+        shear = -(raw_j - raw_i) / (x_j - x_i)
         if abs(moment) <= 1.0e-10:
             moment = 0.0
-        candidates.append((moment, beam.member_id))
+        if abs(shear) <= 1.0e-10:
+            shear = 0.0
+        candidates.append((moment, shear, beam.member_id))
 
     if not candidates:
         raise RuntimeError(
-            f"Native FLM3 moment recovery found no longitudinal member at x={x_m:.6g} m."
+            f"Native FLM3 section recovery found no longitudinal member at x={x_m:.6g} m."
         )
     return tuple(candidates)
+
+
+def _signed_longitudinal_moment_candidates(
+    case: NativeFLM3CaseResult,
+    *,
+    target_y_m: float,
+    x_m: float,
+    tolerance_m: float = 1.0e-9,
+) -> tuple[tuple[float, int], ...]:
+    return tuple(
+        (moment, member_id)
+        for moment, _, member_id in _signed_longitudinal_section_candidates(
+            case,
+            target_y_m=target_y_m,
+            x_m=x_m,
+            tolerance_m=tolerance_m,
+        )
+    )
 
 
 def run_project_native_flm3_grillage_search(
     project: ProjectInput,
     *,
-    vehicle_centre_y_m: float,
     transverse_stations_m: tuple[float, ...],
+    vehicle_centre_y_m: float | None = None,
     longitudinal_sections_by_span: tuple[GrillageSectionProperties, ...] | None = None,
     transverse_section: GrillageSectionProperties | None = None,
     axle_load_factor: float = 1.0,
@@ -282,10 +345,12 @@ def run_project_native_flm3_grillage_search(
 ) -> ProjectNativeFLM3GrillageSearchResult:
     """Move FLM3 across the full bridge grillage and recover per-girder M ranges.
 
-    The fatigue vehicle transverse centre is explicit. This routine does not
-    substitute an LM1 distribution factor and does not silently choose a
-    National-Annex fatigue-lane position. Each 120 kN axle line is represented
-    by two equal wheel loads at the FLM3 2.0 m transverse wheel spacing.
+    A supplied vehicle centre analyses one physical transverse line. If it is
+    omitted, the solver envelopes every unique left-packed/right-packed
+    notional-lane centre that can accommodate the FLM3 wheel pair. This
+    automates deterministic lane-centre candidates without pretending to know
+    a project-specific slow-lane/National-Annex designation. Each 120 kN axle
+    line is represented by two equal wheel loads at 2.0 m wheel spacing.
     """
     if project.design_code != DesignCode.EUROCODE:
         raise ValueError("Native FLM3 fatigue analysis currently supports Eurocode only.")
@@ -299,20 +364,27 @@ def run_project_native_flm3_grillage_search(
     span_m = float(project.geometry.span_lengths_m[0])
     vehicle = fatigue_load_model_3(axle_load_factor=axle_load_factor)
     half_wheel_spacing = vehicle.transverse_wheel_spacing_m / 2.0
-    wheel_y = (
-        float(vehicle_centre_y_m) - half_wheel_spacing,
-        float(vehicle_centre_y_m) + half_wheel_spacing,
-    )
     carriageway_left = float(project.geometry.carriageway_left_edge_m)
     carriageway_right = float(project.geometry.carriageway_right_edge_m)
-    if (
-        wheel_y[0] < carriageway_left - 1.0e-9
-        or wheel_y[1] > carriageway_right + 1.0e-9
-    ):
-        raise ValueError(
-            "FLM3 wheel centres must lie inside the physical carriageway; choose an "
-            "explicit fatigue-lane vehicle centre consistent with the project/NA."
+    if vehicle_centre_y_m is None:
+        placements = notional_fatigue_lane_placements(
+            carriageway_width_m=float(project.geometry.carriageway_width_m),
+            carriageway_offset_m=float(project.geometry.carriageway_offset_m),
+            transverse_wheel_spacing_m=vehicle.transverse_wheel_spacing_m,
         )
+        vehicle_centres = tuple(item.centre_y_m for item in placements)
+    else:
+        centre = float(vehicle_centre_y_m)
+        wheel_y = (centre - half_wheel_spacing, centre + half_wheel_spacing)
+        if (
+            wheel_y[0] < carriageway_left - 1.0e-9
+            or wheel_y[1] > carriageway_right + 1.0e-9
+        ):
+            raise ValueError(
+                "FLM3 wheel centres must lie inside the physical carriageway; choose an "
+                "explicit fatigue-lane vehicle centre consistent with the project/NA."
+            )
+        vehicle_centres = (centre,)
 
     leads = _flm3_lead_positions(
         span_m=span_m,
@@ -327,83 +399,97 @@ def run_project_native_flm3_grillage_search(
     )
 
     cases: list[NativeFLM3CaseResult] = []
-    for lead in leads:
-        active_axles = positioned_axles(vehicle.axle_train, lead, span_m)
-        if not any(
-            1.0e-9 < axle.position_m < span_m - 1.0e-9
-            for axle in active_axles
-        ):
-            # A vehicle state carried only directly at simple supports has zero
-            # longitudinal bending and is already represented by the explicit
-            # unloaded zero baseline used when forming fatigue ranges. Skipping
-            # it also avoids creating a degenerate support-only grillage slice.
-            continue
-        case_id = len(cases) + 1
-        point_loads = tuple(
-            GrillagePointLoad(
-                x_m=axle.position_m,
-                y_m=y_m,
-                magnitude_kn=axle.magnitude_kn / 2.0,
-                label=(
-                    f"FLM3 case {case_id} {axle.label} "
-                    f"{'left' if wheel_index == 1 else 'right'} wheel"
-                ),
+    for centre in vehicle_centres:
+        wheel_y = (centre - half_wheel_spacing, centre + half_wheel_spacing)
+        for lead in leads:
+            active_axles = positioned_axles(vehicle.axle_train, lead, span_m)
+            if not any(
+                1.0e-9 < axle.position_m < span_m - 1.0e-9
+                for axle in active_axles
+            ):
+                continue
+            case_id = len(cases) + 1
+            point_loads = tuple(
+                GrillagePointLoad(
+                    x_m=axle.position_m,
+                    y_m=y_m,
+                    magnitude_kn=axle.magnitude_kn / 2.0,
+                    label=(
+                        f"FLM3 case {case_id} centre {centre:.6g} m {axle.label} "
+                        f"{'left' if wheel_index == 1 else 'right'} wheel"
+                    ),
+                )
+                for axle in active_axles
+                for wheel_index, y_m in enumerate(wheel_y, start=1)
             )
-            for axle in active_axles
-            for wheel_index, y_m in enumerate(wheel_y, start=1)
-        )
-        load_case = GrillageVerificationLoadCase(
-            name=f"{name} case {case_id}",
-            point_loads=point_loads,
-        )
-        model = build_project_grillage_verification_model(
-            project,
-            longitudinal_sections_by_span=longitudinal_sections_by_span,
-            transverse_section=transverse_section,
-            transverse_stations_m=transverse_stations_m,
-            load_case=load_case,
-            stiffness_modifiers=stiffness_modifiers,
-        )
-        analysis = solve_vertical_grillage(model)
-        cases.append(
-            NativeFLM3CaseResult(
-                case_id=case_id,
-                lead_position_m=lead,
-                model=model,
-                analysis=analysis,
+            load_case = GrillageVerificationLoadCase(
+                name=f"{name} case {case_id}",
+                point_loads=point_loads,
             )
-        )
+            model = build_project_grillage_verification_model(
+                project,
+                longitudinal_sections_by_span=longitudinal_sections_by_span,
+                transverse_section=transverse_section,
+                transverse_stations_m=transverse_stations_m,
+                load_case=load_case,
+                stiffness_modifiers=stiffness_modifiers,
+            )
+            analysis = solve_vertical_grillage(model)
+            cases.append(
+                NativeFLM3CaseResult(
+                    case_id=case_id,
+                    lead_position_m=lead,
+                    vehicle_centre_y_m=centre,
+                    model=model,
+                    analysis=analysis,
+                )
+            )
 
     y_coordinates = _girder_y_coordinates(project)
     girder_ranges: list[NativeFLM3GirderMomentRange] = []
+    shear_ranges: list[NativeFLM3GirderShearRange] = []
     for girder_index, y_m in enumerate(y_coordinates, start=1):
-        states = {x_m: _RangeState() for x_m in reporting_stations}
+        moment_states = {x_m: _RangeState() for x_m in reporting_stations}
+        shear_states = {x_m: _ShearRangeState() for x_m in reporting_stations}
         for case in cases:
             for x_m in reporting_stations:
-                for moment, member_id in _signed_longitudinal_moment_candidates(
+                for moment, shear, member_id in _signed_longitudinal_section_candidates(
                     case,
                     target_y_m=y_m,
                     x_m=x_m,
                 ):
-                    state = states[x_m]
-                    if moment < state.minimum_moment_knm:
-                        state.minimum_moment_knm = moment
-                        state.minimum_case_id = case.case_id
-                        state.minimum_lead_position_m = case.lead_position_m
-                        state.minimum_member_id = member_id
-                    if moment > state.maximum_moment_knm:
-                        state.maximum_moment_knm = moment
-                        state.maximum_case_id = case.case_id
-                        state.maximum_lead_position_m = case.lead_position_m
-                        state.maximum_member_id = member_id
+                    moment_state = moment_states[x_m]
+                    if moment < moment_state.minimum_moment_knm:
+                        moment_state.minimum_moment_knm = moment
+                        moment_state.minimum_case_id = case.case_id
+                        moment_state.minimum_lead_position_m = case.lead_position_m
+                        moment_state.minimum_member_id = member_id
+                    if moment > moment_state.maximum_moment_knm:
+                        moment_state.maximum_moment_knm = moment
+                        moment_state.maximum_case_id = case.case_id
+                        moment_state.maximum_lead_position_m = case.lead_position_m
+                        moment_state.maximum_member_id = member_id
+
+                    shear_state = shear_states[x_m]
+                    if shear < shear_state.minimum_shear_kn:
+                        shear_state.minimum_shear_kn = shear
+                        shear_state.minimum_case_id = case.case_id
+                        shear_state.minimum_lead_position_m = case.lead_position_m
+                        shear_state.minimum_member_id = member_id
+                    if shear > shear_state.maximum_shear_kn:
+                        shear_state.maximum_shear_kn = shear
+                        shear_state.maximum_case_id = case.case_id
+                        shear_state.maximum_lead_position_m = case.lead_position_m
+                        shear_state.maximum_member_id = member_id
 
         governing_x = max(
             reporting_stations,
             key=lambda value: (
-                states[value].maximum_moment_knm - states[value].minimum_moment_knm
+                moment_states[value].maximum_moment_knm
+                - moment_states[value].minimum_moment_knm
             ),
         )
-        state = states[governing_x]
+        state = moment_states[governing_x]
         girder_ranges.append(
             NativeFLM3GirderMomentRange(
                 girder_index=girder_index,
@@ -411,9 +497,7 @@ def run_project_native_flm3_grillage_search(
                 section_position_m=governing_x,
                 minimum_moment_knm=state.minimum_moment_knm,
                 maximum_moment_knm=state.maximum_moment_knm,
-                moment_range_knm=(
-                    state.maximum_moment_knm - state.minimum_moment_knm
-                ),
+                moment_range_knm=state.maximum_moment_knm - state.minimum_moment_knm,
                 minimum_case_id=state.minimum_case_id,
                 maximum_case_id=state.maximum_case_id,
                 minimum_lead_position_m=state.minimum_lead_position_m,
@@ -423,18 +507,48 @@ def run_project_native_flm3_grillage_search(
             )
         )
 
+        governing_shear_x = max(
+            reporting_stations,
+            key=lambda value: (
+                shear_states[value].maximum_shear_kn
+                - shear_states[value].minimum_shear_kn
+            ),
+        )
+        shear_state = shear_states[governing_shear_x]
+        shear_ranges.append(
+            NativeFLM3GirderShearRange(
+                girder_index=girder_index,
+                y_m=y_m,
+                section_position_m=governing_shear_x,
+                minimum_shear_kn=shear_state.minimum_shear_kn,
+                maximum_shear_kn=shear_state.maximum_shear_kn,
+                shear_range_kn=shear_state.maximum_shear_kn - shear_state.minimum_shear_kn,
+                minimum_case_id=shear_state.minimum_case_id,
+                maximum_case_id=shear_state.maximum_case_id,
+                minimum_lead_position_m=shear_state.minimum_lead_position_m,
+                maximum_lead_position_m=shear_state.maximum_lead_position_m,
+                minimum_member_id=shear_state.minimum_member_id,
+                maximum_member_id=shear_state.maximum_member_id,
+            )
+        )
+
+    explicit_centre = vehicle_centres[0] if len(vehicle_centres) == 1 else None
     return ProjectNativeFLM3GrillageSearchResult(
         cases=tuple(cases),
         girders=tuple(girder_ranges),
+        shears=tuple(shear_ranges),
         span_m=span_m,
-        vehicle_centre_y_m=float(vehicle_centre_y_m),
+        vehicle_centre_y_m=explicit_centre,
+        vehicle_centres_y_m=vehicle_centres,
         axle_load_factor=axle_load_factor,
         movement_step_m=movement_step_m,
         section_step_m=section_step_m,
         status=(
-            "Full-width native EN 1991-2 FLM3 moving-vehicle grillage search; "
-            "fatigue-lane transverse position and axle adjustment remain explicit "
-            "project/National-Annex inputs. Independent external validation remains pending."
+            "Full-width native EN 1991-2 FLM3 moving-vehicle grillage search with "
+            "per-girder moment and shear ranges. A supplied vehicle centre is preserved; "
+            "otherwise every unique left/right-packed notional-lane centre is enveloped. "
+            "The candidate envelope does not replace project/National-Annex slow-lane "
+            "identification. Independent external validation remains pending."
         ),
     )
 
@@ -551,8 +665,9 @@ def run_project_t_girder_fatigue_from_native_flm3(
     )
     source = (
         f"Native full-width EN 1991-2 FLM3 grillage, girder {girder_index}, "
-        f"x={traffic.section_position_m:.6g} m, vehicle centre "
-        f"y={search.vehicle_centre_y_m:.6g} m; range {minimum_case} to {maximum_case}"
+        f"x={traffic.section_position_m:.6g} m, vehicle centres "
+        f"{','.join(f'{value:.6g}' for value in search.vehicle_centres_y_m)} m; "
+        f"range {minimum_case} to {maximum_case}"
     )
     concrete_input = (
         ConcreteFatigueInput(
@@ -703,8 +818,9 @@ def run_project_layered_girder_fatigue_from_native_flm3(
     )
     source = (
         f"Native full-width EN 1991-2 FLM3 layered {project.geometry.section_type.value} "
-        f"girder {girder_index}, x={traffic.section_position_m:.6g} m, vehicle centre "
-        f"y={search.vehicle_centre_y_m:.6g} m; range {minimum_case} to {maximum_case}"
+        f"girder {girder_index}, x={traffic.section_position_m:.6g} m, vehicle centres "
+        f"{','.join(f'{value:.6g}' for value in search.vehicle_centres_y_m)} m; "
+        f"range {minimum_case} to {maximum_case}"
     )
     concrete_input = (
         ConcreteFatigueInput(

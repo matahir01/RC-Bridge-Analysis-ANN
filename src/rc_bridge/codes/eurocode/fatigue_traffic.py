@@ -5,6 +5,7 @@ from dataclasses import dataclass
 from rc_bridge.analysis.loads import PointLoad
 from rc_bridge.analysis.moving_loads import AxleTrain, positioned_axles
 from rc_bridge.analysis.point_loads import section_response
+from rc_bridge.codes.eurocode.en1991_2 import notional_lane_layout
 
 
 @dataclass(frozen=True)
@@ -24,6 +25,15 @@ class FatigueLoadModel3:
 
 
 @dataclass(frozen=True)
+class FatigueLanePlacement:
+    packing: str
+    lane_index_from_edge: int
+    centre_y_m: float
+    lane_width_m: float
+    status: str
+
+
+@dataclass(frozen=True)
 class FLM3SimpleSpanSectionRange:
     section_position_m: float
     minimum_moment_knm: float
@@ -32,6 +42,63 @@ class FLM3SimpleSpanSectionRange:
     governing_lead_position_m: float
     movement_steps: int
     status: str
+
+
+def notional_fatigue_lane_placements(
+    *,
+    carriageway_width_m: float,
+    carriageway_offset_m: float = 0.0,
+    transverse_wheel_spacing_m: float = 2.0,
+) -> tuple[FatigueLanePlacement, ...]:
+    """Return deterministic lane-centre candidates from EN 1991-2 lane subdivision.
+
+    The road-traffic notional-lane geometry is used only to generate auditable
+    transverse candidates. Both left-packed and right-packed lane blocks are
+    retained when a remaining carriageway strip exists. This function does not
+    decide which physical slow lane or National-Annex fatigue lane governs; a
+    caller may envelope all returned candidates or select one explicitly.
+    """
+    if transverse_wheel_spacing_m <= 0.0:
+        raise ValueError("transverse_wheel_spacing_m must be positive.")
+    layout = notional_lane_layout(carriageway_width_m)
+    left = carriageway_offset_m - carriageway_width_m / 2.0
+    right = carriageway_offset_m + carriageway_width_m / 2.0
+    half_wheel = transverse_wheel_spacing_m / 2.0
+    candidates: dict[float, FatigueLanePlacement] = {}
+
+    packings = (
+        ("left", left),
+        (
+            "right",
+            right - layout.lane_count * layout.lane_width_m,
+        ),
+    )
+    for packing, block_left in packings:
+        for lane_index in range(layout.lane_count):
+            centre = block_left + (lane_index + 0.5) * layout.lane_width_m
+            if centre - half_wheel < left - 1.0e-9:
+                continue
+            if centre + half_wheel > right + 1.0e-9:
+                continue
+            key = round(centre, 12)
+            candidates.setdefault(
+                key,
+                FatigueLanePlacement(
+                    packing=packing,
+                    lane_index_from_edge=lane_index + 1,
+                    centre_y_m=centre,
+                    lane_width_m=layout.lane_width_m,
+                    status=(
+                        "Candidate derived from EN 1991-2 notional-lane geometry; "
+                        "physical slow-lane/National-Annex selection remains explicit."
+                    ),
+                ),
+            )
+    if not candidates:
+        raise ValueError(
+            "No notional-lane centre can accommodate the FLM3 transverse wheel spacing."
+        )
+    return tuple(candidates[key] for key in sorted(candidates))
 
 
 def fatigue_load_model_3(*, axle_load_factor: float = 1.0) -> FatigueLoadModel3:

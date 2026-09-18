@@ -65,6 +65,10 @@ def test_native_flm3_full_width_search_retains_girder_range_trace() -> None:
     assert centre.maximum_moment_knm > 0.0
     assert 0.0 <= centre.section_position_m <= 15.0
     assert centre.maximum_case_id is not None
+    shear = result.shear_range_for_girder(4)
+    assert shear.shear_range_kn > 0.0
+    assert shear.maximum_case_id is not None or shear.minimum_case_id is not None
+    assert result.vehicle_centres_y_m == (0.0,)
     assert centre.maximum_lead_position_m is not None
     assert "not LM1" not in result.status
     assert "FLM3" in result.status
@@ -104,3 +108,20 @@ def test_native_flm3_drives_ec2_t_girder_fatigue_without_lm1_substitution() -> N
     assert result.fatigue.concrete is not None
     assert "FLM3" in result.fatigue.source_description
     assert "not LM1" in result.status
+
+
+def test_native_flm3_can_envelope_notional_lane_centre_candidates() -> None:
+    result = run_project_native_flm3_grillage_search(
+        ProjectInput(),
+        longitudinal_sections_by_span=(_longitudinal(),),
+        transverse_section=_transverse(),
+        transverse_stations_m=(7.5,),
+        movement_step_m=15.0,
+        section_step_m=5.0,
+    )
+
+    assert result.vehicle_centre_y_m is None
+    assert result.vehicle_centres_y_m == pytest.approx((-2.0, -1.0, 1.0, 2.0))
+    assert len({case.vehicle_centre_y_m for case in result.cases}) == 4
+    assert result.range_for_girder(4).moment_range_knm > 0.0
+    assert result.shear_range_for_girder(4).shear_range_kn > 0.0
