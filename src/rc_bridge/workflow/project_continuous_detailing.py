@@ -15,6 +15,7 @@ from rc_bridge.core.models import (
     RectangularGirderProfile,
     TGirderProfile,
 )
+from rc_bridge.design.eurocode_demand import required_tension_steel_rectangular
 from rc_bridge.design.eurocode_detailing import (
     ContinuousBarCorePlan,
     LinkArrangement,
@@ -39,7 +40,6 @@ from rc_bridge.design.eurocode_torsion_detailing import (
     TorsionCageDetailingResult,
     select_torsion_cage_detailing,
 )
-from rc_bridge.design.eurocode_demand import required_tension_steel_rectangular
 from rc_bridge.workflow.project_continuous_native import (
     ProjectContinuousNativeLM1EnvelopeResult,
 )
