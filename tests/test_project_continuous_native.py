@@ -9,6 +9,7 @@ from rc_bridge.core.models import (
     SectionType,
     SupportSystem,
 )
+from rc_bridge.workflow.eurocode_layered_girder import LayeredGirderDesignInput
 from rc_bridge.workflow.grillage_verification_export import GrillageSectionProperties
 from rc_bridge.workflow.project_construction import PermanentGrillageStageInput
 from rc_bridge.workflow.project_continuous_design import (
@@ -23,8 +24,16 @@ from rc_bridge.workflow.project_continuous_native import (
 from rc_bridge.workflow.project_continuous_native_deflection import (
     run_project_continuous_native_service_deflection,
 )
+from rc_bridge.workflow.project_continuous_native_fatigue import (
+    ContinuousTopSteelFatigueInput,
+    run_project_continuous_native_fatigue,
+)
 from rc_bridge.workflow.project_continuous_native_torsion import (
     check_project_continuous_native_matched_shear_torsion,
+)
+from rc_bridge.workflow.project_native_fatigue import (
+    NativeFLM3FatigueDesignInput,
+    run_project_native_flm3_continuous_grillage_search,
 )
 from rc_bridge.workflow.project_torsion import TorsionCellInput
 
@@ -220,3 +229,49 @@ def test_continuous_native_shear_torsion_keeps_v_and_t_colocated() -> None:
     assert point.side in {"left", "right"}
     assert point.gamma_g in {1.0, 1.35}
     assert "same section" in result.status
+
+
+
+def test_continuous_native_fatigue_checks_top_and_bottom_steel_through_reversal() -> None:
+    production = _run()
+    final_stage = production.construction.stages[-1].input
+    fatigue_search = run_project_native_flm3_continuous_grillage_search(
+        _project(),
+        transverse_stations_m=production.design_stations_m,
+        longitudinal_sections_by_span=final_stage.longitudinal_sections_by_span,
+        transverse_section=final_stage.transverse_section,
+        stiffness_modifiers=final_stage.stiffness_modifiers,
+        vehicle_centre_y_m=0.0,
+        movement_step_m=10.0,
+        section_step_m=5.0,
+    )
+    result = run_project_continuous_native_fatigue(
+        _project(),
+        production=production,
+        fatigue_search=fatigue_search,
+        girder_index=2,
+        bottom_section=LayeredGirderDesignInput(
+            composite_slab_width_m=1.50,
+            effective_depth_m=1.10,
+            steel_area_mm2=7000.0,
+            bar_diameter_mm=32.0,
+            bar_spacing_mm=150.0,
+            cover_mm=50.0,
+        ),
+        top_section=ContinuousTopSteelFatigueInput(
+            effective_deck_width_m=1.50,
+            steel_area_mm2=6500.0,
+            steel_depth_from_bottom_m=1.10,
+        ),
+        fatigue_design=NativeFLM3FatigueDesignInput(
+            lambda_s=0.90,
+            characteristic_fatigue_strength_mpa=162.5,
+        ),
+    )
+
+    assert result.stations
+    assert result.governing_bottom_reinforcement.bottom_reinforcement.utilization >= 0.0
+    assert result.governing_top_reinforcement.top_reinforcement.utilization >= 0.0
+    assert any(item.minimum_total_moment_knm < 0.0 for item in result.stations)
+    assert any(item.maximum_total_moment_knm > 0.0 for item in result.stations)
+    assert "sign reversal" in result.status

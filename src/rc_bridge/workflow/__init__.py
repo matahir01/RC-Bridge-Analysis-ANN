@@ -42,6 +42,12 @@ from rc_bridge.workflow.project_continuous_native_torsion import (
     ProjectContinuousNativeShearTorsionResult,
     check_project_continuous_native_matched_shear_torsion,
 )
+from rc_bridge.workflow.project_continuous_native_fatigue import (
+    ContinuousFatigueStationResult,
+    ContinuousTopSteelFatigueInput,
+    ProjectContinuousNativeFatigueResult,
+    run_project_continuous_native_fatigue,
+)
 from rc_bridge.workflow.project_deck_fatigue import (
     LocalDeckFatigueSourceKind,
     LocalDeckReinforcementFatigueInput,
@@ -109,9 +115,11 @@ __all__ = [
     "ConstructionProppingMode",
     "ConstructionTimeEffectMode",
     "ConstructionTransverseActionMode",
+    "ContinuousFatigueStationResult",
     "ContinuousNativeLM1StationTrace",
     "ContinuousNativeServiceDeflectionResult",
     "ContinuousNativeShearTorsionPoint",
+    "ContinuousTopSteelFatigueInput",
     "EurocodeLayeredGirderWorkflowResult",
     "GrillagePointLoad",
     "GrillageSectionProperties",
@@ -129,6 +137,7 @@ __all__ = [
     "NativeLM1ShearTorsionPoint",
     "PermanentGrillageStageInput",
     "ProjectConstructionGrillageResult",
+    "ProjectContinuousNativeFatigueResult",
     "ProjectContinuousNativeLM1EnvelopeResult",
     "ProjectContinuousNativeShearTorsionResult",
     "ProjectLayeredGirderDetailingResult",
@@ -159,6 +168,7 @@ __all__ = [
     "run_project_all_layered_girders_from_native_lm1",
     "run_project_all_t_girders_from_native_lm1",
     "run_project_construction_grillage",
+    "run_project_continuous_native_fatigue",
     "run_project_continuous_native_lm1_envelope",
     "run_project_continuous_native_service_deflection",
     "run_project_layered_girder_detailing",
