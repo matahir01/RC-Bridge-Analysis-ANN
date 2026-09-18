@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 from dataclasses import dataclass
+from math import sqrt
 
 from rc_bridge.analysis.loads import PointLoad
 
@@ -172,9 +173,72 @@ def simply_supported_deflection_from_moment_diagram_mm(
         value + initial_slope * x
         for value, x in zip(free_deflections, stations_mm, strict=True)
     )
-    maximum_index = max(range(len(signed)), key=lambda index: abs(signed[index]))
+
+    # The maximum deflection need not occur at a supplied moment station. Inside
+    # each piecewise-linear curvature segment, slope is a quadratic function of
+    # local coordinate. Solve slope=0 exactly and evaluate every stationary
+    # point, while still retaining station displacements for audit/plotting.
+    best_absolute = -1.0
+    best_position_mm = 0.0
+
+    def consider(position_mm: float, deflection_mm: float) -> None:
+        nonlocal best_absolute, best_position_mm
+        magnitude = abs(deflection_mm)
+        if magnitude > best_absolute:
+            best_absolute = magnitude
+            best_position_mm = position_mm
+
+    for position_mm, deflection_mm in zip(stations_mm, signed, strict=True):
+        consider(position_mm, deflection_mm)
+
+    curvature_gradient_tolerance = 1.0e-18
+    curvature_tolerance = 1.0e-18
+    endpoint_tolerance_mm = 1.0e-9
+
+    for index in range(len(stations_mm) - 1):
+        x0 = stations_mm[index]
+        dx = stations_mm[index + 1] - x0
+        if dx <= 0.0:
+            continue
+
+        k0 = curvatures[index]
+        k1 = curvatures[index + 1]
+        gradient = (k1 - k0) / dx
+        signed_slope_start = free_slopes[index] + initial_slope
+        signed_deflection_start = signed[index]
+
+        roots: list[float] = []
+        if abs(gradient) <= curvature_gradient_tolerance:
+            if abs(k0) > curvature_tolerance:
+                roots.append(-signed_slope_start / k0)
+        else:
+            discriminant = k0**2 - 2.0 * gradient * signed_slope_start
+            if discriminant >= 0.0:
+                root_term = sqrt(max(discriminant, 0.0))
+                roots.extend(
+                    (
+                        (-k0 - root_term) / gradient,
+                        (-k0 + root_term) / gradient,
+                    )
+                )
+
+        for local_x in roots:
+            if not (
+                endpoint_tolerance_mm
+                < local_x
+                < dx - endpoint_tolerance_mm
+            ):
+                continue
+            deflection = (
+                signed_deflection_start
+                + signed_slope_start * local_x
+                + k0 * local_x**2 / 2.0
+                + gradient * local_x**3 / 6.0
+            )
+            consider(x0 + local_x, deflection)
+
     return MomentDiagramDeflectionResult(
-        maximum_absolute_deflection_mm=abs(signed[maximum_index]),
-        maximum_position_m=stations_mm[maximum_index] / 1000.0,
+        maximum_absolute_deflection_mm=best_absolute,
+        maximum_position_m=best_position_mm / 1000.0,
         station_deflections_mm=signed,
     )

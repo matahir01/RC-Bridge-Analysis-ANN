@@ -34,6 +34,7 @@ Implemented so far:
 - Continuous moving axle-train moment, shear, reaction and vertical-deflection envelopes
 - Code-neutral elastic T-section service-analysis mechanics
 - Numerical simply-supported and continuous-span elastic deflection recovery
+- Piecewise-linear simple-span M/EI deflection integration now solves interior zero-slope points analytically, so governing displacement is not restricted to stored moment stations
 - Simple-span UDL-plus-axle load-pattern deflection with virtual-work curvature integration, span-wise maximum search and EC2 cracked/uncracked interpolation
 - Benchmark-gated native LM1 service deflection using the exact governing girder/case moment field plus permanent response, with member-joint jumps, SLS factors and source trace retained
 - EN 1991-2 LM1 lane/tandem/UDL loading including remaining carriageway area
