@@ -353,13 +353,31 @@ def _governing_usage_csv(
     return stream.getvalue()
 
 
-def build_lm1_governing_benchmark_suite(
+def build_lm1_benchmark_suite_for_case_ids(
     search: ProjectNativeLM1GrillageSearchResult,
+    case_ids: tuple[int, ...],
 ) -> LM1GoverningBenchmarkSuite:
-    """Package each unique governing LM1 case for an identical MIDAS/STAAD run."""
+    """Package selected native LM1 cases for identical MIDAS/STAAD runs.
+
+    The usual independent M/V/T governing cases are only one possible selection.
+    Interaction checks may require an additional native traffic case that does not
+    govern any single component by itself.
+    """
+    if not case_ids:
+        raise ValueError("LM1 benchmark case selection cannot be empty.")
+    if len(set(case_ids)) != len(case_ids):
+        raise ValueError("LM1 benchmark case selection contains duplicate case IDs.")
+
     cases_by_id = {item.placement.case_id: item for item in search.cases}
+    missing = sorted(set(case_ids) - set(cases_by_id))
+    if missing:
+        raise ValueError(
+            "LM1 benchmark case IDs are not present in the native search: "
+            + ", ".join(str(value) for value in missing)
+        )
+
     packages: list[LM1GoverningBenchmarkCasePackage] = []
-    for case_id in search.governing_case_ids:
+    for case_id in sorted(case_ids):
         case = cases_by_id[case_id]
         packages.append(
             LM1GoverningBenchmarkCasePackage(
@@ -376,6 +394,16 @@ def build_lm1_governing_benchmark_suite(
             )
         )
     return LM1GoverningBenchmarkSuite(cases=tuple(packages))
+
+
+def build_lm1_governing_benchmark_suite(
+    search: ProjectNativeLM1GrillageSearchResult,
+) -> LM1GoverningBenchmarkSuite:
+    """Package each unique independent M/V/T governing LM1 case."""
+    return build_lm1_benchmark_suite_for_case_ids(
+        search,
+        search.governing_case_ids,
+    )
 
 
 def compare_lm1_external_grillage_case(
