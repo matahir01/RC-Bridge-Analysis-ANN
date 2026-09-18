@@ -71,6 +71,7 @@ class ContinuousDesignEnvelopeStation:
     permanent_shear_kn: float
     moment_combinations: SignedSectionCombinationSet
     shear_combinations: SignedSectionCombinationSet
+    section_side: str | None = None
 
 
 @dataclass(frozen=True)
