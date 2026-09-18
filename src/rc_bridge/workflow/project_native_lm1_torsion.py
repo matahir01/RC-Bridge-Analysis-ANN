@@ -267,6 +267,18 @@ def check_project_native_lm1_matched_shear_torsion(
         points,
         key=lambda item: item.interaction.utilization,
     )
+    required_benchmark_ids = tuple(
+        sorted(
+            set(search.governing_case_ids)
+            | {governing_torsion.case_id, governing_interaction.case_id}
+        )
+    )
+    require_native_lm1_external_benchmark(
+        search,
+        benchmark_suite=benchmark_suite,
+        benchmark_report=benchmark_report,
+        required_case_ids=required_benchmark_ids,
+    )
     return NativeLM1MatchedShearTorsionResult(
         girder_index=girder_index,
         governing_torsion=governing_torsion,
