@@ -79,10 +79,241 @@ class CoverDurabilityResult:
     status: str
 
 
+@dataclass(frozen=True)
+class AnchorageDetailingPolicy:
+    """Explicit bond/detailing coefficients for one anchorage geometry.
+
+    Geometry-specific coefficient products are inputs rather than inferred from a
+    text label. This lets straight, hooked, looped or otherwise project-approved
+    details share the same checked bond-length kernel without inventing clause
+    factors that depend on the actual drawing.
+    """
+
+    description: str = "straight tension anchorage"
+    eta1: float = 1.0
+    eta2: float = 1.0
+    anchorage_alpha_product: float = 1.0
+    lap_alpha_product: float = 1.0
+
+    def __post_init__(self) -> None:
+        if not self.description.strip():
+            raise ValueError("Anchorage policy description cannot be empty.")
+        if min(
+            self.eta1,
+            self.eta2,
+            self.anchorage_alpha_product,
+            self.lap_alpha_product,
+        ) <= 0.0:
+            raise ValueError("Anchorage policy coefficients must be positive.")
+
+
+@dataclass(frozen=True)
+class EndAnchorageCheckResult:
+    end_name: str
+    detail_description: str
+    required_length_mm: float
+    available_length_mm: float
+    reserve_mm: float
+    passes: bool
+
+
+@dataclass(frozen=True)
+class LapSplicePolicy:
+    """Constructability policy for staggering longitudinal tension-bar laps."""
+
+    maximum_spliced_fraction: float
+    minimum_stagger_pitch_mm: float = 0.0
+
+    def __post_init__(self) -> None:
+        if not 0.0 < self.maximum_spliced_fraction <= 1.0:
+            raise ValueError("maximum_spliced_fraction must lie in (0, 1].")
+        if self.minimum_stagger_pitch_mm < 0.0:
+            raise ValueError("minimum_stagger_pitch_mm cannot be negative.")
+
+
+@dataclass(frozen=True)
+class LapSplicePlan:
+    total_bar_count: int
+    group_bar_counts: tuple[int, ...]
+    group_count: int
+    lap_length_mm: float
+    stagger_pitch_mm: float
+    total_splice_zone_length_mm: float
+    maximum_simultaneous_spliced_fraction: float
+    policy: LapSplicePolicy
+    status: str
+
+
+@dataclass(frozen=True)
+class LongitudinalCageFitResult:
+    available_inside_link_width_mm: float
+    available_inside_link_depth_mm: float
+    required_stack_depth_mm: float
+    clear_horizontal_spacing_mm: float
+    clear_vertical_spacing_mm: float
+    horizontal_fit: bool
+    vertical_fit: bool
+    passes: bool
+    status: str
+
+
+@dataclass(frozen=True)
+class ContinuousBarCorePlan:
+    bar_diameter_mm: float
+    bar_count: int
+    provided_area_mm2: float
+    required_continuous_area_mm2: float
+    governing_arrangement_bar_count: int
+    status: str
+
+
 def bar_area_mm2(diameter_mm: float) -> float:
     if diameter_mm <= 0.0:
         raise ValueError("Bar diameter must be positive.")
     return pi * diameter_mm**2 / 4.0
+
+
+def check_end_anchorage_length(
+    *,
+    end_name: str,
+    detail_description: str,
+    required_length_mm: float,
+    available_length_mm: float,
+) -> EndAnchorageCheckResult:
+    if not end_name.strip() or not detail_description.strip():
+        raise ValueError("End anchorage names/descriptions cannot be empty.")
+    if required_length_mm <= 0.0 or available_length_mm < 0.0:
+        raise ValueError("End anchorage lengths are invalid.")
+    reserve = available_length_mm - required_length_mm
+    return EndAnchorageCheckResult(
+        end_name=end_name,
+        detail_description=detail_description,
+        required_length_mm=required_length_mm,
+        available_length_mm=available_length_mm,
+        reserve_mm=reserve,
+        passes=reserve >= -1.0e-9,
+    )
+
+
+def plan_staggered_lap_splices(
+    *,
+    total_bar_count: int,
+    design_lap_length_mm: float,
+    policy: LapSplicePolicy,
+) -> LapSplicePlan:
+    """Split bars into non-overlapping lap groups under an explicit project policy."""
+    if total_bar_count < 1:
+        raise ValueError("Lap planning requires at least one longitudinal bar.")
+    if design_lap_length_mm <= 0.0:
+        raise ValueError("design_lap_length_mm must be positive.")
+
+    max_per_group = max(
+        1,
+        int(total_bar_count * policy.maximum_spliced_fraction + 1.0e-12),
+    )
+    group_count = ceil(total_bar_count / max_per_group)
+    base = total_bar_count // group_count
+    remainder = total_bar_count % group_count
+    groups = tuple(
+        base + (1 if index < remainder else 0)
+        for index in range(group_count)
+    )
+    maximum_fraction = max(groups) / total_bar_count
+    if maximum_fraction > policy.maximum_spliced_fraction + 1.0e-12:
+        raise ValueError(
+            "The requested maximum spliced fraction is too small for the available bar count."
+        )
+
+    stagger_pitch = max(policy.minimum_stagger_pitch_mm, design_lap_length_mm)
+    total_zone = design_lap_length_mm + (group_count - 1) * stagger_pitch
+    return LapSplicePlan(
+        total_bar_count=total_bar_count,
+        group_bar_counts=groups,
+        group_count=group_count,
+        lap_length_mm=design_lap_length_mm,
+        stagger_pitch_mm=stagger_pitch,
+        total_splice_zone_length_mm=total_zone,
+        maximum_simultaneous_spliced_fraction=maximum_fraction,
+        policy=policy,
+        status=(
+            "Lap groups are staggered so their design lap zones do not overlap; "
+            "project-specific stock lengths, couplers, fatigue restrictions and forbidden "
+            "splice regions must still be applied on the drawing."
+        ),
+    )
+
+
+def check_longitudinal_cage_fit(
+    *,
+    arrangement: LongitudinalBarArrangement,
+    section_total_depth_mm: float,
+    cover_mm: float,
+    link_diameter_mm: float,
+) -> LongitudinalCageFitResult:
+    if min(section_total_depth_mm, cover_mm, link_diameter_mm) <= 0.0:
+        raise ValueError("Cage-fit geometry must be positive.")
+    available_depth = section_total_depth_mm - 2.0 * (cover_mm + link_diameter_mm)
+    if available_depth <= 0.0:
+        raise ValueError("Cover and links leave no longitudinal-bar cage depth.")
+    required_depth = (
+        arrangement.layer_count * arrangement.bar_diameter_mm
+        + max(arrangement.layer_count - 1, 0) * arrangement.clear_vertical_spacing_mm
+    )
+    horizontal_fit = arrangement.fits_web
+    vertical_fit = required_depth <= available_depth + 1.0e-9
+    return LongitudinalCageFitResult(
+        available_inside_link_width_mm=(
+            arrangement.bar_count * 0.0
+            + arrangement.clear_horizontal_spacing_mm
+        ),
+        available_inside_link_depth_mm=available_depth,
+        required_stack_depth_mm=required_depth,
+        clear_horizontal_spacing_mm=arrangement.clear_horizontal_spacing_mm,
+        clear_vertical_spacing_mm=arrangement.clear_vertical_spacing_mm,
+        horizontal_fit=horizontal_fit,
+        vertical_fit=vertical_fit,
+        passes=horizontal_fit and vertical_fit,
+        status=(
+            "Longitudinal cage fit checks the selected discrete layers inside cover/links. "
+            "Flange-web transitions, couplers, ducts, vibrator access and local bearing/end "
+            "block congestion still require drawing review."
+        ),
+    )
+
+
+def continuous_bar_core_plan(
+    *,
+    required_continuous_area_mm2: float,
+    bar_diameter_mm: float,
+    governing_arrangement_bar_count: int,
+    minimum_continuous_bar_count: int = 2,
+) -> ContinuousBarCorePlan:
+    if required_continuous_area_mm2 <= 0.0 or bar_diameter_mm <= 0.0:
+        raise ValueError("Continuous-bar core area and diameter must be positive.")
+    if minimum_continuous_bar_count < 2:
+        raise ValueError("At least two continuous longitudinal bars are required.")
+    if governing_arrangement_bar_count < minimum_continuous_bar_count:
+        raise ValueError("Governing arrangement cannot contain fewer than the continuous core.")
+    area = bar_area_mm2(bar_diameter_mm)
+    count = max(
+        minimum_continuous_bar_count,
+        ceil(required_continuous_area_mm2 / area),
+    )
+    if count > governing_arrangement_bar_count:
+        raise ValueError(
+            "The governing selected arrangement cannot provide the required continuous core."
+        )
+    return ContinuousBarCorePlan(
+        bar_diameter_mm=bar_diameter_mm,
+        bar_count=count,
+        provided_area_mm2=count * area,
+        required_continuous_area_mm2=required_continuous_area_mm2,
+        governing_arrangement_bar_count=governing_arrangement_bar_count,
+        status=(
+            "Continuous core bars run through the full simple span; only bars above this "
+            "core are eligible for envelope-driven curtailment."
+        ),
+    )
 
 
 def select_longitudinal_bar_arrangement(

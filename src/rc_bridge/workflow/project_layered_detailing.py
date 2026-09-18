@@ -3,20 +3,29 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from rc_bridge.analysis.physical_sections import (
+    composite_section_total_depth_m,
     girder_bottom_width_m,
     girder_web_width_m,
 )
 from rc_bridge.codes.eurocode.materials import concrete_properties_ec2
 from rc_bridge.core.models import DesignCode, ProjectInput
 from rc_bridge.design.eurocode_detailing import (
+    AnchorageDetailingPolicy,
     AnchorageLapResult,
     BeamDetailingResult,
     CoverDurabilityResult,
+    EndAnchorageCheckResult,
+    LapSplicePlan,
+    LapSplicePolicy,
     LinkArrangement,
     LongitudinalBarArrangement,
+    LongitudinalCageFitResult,
     anchorage_and_lap_lengths_mm,
+    check_end_anchorage_length,
+    check_longitudinal_cage_fit,
     beam_detailing_requirements,
     nominal_cover_check,
+    plan_staggered_lap_splices,
     select_longitudinal_bar_arrangement,
     select_vertical_link_arrangement,
 )
@@ -36,7 +45,11 @@ class ProjectLayeredGirderDetailingResult:
     provided_shear_satisfies_requirement: bool | None
     selected_longitudinal_bars: LongitudinalBarArrangement
     selected_links: LinkArrangement
+    anchorage_policy: AnchorageDetailingPolicy
     anchorage_and_laps: AnchorageLapResult
+    end_anchorage_checks: tuple[EndAnchorageCheckResult, ...]
+    lap_splice_plan: LapSplicePlan | None
+    cage_fit: LongitudinalCageFitResult
     cover_and_durability: CoverDurabilityResult
     status: str
 
@@ -50,6 +63,9 @@ def run_project_layered_girder_detailing(
     cover_deviation_mm: float = 10.0,
     nominal_link_diameter_mm: float = 12.0,
     aggregate_size_mm: float = 20.0,
+    anchorage_policy: AnchorageDetailingPolicy | None = None,
+    available_end_anchorage_mm: tuple[float, float] | None = None,
+    lap_splice_policy: LapSplicePolicy | None = None,
 ) -> ProjectLayeredGirderDetailingResult:
     """Apply current EC2 beam detailing to a physical rectangular/T/I profile."""
     if project.design_code != DesignCode.EUROCODE:
@@ -105,10 +121,48 @@ def run_project_layered_girder_detailing(
         ),
         cover_mm=section.cover_mm,
     )
+    policy = anchorage_policy or AnchorageDetailingPolicy()
     anchorage = anchorage_and_lap_lengths_mm(
         bar_diameter_mm=selected_bars.bar_diameter_mm,
         fyk_mpa=float(project.materials.fyk_mpa),
         fctd_mpa=0.7 * concrete.fctm_mpa / 1.5,
+        eta1=policy.eta1,
+        eta2=policy.eta2,
+        anchorage_alpha_product=policy.anchorage_alpha_product,
+        lap_alpha_product=policy.lap_alpha_product,
+    )
+    end_checks: tuple[EndAnchorageCheckResult, ...] = ()
+    if available_end_anchorage_mm is not None:
+        if len(available_end_anchorage_mm) != 2:
+            raise ValueError("available_end_anchorage_mm must contain left and right lengths.")
+        end_checks = (
+            check_end_anchorage_length(
+                end_name="left",
+                detail_description=policy.description,
+                required_length_mm=anchorage.design_anchorage_length_mm,
+                available_length_mm=float(available_end_anchorage_mm[0]),
+            ),
+            check_end_anchorage_length(
+                end_name="right",
+                detail_description=policy.description,
+                required_length_mm=anchorage.design_anchorage_length_mm,
+                available_length_mm=float(available_end_anchorage_mm[1]),
+            ),
+        )
+    lap_plan = (
+        None
+        if lap_splice_policy is None
+        else plan_staggered_lap_splices(
+            total_bar_count=selected_bars.bar_count,
+            design_lap_length_mm=anchorage.design_lap_length_mm,
+            policy=lap_splice_policy,
+        )
+    )
+    cage_fit = check_longitudinal_cage_fit(
+        arrangement=selected_bars,
+        section_total_depth_mm=composite_section_total_depth_m(project.geometry) * 1000.0,
+        cover_mm=section.cover_mm,
+        link_diameter_mm=selected_links.link_diameter_mm,
     )
     cover = nominal_cover_check(
         bar_diameter_mm=selected_bars.bar_diameter_mm,
@@ -125,10 +179,15 @@ def run_project_layered_girder_detailing(
         provided_shear_satisfies_requirement=provided_shear_ok,
         selected_longitudinal_bars=selected_bars,
         selected_links=selected_links,
+        anchorage_policy=policy,
         anchorage_and_laps=anchorage,
+        end_anchorage_checks=end_checks,
+        lap_splice_plan=lap_plan,
+        cage_fit=cage_fit,
         cover_and_durability=cover,
         status=(
             "EC2 physical-profile quantity checks, discrete longitudinal bars and vertical "
-            "links, straight anchorage/laps and durability cover check completed"
+            "links, explicit anchorage-policy/lap planning, cage-fit and durability cover "
+            "checks completed; end anchorage is checked when available lengths are supplied"
         ),
     )

@@ -1,9 +1,15 @@
 import pytest
 
 from rc_bridge.design.eurocode_detailing import (
+    AnchorageDetailingPolicy,
+    LapSplicePolicy,
     anchorage_and_lap_lengths_mm,
     beam_detailing_requirements,
+    check_end_anchorage_length,
+    check_longitudinal_cage_fit,
+    continuous_bar_core_plan,
     nominal_cover_check,
+    plan_staggered_lap_splices,
     select_longitudinal_bar_arrangement,
     select_vertical_link_arrangement,
 )
@@ -161,3 +167,66 @@ def test_anchorage_lap_and_cover_checks_are_explicit() -> None:
     assert anchorage.design_lap_length_mm >= 15.0 * 32.0
     assert cover.nominal_cover_mm == pytest.approx(50.0)
     assert cover.satisfies_nominal_cover
+
+
+
+def test_drawing_detailing_supports_explicit_anchorage_geometry_and_end_check() -> None:
+    policy = AnchorageDetailingPolicy(
+        description="project-approved hooked end detail",
+        anchorage_alpha_product=0.8,
+        lap_alpha_product=1.0,
+    )
+    anchorage = anchorage_and_lap_lengths_mm(
+        bar_diameter_mm=25.0,
+        fyk_mpa=500.0,
+        fctd_mpa=1.50,
+        anchorage_alpha_product=policy.anchorage_alpha_product,
+        lap_alpha_product=policy.lap_alpha_product,
+    )
+    end = check_end_anchorage_length(
+        end_name="left",
+        detail_description=policy.description,
+        required_length_mm=anchorage.design_anchorage_length_mm,
+        available_length_mm=anchorage.design_anchorage_length_mm + 75.0,
+    )
+    assert end.passes
+    assert end.reserve_mm == pytest.approx(75.0)
+
+
+def test_lap_splice_planner_staggers_groups_without_overlapping_lap_zones() -> None:
+    policy = LapSplicePolicy(
+        maximum_spliced_fraction=0.50,
+        minimum_stagger_pitch_mm=600.0,
+    )
+    plan = plan_staggered_lap_splices(
+        total_bar_count=8,
+        design_lap_length_mm=900.0,
+        policy=policy,
+    )
+    assert plan.group_bar_counts == (4, 4)
+    assert plan.maximum_simultaneous_spliced_fraction == pytest.approx(0.50)
+    assert plan.stagger_pitch_mm == pytest.approx(900.0)
+    assert plan.total_splice_zone_length_mm == pytest.approx(1800.0)
+
+
+def test_longitudinal_cage_fit_and_continuous_core_are_explicit() -> None:
+    arrangement = select_longitudinal_bar_arrangement(
+        required_area_mm2=6200.0,
+        web_width_mm=300.0,
+        cover_mm=50.0,
+        link_diameter_mm=12.0,
+    )
+    fit = check_longitudinal_cage_fit(
+        arrangement=arrangement,
+        section_total_depth_mm=1200.0,
+        cover_mm=50.0,
+        link_diameter_mm=12.0,
+    )
+    core = continuous_bar_core_plan(
+        required_continuous_area_mm2=1200.0,
+        bar_diameter_mm=arrangement.bar_diameter_mm,
+        governing_arrangement_bar_count=arrangement.bar_count,
+    )
+    assert fit.passes
+    assert core.bar_count >= 2
+    assert core.provided_area_mm2 >= 1200.0

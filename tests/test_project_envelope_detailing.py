@@ -113,6 +113,16 @@ def test_envelope_detailing_creates_curtailment_and_link_spacing_zones() -> None
     )
     assert peak_zone.anchored_start_m <= peak_zone.x_start_m
     assert peak_zone.anchored_end_m >= peak_zone.x_end_m
+    assert result.continuous_longitudinal_core.bar_count >= 2
+    assert all(
+        zone.continuous_bar_count == result.continuous_longitudinal_core.bar_count
+        for zone in result.longitudinal_zones
+    )
+    assert all(
+        zone.arrangement.bar_count
+        == zone.continuous_bar_count + zone.additional_curtailable_bar_count
+        for zone in result.longitudinal_zones
+    )
 
 
 def test_native_lm1_detailing_envelope_recovers_stationwise_uls_response() -> None:
