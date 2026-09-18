@@ -17,6 +17,7 @@ from rc_bridge.workflow.project_envelope_detailing import (
     run_project_t_girder_envelope_detailing,
 )
 from rc_bridge.workflow.project_native_fatigue import (
+    NativeFLM3FatigueDesignInput,
     NativeFLM3TGirderFatigueResult,
     ProjectNativeFLM3GrillageSearchResult,
     run_project_native_flm3_grillage_search,
@@ -45,6 +46,7 @@ __all__ = [
     "GrillagePointLoad",
     "GrillageSectionProperties",
     "GrillageVerificationLoadCase",
+    "NativeFLM3FatigueDesignInput",
     "NativeFLM3TGirderFatigueResult",
     "NativeLM1MatchedShearTorsionResult",
     "NativeLM1ProjectTGirderResult",

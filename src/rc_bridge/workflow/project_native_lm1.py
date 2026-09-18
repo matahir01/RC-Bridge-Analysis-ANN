@@ -46,6 +46,12 @@ from rc_bridge.workflow.project_detailing import (
     ProjectTGirderDetailingResult,
     run_project_t_girder_detailing,
 )
+from rc_bridge.workflow.project_native_fatigue import (
+    NativeFLM3FatigueDesignInput,
+    NativeFLM3TGirderFatigueResult,
+    ProjectNativeFLM3GrillageSearchResult,
+    run_project_t_girder_fatigue_from_native_flm3,
+)
 from rc_bridge.workflow.project_envelope_detailing import (
     ProjectTGirderEnvelopeDetailingResult,
     native_lm1_uls_detailing_envelope,
@@ -69,6 +75,7 @@ class NativeLM1ProjectTGirderResult:
     design: EurocodeTGirderWorkflowResult
     detailing: ProjectTGirderDetailingResult
     envelope_detailing: ProjectTGirderEnvelopeDetailingResult | None
+    fatigue: NativeFLM3TGirderFatigueResult | None
     shear_torsion: NativeLM1MatchedShearTorsionResult | None
     traffic_trace: LM1GirderGoverningEnvelope
     benchmark_source: str
@@ -392,6 +399,8 @@ def run_project_t_girder_from_native_lm1(
     crack_kt: float = 0.4,
     cot_theta: float = 2.0,
     torsion_cell: TorsionCellInput | None = None,
+    fatigue_search: ProjectNativeFLM3GrillageSearchResult | None = None,
+    fatigue_design: NativeFLM3FatigueDesignInput | None = None,
 ) -> NativeLM1ProjectTGirderResult:
     """Run simple-span EC2 flexure/shear/crack/deflection design from native LM1 traffic.
 
@@ -402,6 +411,10 @@ def run_project_t_girder_from_native_lm1(
     unrelated independent maxima.
     """
     _require_simple_span_native_design_project(project)
+    if (fatigue_search is None) != (fatigue_design is None):
+        raise ValueError(
+            "fatigue_search and fatigue_design must either both be supplied or both be omitted."
+        )
     expected_total_depth_m = (
         float(project.geometry.girder_depth_m) + project.geometry.physical_deck_depth_m
     )
@@ -483,6 +496,28 @@ def run_project_t_girder_from_native_lm1(
             envelope=detailing_envelope,
             cot_theta=cot_theta,
         )
+    fatigue: NativeFLM3TGirderFatigueResult | None = None
+    if fatigue_search is not None and fatigue_design is not None:
+        fatigue = run_project_t_girder_fatigue_from_native_flm3(
+            project,
+            search=fatigue_search,
+            girder_index=girder_index,
+            section=section,
+            lambda_s=fatigue_design.lambda_s,
+            characteristic_fatigue_strength_mpa=(
+                fatigue_design.characteristic_fatigue_strength_mpa
+            ),
+            additional_permanent=additional_permanent,
+            gamma_s_fat=fatigue_design.gamma_s_fat,
+            phi_fat=fatigue_design.phi_fat,
+            es_mpa=es_mpa,
+            check_concrete=fatigue_design.check_concrete,
+            concrete_gamma_c=fatigue_design.concrete_gamma_c,
+            concrete_alpha_cc=fatigue_design.concrete_alpha_cc,
+            concrete_k1=fatigue_design.concrete_k1,
+            concrete_beta_cc_t0=fatigue_design.concrete_beta_cc_t0,
+        )
+
     shear_torsion: NativeLM1MatchedShearTorsionResult | None = None
     if torsion_cell is not None:
         from rc_bridge.workflow.project_native_lm1_torsion import (
@@ -509,6 +544,7 @@ def run_project_t_girder_from_native_lm1(
         design=design,
         detailing=detailing,
         envelope_detailing=envelope_detailing,
+        fatigue=fatigue,
         shear_torsion=shear_torsion,
         traffic_trace=trace,
         benchmark_source=benchmark_report.source_name,
@@ -518,7 +554,10 @@ def run_project_t_girder_from_native_lm1(
             "governing case IDs are retained, with matched co-located V-T interaction checked "
             "when explicit torsion-cell geometry is supplied. Physical native searches also "
             "produce section-by-section bar-curtailment and link-spacing zones from co-located "
-            "ULS envelopes. Service deflection uses the co-located native LM1 curvature field."
+            "ULS envelopes. When a dedicated native FLM3 search/design input is supplied, the "
+            "same production result also carries longitudinal reinforcement and concrete fatigue "
+            "checks without reusing LM1. Service deflection uses the co-located native LM1 "
+            "curvature field."
         ),
     )
 
@@ -544,6 +583,8 @@ def run_project_all_t_girders_from_native_lm1(
     crack_kt: float = 0.4,
     cot_theta: float = 2.0,
     torsion_cells_by_girder: dict[int, TorsionCellInput] | None = None,
+    fatigue_search: ProjectNativeFLM3GrillageSearchResult | None = None,
+    fatigue_design: NativeFLM3FatigueDesignInput | None = None,
 ) -> ProjectNativeLM1TGirderDesignSuite:
     """Run the benchmark-gated native LM1 Eurocode design path for every girder."""
     _require_simple_span_native_design_project(project)
@@ -590,6 +631,8 @@ def run_project_all_t_girders_from_native_lm1(
             crack_kt=crack_kt,
             cot_theta=cot_theta,
             torsion_cell=torsion_cells.get(girder_index),
+            fatigue_search=fatigue_search,
+            fatigue_design=fatigue_design,
         )
         for girder_index in range(1, girder_count + 1)
     )

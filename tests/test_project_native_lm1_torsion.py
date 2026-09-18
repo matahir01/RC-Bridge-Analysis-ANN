@@ -14,6 +14,10 @@ from rc_bridge.workflow.eurocode_girder import TGirderDesignInput
 from rc_bridge.workflow.grillage_verification_export import GrillageSectionProperties
 from rc_bridge.workflow.lm1_grillage_search import run_project_native_lm1_grillage_search
 from rc_bridge.workflow.project_bridge import SLSCombinationChoice
+from rc_bridge.workflow.project_native_fatigue import (
+    NativeFLM3FatigueDesignInput,
+    run_project_native_flm3_grillage_search,
+)
 from rc_bridge.workflow.project_native_lm1 import run_project_t_girder_from_native_lm1
 from rc_bridge.workflow.project_native_lm1_torsion import (
     check_project_native_lm1_matched_shear_torsion,
@@ -185,3 +189,46 @@ def test_native_lm1_girder_design_can_include_matched_shear_torsion(
     )
     assert result.shear_torsion.governing_interaction.interaction.utilization >= 0.0
     assert "matched co-located V-T interaction" in result.status
+
+
+
+def test_native_lm1_production_result_can_carry_dedicated_flm3_fatigue(
+    native_benchmark_case,
+) -> None:
+    project, search, suite, report = native_benchmark_case
+    fatigue_search = run_project_native_flm3_grillage_search(
+        project,
+        vehicle_centre_y_m=0.0,
+        longitudinal_sections_by_span=(_longitudinal(),),
+        transverse_section=_transverse(),
+        transverse_stations_m=(7.5,),
+        movement_step_m=15.0,
+        section_step_m=5.0,
+    )
+
+    result = run_project_t_girder_from_native_lm1(
+        project,
+        search=search,
+        benchmark_suite=suite,
+        benchmark_report=report,
+        girder_index=4,
+        section=_section(),
+        sls_factors=ServiceabilityPsiFactors(
+            psi1_traffic=0.75,
+            psi2_traffic=0.30,
+        ),
+        crack_combination=SLSCombinationChoice.FREQUENT,
+        deflection_combination=SLSCombinationChoice.QUASI_PERMANENT,
+        crack_limit_mm=0.30,
+        allowable_deflection_mm=60.0,
+        fatigue_search=fatigue_search,
+        fatigue_design=NativeFLM3FatigueDesignInput(
+            lambda_s=0.90,
+            characteristic_fatigue_strength_mpa=162.5,
+        ),
+    )
+
+    assert result.fatigue is not None
+    assert result.fatigue.reference_steel_stress_range_mpa > 0.0
+    assert "FLM3" in result.fatigue.fatigue.source_description
+    assert "without reusing LM1" in result.status

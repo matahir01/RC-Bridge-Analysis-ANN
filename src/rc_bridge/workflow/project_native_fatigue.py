@@ -100,6 +100,34 @@ class NativeFLM3TGirderFatigueResult:
     status: str
 
 
+@dataclass(frozen=True)
+class NativeFLM3FatigueDesignInput:
+    """Project-level EC2 fatigue resistance and damage-equivalence inputs."""
+
+    lambda_s: float
+    characteristic_fatigue_strength_mpa: float
+    gamma_s_fat: float = 1.15
+    phi_fat: float = 1.0
+    check_concrete: bool = True
+    concrete_gamma_c: float = 1.50
+    concrete_alpha_cc: float = 1.0
+    concrete_k1: float = 0.85
+    concrete_beta_cc_t0: float = 1.0
+
+    def __post_init__(self) -> None:
+        if min(
+            self.lambda_s,
+            self.characteristic_fatigue_strength_mpa,
+            self.gamma_s_fat,
+            self.phi_fat,
+            self.concrete_gamma_c,
+            self.concrete_alpha_cc,
+            self.concrete_k1,
+            self.concrete_beta_cc_t0,
+        ) <= 0.0:
+            raise ValueError("Native FLM3 fatigue design factors must be positive.")
+
+
 @dataclass
 class _RangeState:
     minimum_moment_knm: float = 0.0
