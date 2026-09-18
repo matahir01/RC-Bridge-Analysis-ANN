@@ -92,14 +92,30 @@ def eurocode_multilimit_record_from_project(
     shear_utilization = shear.utilization_concrete_only
     g_shear_kn = shear.g_shear_concrete_kn
 
+    section_provided_shear = section.provided_shear_asw_per_s_mm2_per_m
+    if (
+        provided_shear_steel_mm2_per_m is not None
+        and section_provided_shear is not None
+        and abs(provided_shear_steel_mm2_per_m - section_provided_shear) > 1.0e-9
+    ):
+        raise ValueError(
+            "Conflicting provided shear reinforcement was supplied in the section "
+            "and ANN record call."
+        )
+    effective_provided_shear = (
+        provided_shear_steel_mm2_per_m
+        if provided_shear_steel_mm2_per_m is not None
+        else section_provided_shear
+    )
+
     if ved_kn > shear.concrete_resistance_kn:
-        if provided_shear_steel_mm2_per_m is None:
+        if effective_provided_shear is None:
             raise ValueError(
                 "Actual provided A_sw/s is required for ANN shear ground truth when "
                 "V_Ed exceeds V_Rd,c. Required reinforcement alone cannot define g_V."
             )
         provided = provided_vertical_shear_resistance(
-            provided_asw_per_s_mm2_per_m=provided_shear_steel_mm2_per_m,
+            provided_asw_per_s_mm2_per_m=effective_provided_shear,
             web_width_m=section.web_width_m,
             effective_depth_m=section.effective_depth_m,
             fck_mpa=result.materials.fck_mpa,
@@ -125,7 +141,7 @@ def eurocode_multilimit_record_from_project(
         fcu_mpa=None,
         fyk_mpa=result.materials.fyk_mpa,
         longitudinal_steel_area_mm2=section.steel_area_mm2,
-        provided_shear_steel_mm2_per_m=provided_shear_steel_mm2_per_m,
+        provided_shear_steel_mm2_per_m=effective_provided_shear,
         permanent_moment_knm=result.combinations.permanent_characteristic.moment_knm,
         traffic_moment_knm=result.combinations.traffic_characteristic.moment_knm,
         design_moment_knm=design.design_effects.moment_knm,
