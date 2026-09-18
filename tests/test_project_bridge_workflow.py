@@ -294,10 +294,10 @@ def test_profile_self_weight_cannot_be_double_counted_as_explicit_line_load() ->
         )
     )
 
-    with pytest.raises(ValueError, match="already derived"):
+    with pytest.raises(ValueError, match="conflicts with the value derived"):
         internal_girder_characteristic_permanent_effects(
             project,
             additional=UniformPermanentLoadInput(
-                girder_self_weight_kn_m=8.25,
+                girder_self_weight_kn_m=8.00,
             ),
         )
