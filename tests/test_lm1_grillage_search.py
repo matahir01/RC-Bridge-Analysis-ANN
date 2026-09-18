@@ -222,6 +222,13 @@ def test_search_envelopes_moment_shear_and_torsion_independently_for_every_girde
             rel=1.0e-8,
             abs=1.0e-9,
         )
+        assert deflection.position_m == pytest.approx(
+            integrated.maximum_position_m,
+            rel=1.0e-8,
+            abs=1.0e-9,
+        )
+        if deflection.node_id is None:
+            assert deflection.member_id is not None
 
 
 def test_governing_cases_can_be_exported_as_identical_midas_and_staad_models() -> None:

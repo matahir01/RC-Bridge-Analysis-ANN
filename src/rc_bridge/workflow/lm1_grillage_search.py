@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from itertools import permutations, product
+from math import sqrt
 
 from rc_bridge.analysis.grillage_effects import (
     NativeGrillageEnvelopeResult,
@@ -95,8 +96,9 @@ class LM1GirderGoverningDeflection:
     girder_index: int
     value_mm: float
     case_id: int
-    node_id: int
+    node_id: int | None
     position_m: float
+    member_id: int | None = None
 
 
 @dataclass(frozen=True)
@@ -217,6 +219,118 @@ def native_lm1_girder_moment_diagram(
         stations_m=tuple(stations),
         moments_knm=tuple(moments),
     )
+
+
+def _member_vertical_displacement_candidates(
+    case: LM1SearchCaseResult,
+    *,
+    target_y_m: float,
+    coordinate_tolerance_m: float = 1.0e-9,
+) -> tuple[tuple[float, int | None, int | None, float], ...]:
+    """Return nodal and interior Hermite displacement extrema on one girder line.
+
+    The native grillage is an Euler-Bernoulli beam model. Its displacement field
+    inside each member is the cubic Hermite interpolation of solved nodal
+    displacement and local slope. Therefore a governing traffic displacement may
+    occur between grid nodes. Interior extrema are found from the quadratic
+    derivative of that cubic rather than by densifying the grillage mesh.
+    """
+    nodes = {node.node_id: node for node in case.model.nodes}
+    results = {node.node_id: node for node in case.analysis.nodes}
+    candidates: list[tuple[float, int | None, int | None, float]] = []
+
+    quadratic_tolerance = 1.0e-15
+    linear_tolerance = 1.0e-15
+    endpoint_tolerance_m = 1.0e-10
+
+    for beam in case.model.beams:
+        ni = nodes[beam.node_i]
+        nj = nodes[beam.node_j]
+        if (
+            abs(ni.y_m - target_y_m) > coordinate_tolerance_m
+            or abs(nj.y_m - target_y_m) > coordinate_tolerance_m
+            or abs(nj.x_m - ni.x_m) <= coordinate_tolerance_m
+        ):
+            continue
+
+        dx = nj.x_m - ni.x_m
+        length = abs(dx)
+        cx = dx / length
+        ri = results[beam.node_i]
+        rj = results[beam.node_j]
+        wi = ri.vertical_displacement_m
+        wj = rj.vertical_displacement_m
+
+        # For a longitudinal member dy=0. The grillage transformation defines
+        # local Euler-Bernoulli slope as -cx*Ry.
+        slope_i = -cx * ri.rotation_y_rad
+        slope_j = -cx * rj.rotation_y_rad
+
+        candidates.extend(
+            (
+                (abs(wi) * 1000.0, beam.node_i, None, ni.x_m),
+                (abs(wj) * 1000.0, beam.node_j, None, nj.x_m),
+            )
+        )
+
+        # w(s) = wi + slope_i*s + A*s^2 + B*s^3.
+        coefficient_a = (
+            3.0 * (wj - wi) / length**2
+            - (2.0 * slope_i + slope_j) / length
+        )
+        coefficient_b = (
+            2.0 * (wi - wj) / length**3
+            + (slope_i + slope_j) / length**2
+        )
+
+        # dw/ds = slope_i + 2*A*s + 3*B*s^2.
+        qa = 3.0 * coefficient_b
+        qb = 2.0 * coefficient_a
+        qc = slope_i
+        roots: list[float] = []
+        if abs(qa) <= quadratic_tolerance:
+            if abs(qb) > linear_tolerance:
+                roots.append(-qc / qb)
+        else:
+            discriminant = qb**2 - 4.0 * qa * qc
+            if discriminant >= 0.0:
+                root_term = sqrt(max(discriminant, 0.0))
+                roots.extend(
+                    (
+                        (-qb - root_term) / (2.0 * qa),
+                        (-qb + root_term) / (2.0 * qa),
+                    )
+                )
+
+        for local_x in roots:
+            if not (
+                endpoint_tolerance_m
+                < local_x
+                < length - endpoint_tolerance_m
+            ):
+                continue
+            displacement = (
+                wi
+                + slope_i * local_x
+                + coefficient_a * local_x**2
+                + coefficient_b * local_x**3
+            )
+            position_m = ni.x_m + cx * local_x
+            candidates.append(
+                (
+                    abs(displacement) * 1000.0,
+                    None,
+                    beam.member_id,
+                    position_m,
+                )
+            )
+
+    if not candidates:
+        raise RuntimeError(
+            "Native LM1 deflection recovery found no longitudinal members for "
+            f"girder y={target_y_m:.6g} m."
+        )
+    return tuple(candidates)
 
 
 @dataclass(frozen=True)
@@ -627,21 +741,29 @@ def run_project_native_lm1_grillage_search(
                 ),
             )
         )
-        displacement_candidates: list[tuple[float, int, int, float]] = []
+        displacement_candidates: list[
+            tuple[float, int, int | None, int | None, float]
+        ] = []
         for case in cases:
-            nodes = {node.node_id: node for node in case.model.nodes}
-            for node_result in case.analysis.nodes:
-                node = nodes[node_result.node_id]
-                if abs(node.y_m - base.y_m) <= 1.0e-9:
-                    displacement_candidates.append(
-                        (
-                            abs(node_result.vertical_displacement_m) * 1000.0,
-                            case.placement.case_id,
-                            node.node_id,
-                            node.x_m,
-                        )
+            displacement_candidates.extend(
+                (
+                    value_mm,
+                    case.placement.case_id,
+                    node_id,
+                    member_id,
+                    position_m,
+                )
+                for value_mm, node_id, member_id, position_m in (
+                    _member_vertical_displacement_candidates(
+                        case,
+                        target_y_m=base.y_m,
                     )
-        value_mm, case_id, node_id, position_m = max(displacement_candidates)
+                )
+            )
+        value_mm, case_id, node_id, member_id, position_m = max(
+            displacement_candidates,
+            key=lambda item: item[0],
+        )
         governing_deflections.append(
             LM1GirderGoverningDeflection(
                 girder_index=girder_index,
@@ -649,6 +771,7 @@ def run_project_native_lm1_grillage_search(
                 case_id=case_id,
                 node_id=node_id,
                 position_m=position_m,
+                member_id=member_id,
             )
         )
 
