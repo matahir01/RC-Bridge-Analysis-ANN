@@ -218,6 +218,7 @@ def test_longitudinal_cage_fit_and_continuous_core_are_explicit() -> None:
     )
     fit = check_longitudinal_cage_fit(
         arrangement=arrangement,
+        web_width_mm=300.0,
         section_total_depth_mm=1200.0,
         cover_mm=50.0,
         link_diameter_mm=12.0,

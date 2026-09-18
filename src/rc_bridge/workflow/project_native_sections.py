@@ -50,6 +50,10 @@ from rc_bridge.workflow.project_native_lm1 import (
     project_girder_combinations_from_native_lm1,
 )
 from rc_bridge.workflow.project_torsion import TorsionCellInput
+from rc_bridge.workflow.project_torsion_detailing import (
+    ProjectNativeTorsionCageDetailingResult,
+    run_project_native_torsion_cage_detailing,
+)
 
 if TYPE_CHECKING:
     from rc_bridge.workflow.project_native_lm1_torsion import (
@@ -70,6 +74,7 @@ class NativeLM1ProjectLayeredGirderResult:
     envelope_detailing: ProjectLayeredGirderEnvelopeDetailingResult | None
     fatigue: NativeFLM3LayeredGirderFatigueResult | None
     shear_torsion: NativeLM1MatchedShearTorsionResult | None
+    torsion_cage_detailing: ProjectNativeTorsionCageDetailingResult | None
     traffic_trace: LM1GirderGoverningEnvelope
     benchmark_source: str
     status: str
@@ -304,6 +309,15 @@ def run_project_layered_girder_from_native_lm1(
             uls_factors=uls_factors,
             cot_theta=cot_theta,
         )
+    torsion_cage_detailing: ProjectNativeTorsionCageDetailingResult | None = None
+    if shear_torsion is not None and torsion_cell is not None:
+        torsion_cage_detailing = run_project_native_torsion_cage_detailing(
+            project,
+            section=section,
+            torsion_cell=torsion_cell,
+            matched=shear_torsion,
+        )
+
     trace = next(item for item in search.girders if item.girder_index == girder_index)
     return NativeLM1ProjectLayeredGirderResult(
         section_type=project.geometry.section_type,
@@ -315,6 +329,7 @@ def run_project_layered_girder_from_native_lm1(
         envelope_detailing=envelope_detailing,
         fatigue=fatigue,
         shear_torsion=shear_torsion,
+        torsion_cage_detailing=torsion_cage_detailing,
         traffic_trace=trace,
         benchmark_source=benchmark_report.source_name,
         status=(
@@ -323,7 +338,8 @@ def run_project_layered_girder_from_native_lm1(
             "deflection and practical reinforcement quantity/detail selection. Generic "
             "physical native searches also produce envelope-driven bar-curtailment and "
             "link-spacing zones. When an explicit torsion cell is supplied, matched co-located "
-            "V-T interaction is checked. "
+            "V-T interaction and a drawing-level closed-link/perimeter-bar torsion cage "
+            "family are generated. "
             "When a dedicated FLM3 search/design input is supplied, layered fatigue is "
             "evaluated without substituting LM1."
         ),

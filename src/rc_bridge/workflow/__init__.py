@@ -65,6 +65,10 @@ from rc_bridge.workflow.project_native_lm1_torsion import (
     NativeLM1ShearTorsionPoint,
     check_project_native_lm1_matched_shear_torsion,
 )
+from rc_bridge.workflow.project_torsion_detailing import (
+    ProjectNativeTorsionCageDetailingResult,
+    run_project_native_torsion_cage_detailing,
+)
 from rc_bridge.workflow.project_native_sections import (
     NativeLM1ProjectLayeredGirderResult,
     ProjectNativeLM1LayeredGirderDesignSuite,
@@ -103,6 +107,7 @@ __all__ = [
     "ProjectNativeLM1GrillageSearchResult",
     "ProjectNativeLM1LayeredGirderDesignSuite",
     "ProjectNativeLM1TGirderDesignSuite",
+    "ProjectNativeTorsionCageDetailingResult",
     "ProjectTGirderEnvelopeDetailingResult",
     "ULSDetailingEnvelopePoint",
     "build_construction_stage_verification_packages",
@@ -126,6 +131,7 @@ __all__ = [
     "run_project_layered_girder_from_native_lm1",
     "run_project_native_flm3_grillage_search",
     "run_project_native_lm1_grillage_search",
+    "run_project_native_torsion_cage_detailing",
     "run_project_t_girder_envelope_detailing",
     "run_project_t_girder_fatigue_from_native_flm3",
     "run_project_t_girder_from_native_lm1",
