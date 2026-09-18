@@ -141,6 +141,8 @@ def test_external_benchmark_report_passes_exact_round_trip_and_detects_moment_er
         source_name="native round trip",
     )
     assert exact.passes
+    assert exact.member_end_passes
+    assert exact.member_end_comparisons
 
     changed = compare_lm1_external_grillage_case(
         case,
@@ -148,6 +150,7 @@ def test_external_benchmark_report_passes_exact_round_trip_and_detects_moment_er
         source_name="perturbed external solver",
     )
     assert not changed.passes
+    assert not changed.member_end_passes
     assert any(item.endswith(" M") for item in changed.failed_components)
 
 
