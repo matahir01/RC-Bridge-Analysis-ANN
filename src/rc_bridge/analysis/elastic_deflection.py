@@ -1,8 +1,16 @@
 from __future__ import annotations
 
 from collections.abc import Sequence
+from dataclasses import dataclass
 
 from rc_bridge.analysis.loads import PointLoad
+
+
+@dataclass(frozen=True)
+class MomentDiagramDeflectionResult:
+    maximum_absolute_deflection_mm: float
+    maximum_position_m: float
+    station_deflections_mm: tuple[float, ...]
 
 
 def _simply_supported_bending_moment_nmm(
@@ -109,4 +117,64 @@ def simply_supported_midspan_deflection_mm(
         udl_kn_m=udl_kn_m,
         point_loads=point_loads,
         integration_segments=integration_segments,
+    )
+
+
+def simply_supported_deflection_from_moment_diagram_mm(
+    *,
+    stations_m: Sequence[float],
+    moments_knm: Sequence[float],
+    elastic_modulus_mpa: float,
+    second_moment_mm4: float,
+) -> MomentDiagramDeflectionResult:
+    """Integrate a signed piecewise-linear M/EI diagram for a simple span.
+
+    The integration constant is solved from zero vertical displacement at both
+    end supports. The returned maximum is an absolute displacement magnitude;
+    signed station displacements are retained for audit and plotting.
+    """
+    if len(stations_m) != len(moments_knm) or len(stations_m) < 2:
+        raise ValueError("Moment stations and values must have equal length of at least two.")
+    if elastic_modulus_mpa <= 0.0 or second_moment_mm4 <= 0.0:
+        raise ValueError("Elastic modulus and second moment must be positive.")
+    stations_mm = tuple(float(value) * 1000.0 for value in stations_m)
+    if abs(stations_mm[0]) > 1.0e-9:
+        raise ValueError("Moment diagram must begin at the left support x=0.")
+    if any(
+        stations_mm[index + 1] < stations_mm[index]
+        for index in range(len(stations_mm) - 1)
+    ):
+        raise ValueError("Moment stations must be non-decreasing.")
+
+    curvatures = tuple(
+        float(moment) * 1_000_000.0 / (elastic_modulus_mpa * second_moment_mm4)
+        for moment in moments_knm
+    )
+    free_slopes = [0.0]
+    free_deflections = [0.0]
+    for index in range(len(stations_mm) - 1):
+        dx = stations_mm[index + 1] - stations_mm[index]
+        k0 = curvatures[index]
+        k1 = curvatures[index + 1]
+        slope = free_slopes[-1]
+        free_deflections.append(
+            free_deflections[-1]
+            + slope * dx
+            + dx**2 * (k0 / 2.0 + (k1 - k0) / 6.0)
+        )
+        free_slopes.append(slope + dx * (k0 + k1) / 2.0)
+
+    span_mm = stations_mm[-1]
+    if span_mm <= 0.0:
+        raise ValueError("Moment diagram span must be positive.")
+    initial_slope = -free_deflections[-1] / span_mm
+    signed = tuple(
+        value + initial_slope * x
+        for value, x in zip(free_deflections, stations_mm, strict=True)
+    )
+    maximum_index = max(range(len(signed)), key=lambda index: abs(signed[index]))
+    return MomentDiagramDeflectionResult(
+        maximum_absolute_deflection_mm=abs(signed[maximum_index]),
+        maximum_position_m=stations_mm[maximum_index] / 1000.0,
+        station_deflections_mm=signed,
     )

@@ -10,7 +10,12 @@ from rc_bridge.design.eurocode_cracking import (
     crack_width_ec2_t_section,
     cracked_t_section_sls,
 )
-from rc_bridge.design.eurocode_deflection import DeflectionResult, ec2_interpolated_udl_deflection
+from rc_bridge.design.eurocode_deflection import (
+    DeflectionResult,
+    SimpleSpanMomentDiagram,
+    ec2_interpolated_moment_diagram_deflection,
+    ec2_interpolated_udl_deflection,
+)
 from rc_bridge.design.eurocode_serviceability import (
     UncrackedTSectionSLS,
     uncracked_t_section_sls,
@@ -54,6 +59,21 @@ class EurocodeServiceabilityInput:
     creep_coefficient: float = 0.0
     deflection_beta: float = 0.5
     crack_kt: float = 0.4
+    deflection_moment_diagram: SimpleSpanMomentDiagram | None = None
+    deflection_service_moment_knm: float | None = None
+
+    def __post_init__(self) -> None:
+        if self.service_moment_knm < 0.0:
+            raise ValueError("Service moment cannot be negative.")
+        if self.equivalent_full_span_udl_kn_m < 0.0:
+            raise ValueError("Equivalent full-span UDL cannot be negative.")
+        if self.deflection_service_moment_knm is not None:
+            if self.deflection_service_moment_knm < 0.0:
+                raise ValueError("Deflection service moment cannot be negative.")
+            if self.deflection_moment_diagram is None:
+                raise ValueError(
+                    "A separate deflection service moment requires a moment diagram."
+                )
 
 
 @dataclass(frozen=True)
@@ -119,9 +139,10 @@ def run_eurocode_t_girder_case(
     from being hidden inside the design workflow. The bridge-level analysis
     layer is responsible for producing those effects and recording its method.
 
-    The deflection branch currently represents an equivalent simply supported
-    full-span UDL case. General load-pattern deflection will later use numerical
-    curvature integration.
+    When a traceable service moment diagram is supplied, deflection is recovered
+    by signed M/EI curvature integration. The equivalent full-span UDL branch is
+    retained only for compatibility with verification workflows that have not
+    supplied a co-located response field.
     """
     if span_m <= 0:
         raise ValueError("Span must be positive.")
@@ -197,17 +218,36 @@ def run_eurocode_t_girder_case(
             cot_theta=cot_theta,
         )
 
-    deflection = ec2_interpolated_udl_deflection(
-        udl_kn_m=serviceability.equivalent_full_span_udl_kn_m,
-        span_m=span_m,
-        ecm_mpa=materials.ecm_mpa,
-        uncracked_second_moment_mm4=uncracked.second_moment_mm4,
-        cracked_second_moment_mm4=cracked.second_moment_mm4,
-        cracking_moment_knm=uncracked.cracking_moment_knm,
-        allowable_deflection_mm=serviceability.allowable_deflection_mm,
-        creep_coefficient=serviceability.creep_coefficient,
-        beta=serviceability.deflection_beta,
-    )
+    if serviceability.deflection_moment_diagram is not None:
+        deflection_moment = serviceability.deflection_service_moment_knm
+        if deflection_moment is None:
+            deflection_moment = max(
+                abs(value)
+                for value in serviceability.deflection_moment_diagram.moments_knm
+            )
+        deflection = ec2_interpolated_moment_diagram_deflection(
+            diagram=serviceability.deflection_moment_diagram,
+            ecm_mpa=materials.ecm_mpa,
+            uncracked_second_moment_mm4=uncracked.second_moment_mm4,
+            cracked_second_moment_mm4=cracked.second_moment_mm4,
+            service_moment_knm=deflection_moment,
+            cracking_moment_knm=uncracked.cracking_moment_knm,
+            allowable_deflection_mm=serviceability.allowable_deflection_mm,
+            creep_coefficient=serviceability.creep_coefficient,
+            beta=serviceability.deflection_beta,
+        )
+    else:
+        deflection = ec2_interpolated_udl_deflection(
+            udl_kn_m=serviceability.equivalent_full_span_udl_kn_m,
+            span_m=span_m,
+            ecm_mpa=materials.ecm_mpa,
+            uncracked_second_moment_mm4=uncracked.second_moment_mm4,
+            cracked_second_moment_mm4=cracked.second_moment_mm4,
+            cracking_moment_knm=uncracked.cracking_moment_knm,
+            allowable_deflection_mm=serviceability.allowable_deflection_mm,
+            creep_coefficient=serviceability.creep_coefficient,
+            beta=serviceability.deflection_beta,
+        )
 
     return EurocodeTGirderWorkflowResult(
         uls_combination=combination,

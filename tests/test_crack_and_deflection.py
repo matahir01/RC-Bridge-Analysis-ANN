@@ -6,7 +6,9 @@ from rc_bridge.design.eurocode_cracking import (
     cracked_t_section_sls,
 )
 from rc_bridge.design.eurocode_deflection import (
+    SimpleSpanMomentDiagram,
     ec2_interpolated_load_pattern_deflection,
+    ec2_interpolated_moment_diagram_deflection,
     ec2_interpolated_udl_deflection,
     effective_concrete_modulus_mpa,
     simply_supported_full_span_udl_deflection_mm,
@@ -195,3 +197,23 @@ def test_load_pattern_deflection_uses_actual_asymmetric_axle_positions() -> None
         rel=1.0e-7,
     )
     assert left_pattern.interpolated_deflection_mm < central_equivalent.interpolated_deflection_mm
+
+
+def test_ec2_moment_diagram_deflection_carries_traceable_source() -> None:
+    result = ec2_interpolated_moment_diagram_deflection(
+        diagram=SimpleSpanMomentDiagram(
+            stations_m=(0.0, 5.0, 10.0),
+            moments_knm=(0.0, 250.0, 0.0),
+            source="native LM1 case 17 girder 4 plus permanent UDL",
+        ),
+        ecm_mpa=30_000.0,
+        uncracked_second_moment_mm4=8.0e9,
+        cracked_second_moment_mm4=5.0e9,
+        service_moment_knm=250.0,
+        cracking_moment_knm=150.0,
+        allowable_deflection_mm=40.0,
+    )
+
+    assert result.fully_cracked_deflection_mm > result.uncracked_deflection_mm
+    assert result.interpolated_deflection_mm > result.uncracked_deflection_mm
+    assert "native LM1 case 17" in result.status

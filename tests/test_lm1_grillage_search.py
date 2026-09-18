@@ -1,12 +1,29 @@
 import pytest
 
+from rc_bridge.analysis.elastic_deflection import (
+    simply_supported_deflection_from_moment_diagram_mm,
+)
+from rc_bridge.codes.common import LoadEffects
+from rc_bridge.codes.eurocode.combinations import (
+    ServiceabilityPsiFactors,
+    characteristic_sls,
+    frequent_sls,
+    persistent_uls,
+    quasi_permanent_sls,
+)
 from rc_bridge.core.models import BridgeGeometry, ProjectInput, SupportSystem
 from rc_bridge.workflow.grillage_verification_export import GrillageSectionProperties
 from rc_bridge.workflow.lm1_grillage_search import (
     build_governing_lm1_search_verification_packages,
     generate_lm1_search_placements,
+    native_lm1_girder_moment_diagram,
     run_project_native_lm1_grillage_search,
 )
+from rc_bridge.workflow.project_bridge import (
+    ProjectGirderCombinationSet,
+    SLSCombinationChoice,
+)
+from rc_bridge.workflow.project_native_lm1 import native_lm1_service_moment_diagram
 
 
 def _project() -> ProjectInput:
@@ -125,6 +142,7 @@ def test_search_envelopes_moment_shear_and_torsion_independently_for_every_girde
     assert result.tandem_combinations_exhaustive
     assert result.udl_pattern_count == 1
     assert result.search_strategy == "exhaustive-independent-tandem+full-length-udl"
+    assert len(result.deflections) == 8
 
     for girder in result.girders:
         case_effects = [
@@ -149,6 +167,51 @@ def test_search_envelopes_moment_shear_and_torsion_independently_for_every_girde
         assert girder.torsion_knm.case_id in {
             case.placement.case_id for case in result.cases
         }
+        deflection = result.deflection_for_girder(girder.girder_index)
+        assert deflection.value_mm >= 0.0
+        assert deflection.case_id in {case.placement.case_id for case in result.cases}
+
+        diagram = native_lm1_girder_moment_diagram(
+            result,
+            girder_index=girder.girder_index,
+            case_id=deflection.case_id,
+        )
+        assert diagram.stations_m[0] == pytest.approx(0.0)
+        assert diagram.stations_m[-1] == pytest.approx(15.0)
+        case = next(
+            item for item in result.cases if item.placement.case_id == deflection.case_id
+        )
+        beam = next(
+            item
+            for item in case.model.beams
+            if abs(
+                next(node for node in case.model.nodes if node.node_id == item.node_i).y_m
+                - girder.y_m
+            )
+            <= 1.0e-9
+            and abs(
+                next(node for node in case.model.nodes if node.node_id == item.node_j).y_m
+                - girder.y_m
+            )
+            <= 1.0e-9
+        )
+        material = next(
+            item for item in case.model.materials if item.material_id == beam.material_id
+        )
+        section = next(
+            item for item in case.model.sections if item.section_id == beam.section_id
+        )
+        integrated = simply_supported_deflection_from_moment_diagram_mm(
+            stations_m=diagram.stations_m,
+            moments_knm=diagram.moments_knm,
+            elastic_modulus_mpa=material.elastic_modulus_kn_m2 / 1000.0,
+            second_moment_mm4=section.iy_m4 * 1.0e12,
+        )
+        assert integrated.maximum_absolute_deflection_mm == pytest.approx(
+            deflection.value_mm,
+            rel=1.0e-8,
+            abs=1.0e-9,
+        )
 
 
 def test_governing_cases_can_be_exported_as_identical_midas_and_staad_models() -> None:
@@ -166,3 +229,60 @@ def test_governing_cases_can_be_exported_as_identical_midas_and_staad_models() -
     for package in packages.values():
         assert "*NODE" in package.midas_mct
         assert "MEMBER INCIDENCES" in package.staad_std
+
+
+def test_native_service_deflection_combines_permanent_and_colocated_traffic_fields() -> None:
+    result = run_project_native_lm1_grillage_search(
+        _project(),
+        longitudinal_sections_by_span=(_longitudinal(),),
+        transverse_section=_transverse(),
+        transverse_stations_m=(7.5,),
+        longitudinal_step_m=15.0,
+    )
+    girder = result.girders[3]
+    permanent = LoadEffects(moment_knm=300.0, shear_kn=80.0)
+    traffic = LoadEffects(
+        moment_knm=girder.moment_knm.value,
+        shear_kn=girder.shear_kn.value,
+        torsion_knm=girder.torsion_knm.value,
+    )
+    factors = ServiceabilityPsiFactors(psi1_traffic=0.75, psi2_traffic=0.30)
+    combinations = ProjectGirderCombinationSet(
+        girder_index=4,
+        permanent_characteristic=permanent,
+        traffic_characteristic=traffic,
+        persistent_uls=persistent_uls(permanent, traffic),
+        characteristic_sls=characteristic_sls(permanent, traffic),
+        frequent_sls=frequent_sls(permanent, traffic, factors),
+        quasi_permanent_sls=quasi_permanent_sls(permanent, traffic, factors),
+        traffic_distribution_method="native test",
+    )
+
+    traced = native_lm1_service_moment_diagram(
+        result,
+        combinations=combinations,
+        deflection_combination=SLSCombinationChoice.QUASI_PERMANENT,
+        span_m=15.0,
+        benchmark_source="software-test fixture",
+    )
+
+    assert traced is not None
+    diagram, service_moment = traced
+    governing = result.deflection_for_girder(4)
+    traffic_diagram = native_lm1_girder_moment_diagram(
+        result,
+        girder_index=4,
+        case_id=governing.case_id,
+    )
+    for x_m, actual, traffic_moment in zip(
+        diagram.stations_m,
+        diagram.moments_knm,
+        traffic_diagram.moments_knm,
+        strict=True,
+    ):
+        expected = 4.0 * 300.0 * x_m * (15.0 - x_m) / 15.0**2
+        expected += 0.30 * traffic_moment
+        assert actual == pytest.approx(expected)
+    assert service_moment == pytest.approx(max(abs(value) for value in diagram.moments_knm))
+    assert f"case {governing.case_id}" in diagram.source
+    assert "software-test fixture" in diagram.source

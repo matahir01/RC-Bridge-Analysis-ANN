@@ -1,6 +1,9 @@
 import pytest
 
-from rc_bridge.analysis.elastic_deflection import simply_supported_midspan_deflection_mm
+from rc_bridge.analysis.elastic_deflection import (
+    simply_supported_deflection_from_moment_diagram_mm,
+    simply_supported_midspan_deflection_mm,
+)
 from rc_bridge.analysis.loads import PointLoad
 
 
@@ -62,3 +65,18 @@ def test_deflection_integrator_requires_even_segment_count() -> None:
             udl_kn_m=20.0,
             integration_segments=999,
         )
+
+
+def test_moment_diagram_curvature_integration_matches_central_point_load() -> None:
+    result = simply_supported_deflection_from_moment_diagram_mm(
+        stations_m=(0.0, 5.0, 10.0),
+        moments_knm=(0.0, 250.0, 0.0),
+        elastic_modulus_mpa=30_000.0,
+        second_moment_mm4=8.0e9,
+    )
+
+    expected = 100_000.0 * 10_000.0**3 / (48.0 * 30_000.0 * 8.0e9)
+    assert result.maximum_absolute_deflection_mm == pytest.approx(expected)
+    assert result.maximum_position_m == pytest.approx(5.0)
+    assert result.station_deflections_mm[0] == pytest.approx(0.0)
+    assert result.station_deflections_mm[-1] == pytest.approx(0.0)

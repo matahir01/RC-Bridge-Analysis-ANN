@@ -86,6 +86,25 @@ class LM1GirderGoverningEnvelope:
 
 
 @dataclass(frozen=True)
+class LM1GirderGoverningDeflection:
+    """Governing co-located native traffic displacement for one girder line."""
+
+    girder_index: int
+    value_mm: float
+    case_id: int
+    node_id: int
+    position_m: float
+
+
+@dataclass(frozen=True)
+class NativeGirderMomentDiagram:
+    girder_index: int
+    case_id: int
+    stations_m: tuple[float, ...]
+    moments_knm: tuple[float, ...]
+
+
+@dataclass(frozen=True)
 class ProjectNativeLM1GrillageSearchResult:
     """Discrete LM1 placement search across one native grillage definition.
 
@@ -107,6 +126,7 @@ class ProjectNativeLM1GrillageSearchResult:
     tandem_combinations_exhaustive: bool
     theoretical_tandem_combinations_per_transverse_layout: int
     udl_pattern_count: int
+    deflections: tuple[LM1GirderGoverningDeflection, ...] = ()
 
     @property
     def evaluated_case_count(self) -> int:
@@ -119,7 +139,81 @@ class ProjectNativeLM1GrillageSearchResult:
             for girder in self.girders
             for component in (girder.moment_knm, girder.shear_kn, girder.torsion_knm)
         }
+        case_ids.update(item.case_id for item in self.deflections)
         return tuple(sorted(case_ids))
+
+    def deflection_for_girder(self, girder_index: int) -> LM1GirderGoverningDeflection:
+        match = next(
+            (item for item in self.deflections if item.girder_index == girder_index),
+            None,
+        )
+        if match is None:
+            raise RuntimeError(
+                "Native LM1 search does not contain a co-located deflection trace for "
+                f"girder {girder_index}."
+            )
+        return match
+
+
+def native_lm1_girder_moment_diagram(
+    result: ProjectNativeLM1GrillageSearchResult,
+    *,
+    girder_index: int,
+    case_id: int,
+    coordinate_tolerance_m: float = 1.0e-9,
+) -> NativeGirderMomentDiagram:
+    """Recover a signed longitudinal moment field from one exact native case.
+
+    Native longitudinal members are load-free between generated grid stations.
+    Their section moments are therefore linear. The solver reports member-end
+    actions, so the internal section convention is ``-M_i`` at the member start
+    and ``+M_j`` at its end. Both member values are retained at an intersection:
+    a transverse-member couple can produce a real zero-length moment jump, which
+    contributes no area to curvature integration but must not be averaged away.
+    """
+    if coordinate_tolerance_m <= 0.0:
+        raise ValueError("Coordinate tolerance must be positive.")
+    if not 1 <= girder_index <= len(result.girders):
+        raise IndexError("girder_index is outside the native LM1 result.")
+    case = next(
+        (item for item in result.cases if item.placement.case_id == case_id),
+        None,
+    )
+    if case is None or not hasattr(case, "model") or not hasattr(case, "analysis"):
+        raise RuntimeError("Native LM1 moment recovery requires a solved physical search case.")
+    target_y = result.girders[girder_index - 1].y_m
+    nodes = {node.node_id: node for node in case.model.nodes}
+    member_results = {item.member_id: item for item in case.analysis.members}
+    members = []
+    for beam in case.model.beams:
+        ni = nodes[beam.node_i]
+        nj = nodes[beam.node_j]
+        if (
+            abs(ni.y_m - target_y) <= 1.0e-9
+            and abs(nj.y_m - target_y) <= 1.0e-9
+            and nj.x_m > ni.x_m + 1.0e-9
+        ):
+            members.append((ni.x_m, nj.x_m, beam.member_id))
+    members.sort()
+    if not members:
+        raise RuntimeError("No longitudinal members were found for the requested girder.")
+
+    stations: list[float] = []
+    moments: list[float] = []
+    for x_i, x_j, member_id in members:
+        end = member_results[member_id]
+        start_moment = -end.i_vertical_bending_moment_knm
+        end_moment = end.j_vertical_bending_moment_knm
+        if stations and abs(x_i - stations[-1]) > coordinate_tolerance_m:
+            raise RuntimeError("Longitudinal girder members are not contiguous.")
+        stations.extend((x_i, x_j))
+        moments.extend((start_moment, end_moment))
+    return NativeGirderMomentDiagram(
+        girder_index=girder_index,
+        case_id=case_id,
+        stations_m=tuple(stations),
+        moments_knm=tuple(moments),
+    )
 
 
 @dataclass(frozen=True)
@@ -482,6 +576,7 @@ def run_project_native_lm1_grillage_search(
 
     girder_count = cases[0].girder_envelope.envelope.girder_count
     governing: list[LM1GirderGoverningEnvelope] = []
+    governing_deflections: list[LM1GirderGoverningDeflection] = []
     for girder_index in range(1, girder_count + 1):
         details = [case.girder_envelope.details[girder_index - 1] for case in cases]
         moment_case_index = max(
@@ -521,6 +616,30 @@ def run_project_native_lm1_grillage_search(
                 ),
             )
         )
+        displacement_candidates: list[tuple[float, int, int, float]] = []
+        for case in cases:
+            nodes = {node.node_id: node for node in case.model.nodes}
+            for node_result in case.analysis.nodes:
+                node = nodes[node_result.node_id]
+                if abs(node.y_m - base.y_m) <= 1.0e-9:
+                    displacement_candidates.append(
+                        (
+                            abs(node_result.vertical_displacement_m) * 1000.0,
+                            case.placement.case_id,
+                            node.node_id,
+                            node.x_m,
+                        )
+                    )
+        value_mm, case_id, node_id, position_m = max(displacement_candidates)
+        governing_deflections.append(
+            LM1GirderGoverningDeflection(
+                girder_index=girder_index,
+                value_mm=value_mm,
+                case_id=case_id,
+                node_id=node_id,
+                position_m=position_m,
+            )
+        )
 
     return ProjectNativeLM1GrillageSearchResult(
         cases=tuple(cases),
@@ -532,6 +651,7 @@ def run_project_native_lm1_grillage_search(
             plan.theoretical_tandem_combinations_per_transverse_layout
         ),
         udl_pattern_count=plan.udl_pattern_count,
+        deflections=tuple(governing_deflections),
     )
 
 

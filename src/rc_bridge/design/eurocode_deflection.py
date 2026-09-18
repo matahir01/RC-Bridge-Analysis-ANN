@@ -3,7 +3,10 @@ from __future__ import annotations
 from collections.abc import Sequence
 from dataclasses import dataclass
 
-from rc_bridge.analysis.elastic_deflection import simply_supported_deflection_at_x_mm
+from rc_bridge.analysis.elastic_deflection import (
+    simply_supported_deflection_at_x_mm,
+    simply_supported_deflection_from_moment_diagram_mm,
+)
 from rc_bridge.analysis.loads import PointLoad
 from rc_bridge.design.eurocode_serviceability import (
     ec2_tension_stiffening_zeta,
@@ -22,6 +25,19 @@ class DeflectionResult:
     zeta: float
     effective_concrete_modulus_mpa: float
     status: str
+
+
+@dataclass(frozen=True)
+class SimpleSpanMomentDiagram:
+    stations_m: tuple[float, ...]
+    moments_knm: tuple[float, ...]
+    source: str
+
+    def __post_init__(self) -> None:
+        if len(self.stations_m) != len(self.moments_knm) or len(self.stations_m) < 2:
+            raise ValueError("Moment diagram stations and values are inconsistent.")
+        if not self.source.strip():
+            raise ValueError("Moment diagram source is required for traceability.")
 
 
 def effective_concrete_modulus_mpa(ecm_mpa: float, creep_coefficient: float = 0.0) -> float:
@@ -219,5 +235,63 @@ def ec2_interpolated_load_pattern_deflection(
             "EC2 two-state load-pattern deflection by virtual-work curvature integration; "
             f"maximum searched along span (state-I x={uncracked_x:.3f} m, "
             f"state-II x={cracked_x:.3f} m)"
+        ),
+    )
+
+
+def ec2_interpolated_moment_diagram_deflection(
+    *,
+    diagram: SimpleSpanMomentDiagram,
+    ecm_mpa: float,
+    uncracked_second_moment_mm4: float,
+    cracked_second_moment_mm4: float,
+    service_moment_knm: float,
+    cracking_moment_knm: float,
+    allowable_deflection_mm: float,
+    creep_coefficient: float = 0.0,
+    beta: float = 0.5,
+) -> DeflectionResult:
+    """EC2 two-state deflection from a traceable signed bending-moment field."""
+    if service_moment_knm < 0.0:
+        raise ValueError("Service moment cannot be negative.")
+    if allowable_deflection_mm <= 0.0:
+        raise ValueError("Allowable deflection must be positive.")
+    e_eff = effective_concrete_modulus_mpa(ecm_mpa, creep_coefficient)
+    zeta = ec2_tension_stiffening_zeta(
+        service_moment_knm,
+        cracking_moment_knm,
+        beta=beta,
+    )
+    uncracked = simply_supported_deflection_from_moment_diagram_mm(
+        stations_m=diagram.stations_m,
+        moments_knm=diagram.moments_knm,
+        elastic_modulus_mpa=e_eff,
+        second_moment_mm4=uncracked_second_moment_mm4,
+    )
+    cracked = simply_supported_deflection_from_moment_diagram_mm(
+        stations_m=diagram.stations_m,
+        moments_knm=diagram.moments_knm,
+        elastic_modulus_mpa=e_eff,
+        second_moment_mm4=cracked_second_moment_mm4,
+    )
+    interpolated = interpolate_service_deformation(
+        uncracked.maximum_absolute_deflection_mm,
+        cracked.maximum_absolute_deflection_mm,
+        zeta,
+    )
+    utilization = interpolated / allowable_deflection_mm
+    return DeflectionResult(
+        uncracked_deflection_mm=uncracked.maximum_absolute_deflection_mm,
+        fully_cracked_deflection_mm=cracked.maximum_absolute_deflection_mm,
+        interpolated_deflection_mm=interpolated,
+        allowable_deflection_mm=allowable_deflection_mm,
+        utilization=utilization,
+        g_deflection_mm=allowable_deflection_mm - interpolated,
+        zeta=zeta,
+        effective_concrete_modulus_mpa=e_eff,
+        status=(
+            "EC2 two-state deflection from traceable signed M/EI curvature integration; "
+            f"source={diagram.source}; state-I maximum x={uncracked.maximum_position_m:.3f} m; "
+            f"state-II maximum x={cracked.maximum_position_m:.3f} m"
         ),
     )

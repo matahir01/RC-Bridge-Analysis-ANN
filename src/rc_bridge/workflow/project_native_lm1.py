@@ -18,6 +18,7 @@ from rc_bridge.codes.eurocode.combinations import (
     quasi_permanent_sls,
 )
 from rc_bridge.core.models import DesignCode, ProjectInput, SupportSystem
+from rc_bridge.design.eurocode_deflection import SimpleSpanMomentDiagram
 from rc_bridge.research.lm1_benchmark_runner import LM1ExternalBenchmarkSuiteReport
 from rc_bridge.research.lm1_grillage_benchmark import LM1GoverningBenchmarkSuite
 from rc_bridge.workflow.eurocode_girder import (
@@ -29,6 +30,7 @@ from rc_bridge.workflow.eurocode_girder import (
 from rc_bridge.workflow.lm1_grillage_search import (
     LM1GirderGoverningEnvelope,
     ProjectNativeLM1GrillageSearchResult,
+    native_lm1_girder_moment_diagram,
 )
 from rc_bridge.workflow.project_bridge import (
     ProjectGirderCombinationSet,
@@ -282,6 +284,80 @@ def project_girder_combinations_from_native_lm1(
     )
 
 
+def native_lm1_service_moment_diagram(
+    search: ProjectNativeLM1GrillageSearchResult,
+    *,
+    combinations: ProjectGirderCombinationSet,
+    deflection_combination: SLSCombinationChoice,
+    span_m: float,
+    benchmark_source: str,
+) -> tuple[SimpleSpanMomentDiagram, float] | None:
+    """Combine Gk with one co-located native LM1 deflection-case moment field.
+
+    Current permanent actions are uniform along the simple span, so their exact
+    parabolic response is reconstructed from the calculated Gk midspan moment.
+    The traffic field comes directly from the native case that governs vertical
+    displacement for this girder. Member-end jumps at transverse intersections
+    are retained as duplicate stations and integrate over zero length.
+
+    Synthetic/legacy search fixtures without native displacement traces return
+    ``None`` and remain on the explicitly labelled compatibility adapter.
+    """
+    if span_m <= 0.0:
+        raise ValueError("span_m must be positive.")
+    if not search.deflections:
+        return None
+
+    girder_index = combinations.girder_index
+    governing = search.deflection_for_girder(girder_index)
+    traffic = native_lm1_girder_moment_diagram(
+        search,
+        girder_index=girder_index,
+        case_id=governing.case_id,
+    )
+    if abs(traffic.stations_m[-1] - span_m) > 1.0e-9:
+        raise RuntimeError("Native LM1 moment diagram does not match the project span.")
+
+    if deflection_combination == SLSCombinationChoice.CHARACTERISTIC:
+        selected = combinations.characteristic_sls
+    elif deflection_combination == SLSCombinationChoice.FREQUENT:
+        selected = combinations.frequent_sls
+    elif deflection_combination == SLSCombinationChoice.QUASI_PERMANENT:
+        selected = combinations.quasi_permanent_sls
+    else:
+        raise ValueError(
+            f"Unsupported SLS deflection combination: {deflection_combination}"
+        )
+    permanent_factor = selected.factors["G"]
+    traffic_factor = selected.factors["Q_traffic"]
+    permanent_midspan_moment = combinations.permanent_characteristic.moment_knm
+    combined = tuple(
+        permanent_factor
+        * 4.0
+        * permanent_midspan_moment
+        * x_m
+        * (span_m - x_m)
+        / span_m**2
+        + traffic_factor * traffic_moment
+        for x_m, traffic_moment in zip(
+            traffic.stations_m,
+            traffic.moments_knm,
+            strict=True,
+        )
+    )
+    diagram = SimpleSpanMomentDiagram(
+        stations_m=traffic.stations_m,
+        moments_knm=combined,
+        source=(
+            f"native LM1 case {governing.case_id}, girder {girder_index}, "
+            f"governing node {governing.node_id} at x={governing.position_m:.6g} m; "
+            f"G={permanent_factor:.6g}, Q_traffic={traffic_factor:.6g}; "
+            f"external benchmark={benchmark_source}"
+        ),
+    )
+    return diagram, max(abs(value) for value in combined)
+
+
 def run_project_t_girder_from_native_lm1(
     project: ProjectInput,
     *,
@@ -338,6 +414,13 @@ def run_project_t_girder_from_native_lm1(
         fct_eff_mpa=fct_eff_mpa,
         es_mpa=es_mpa,
     )
+    deflection_trace = native_lm1_service_moment_diagram(
+        search,
+        combinations=combinations,
+        deflection_combination=deflection_combination,
+        span_m=span_m,
+        benchmark_source=benchmark_report.source_name,
+    )
     serviceability = project_serviceability_from_combinations(
         combinations,
         span_m=span_m,
@@ -348,6 +431,12 @@ def run_project_t_girder_from_native_lm1(
         creep_coefficient=creep_coefficient,
         deflection_beta=deflection_beta,
         crack_kt=crack_kt,
+        deflection_moment_diagram=(
+            None if deflection_trace is None else deflection_trace[0]
+        ),
+        deflection_service_moment_knm=(
+            None if deflection_trace is None else deflection_trace[1]
+        ),
     )
     design = run_eurocode_t_girder_case(
         girder_index=girder_index,
@@ -397,7 +486,8 @@ def run_project_t_girder_from_native_lm1(
             "Simple-span Eurocode girder design and current reinforcement detailing driven by "
             "externally benchmarked native LM1 per-girder traffic envelopes; independent M/V/T "
             "governing case IDs are retained, with matched co-located V-T interaction checked "
-            "when explicit torsion-cell geometry is supplied."
+            "when explicit torsion-cell geometry is supplied. Service deflection uses the "
+            "co-located native LM1 curvature field when the physical search trace is present."
         ),
     )
 

@@ -29,6 +29,7 @@ from rc_bridge.core.models import (
     ProjectInput,
     SupportSystem,
 )
+from rc_bridge.design.eurocode_deflection import SimpleSpanMomentDiagram
 from rc_bridge.workflow.eurocode_bridge_traffic import (
     BridgeLM1TrafficResult,
     run_simple_span_lm1_bridge_traffic,
@@ -480,13 +481,14 @@ def project_serviceability_from_combinations(
     creep_coefficient: float = 0.0,
     deflection_beta: float = 0.5,
     crack_kt: float = 0.4,
+    deflection_moment_diagram: SimpleSpanMomentDiagram | None = None,
+    deflection_service_moment_knm: float | None = None,
 ) -> ProjectServiceabilitySelection:
-    """Build current SLS inputs from explicitly selected EN 1990 combinations.
+    """Build SLS inputs from explicitly selected EN 1990 combinations.
 
-    Deflection still uses the current solver's equivalent full-span UDL model.
-    The equivalent line load is back-calculated from the selected SLS maximum
-    sagging moment as w_eq = 8M/L^2. This approximation remains visible in the
-    returned method label and will later be replaced by curvature integration.
+    A supplied co-located moment field drives signed curvature integration. If
+    no field is available, the compatibility route back-calculates a full-span
+    line load as w_eq = 8M/L^2 and labels that approximation explicitly.
     """
     if span_m <= 0.0:
         raise ValueError("span_m must be positive.")
@@ -506,9 +508,16 @@ def project_serviceability_from_combinations(
             creep_coefficient=creep_coefficient,
             deflection_beta=deflection_beta,
             crack_kt=crack_kt,
+            deflection_moment_diagram=deflection_moment_diagram,
+            deflection_service_moment_knm=deflection_service_moment_knm,
         ),
         crack_combination_name=crack_case.name,
         deflection_combination_name=deflection_case.name,
+        deflection_method=(
+            "signed M/EI curvature integration of co-located permanent and traffic response"
+            if deflection_moment_diagram is not None
+            else "equivalent full-span UDL from selected SLS maximum moment"
+        ),
     )
 
 
