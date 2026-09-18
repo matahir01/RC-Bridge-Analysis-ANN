@@ -282,3 +282,67 @@ def test_native_lm1_design_checks_explicit_provided_shear_links() -> None:
     assert result.detailing.provided_shear_asw_per_s_mm2_per_m == pytest.approx(provided)
     required = result.detailing.detailing.shear.governing_required_asw_per_s_mm2_per_m
     assert result.detailing.provided_shear_satisfies_requirement is (provided >= required)
+
+
+
+def test_native_lm1_gate_can_require_supplemental_interaction_case() -> None:
+    base = _search()
+    extra_case = _Case(4, "interaction-only")
+    search = ProjectNativeLM1GrillageSearchResult(
+        cases=base.cases + (extra_case,),
+        girders=base.girders,
+        longitudinal_step_m=base.longitudinal_step_m,
+        search_strategy=base.search_strategy,
+        tandem_combinations_exhaustive=base.tandem_combinations_exhaustive,
+        theoretical_tandem_combinations_per_transverse_layout=(
+            base.theoretical_tandem_combinations_per_transverse_layout
+        ),
+        udl_pattern_count=base.udl_pattern_count,
+    )
+    base_suite = LM1GoverningBenchmarkSuite(
+        cases=tuple(_SuiteCase(case) for case in base.cases)
+    )
+    base_report = LM1ExternalBenchmarkSuiteReport(
+        source_name="MIDAS Civil",
+        case_reports=tuple(
+            LM1ExternalGrillageBenchmarkReport(
+                case_id=case_id,
+                source_name="MIDAS Civil",
+                comparisons=(type("Comparison", (), {"passes": True})(),),
+            )
+            for case_id in base.governing_case_ids
+        ),
+        missing_case_ids=(),
+        unexpected_case_ids=(),
+    )
+
+    with pytest.raises(RuntimeError, match="required external benchmark cases are missing: 4"):
+        require_native_lm1_external_benchmark(
+            search,
+            benchmark_suite=base_suite,
+            benchmark_report=base_report,
+            required_case_ids=(1, 2, 3, 4),
+        )
+
+    expanded_suite = LM1GoverningBenchmarkSuite(
+        cases=base_suite.cases + (_SuiteCase(extra_case),)
+    )
+    expanded_report = LM1ExternalBenchmarkSuiteReport(
+        source_name="MIDAS Civil",
+        case_reports=base_report.case_reports
+        + (
+            LM1ExternalGrillageBenchmarkReport(
+                case_id=4,
+                source_name="MIDAS Civil",
+                comparisons=(type("Comparison", (), {"passes": True})(),),
+            ),
+        ),
+        missing_case_ids=(),
+        unexpected_case_ids=(),
+    )
+    require_native_lm1_external_benchmark(
+        search,
+        benchmark_suite=expanded_suite,
+        benchmark_report=expanded_report,
+        required_case_ids=(1, 2, 3, 4),
+    )
