@@ -227,12 +227,15 @@ def girder_characteristic_permanent_effects(
     deck_kn_m = girder_deck_self_weight_kn_m(project, girder_index=girder_index)
     extra = additional or UniformPermanentLoadInput()
     profile_self_weight_kn_m = physical_girder_self_weight_kn_m(project)
-    if profile_self_weight_kn_m is not None and extra.girder_self_weight_kn_m > 0.0:
-        if abs(extra.girder_self_weight_kn_m - profile_self_weight_kn_m) > 1.0e-9:
-            raise ValueError(
-                "Explicit girder_self_weight_kn_m conflicts with the value derived "
-                "from the physical girder profile."
-            )
+    if (
+        profile_self_weight_kn_m is not None
+        and extra.girder_self_weight_kn_m > 0.0
+        and abs(extra.girder_self_weight_kn_m - profile_self_weight_kn_m) > 1.0e-9
+    ):
+        raise ValueError(
+            "Explicit girder_self_weight_kn_m conflicts with the value derived "
+            "from the physical girder profile."
+        )
     girder_self_weight_kn_m = (
         profile_self_weight_kn_m
         if profile_self_weight_kn_m is not None
