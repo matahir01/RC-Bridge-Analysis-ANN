@@ -1,8 +1,10 @@
 from rc_bridge.workflow.grillage_verification_export import (
     GrillagePointLoad,
     GrillageSectionProperties,
+    GrillageStiffnessModifiers,
     GrillageVerificationLoadCase,
     build_project_grillage_verification_model,
+    service_grillage_stiffness_modifiers,
 )
 from rc_bridge.workflow.lm1_grillage_search import (
     ProjectNativeLM1GrillageSearchResult,
@@ -45,6 +47,7 @@ from rc_bridge.workflow.verification_export import (
 __all__ = [
     "GrillagePointLoad",
     "GrillageSectionProperties",
+    "GrillageStiffnessModifiers",
     "GrillageVerificationLoadCase",
     "NativeFLM3FatigueDesignInput",
     "NativeFLM3TGirderFatigueResult",
@@ -72,4 +75,5 @@ __all__ = [
     "run_project_t_girder_envelope_detailing",
     "run_project_t_girder_fatigue_from_native_flm3",
     "run_project_t_girder_from_native_lm1",
+    "service_grillage_stiffness_modifiers",
 ]

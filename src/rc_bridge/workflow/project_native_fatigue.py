@@ -16,6 +16,7 @@ from rc_bridge.workflow.eurocode_girder import TGirderDesignInput
 from rc_bridge.workflow.grillage_verification_export import (
     GrillagePointLoad,
     GrillageSectionProperties,
+    GrillageStiffnessModifiers,
     GrillageVerificationLoadCase,
     build_project_grillage_verification_model,
 )
@@ -252,6 +253,7 @@ def run_project_native_flm3_grillage_search(
     longitudinal_sections_by_span: tuple[GrillageSectionProperties, ...] | None = None,
     transverse_section: GrillageSectionProperties | None = None,
     axle_load_factor: float = 1.0,
+    stiffness_modifiers: GrillageStiffnessModifiers | None = None,
     movement_step_m: float = 0.5,
     section_step_m: float = 0.5,
     name: str = "EN 1991-2 FLM3 native grillage search",
@@ -338,6 +340,7 @@ def run_project_native_flm3_grillage_search(
             transverse_section=transverse_section,
             transverse_stations_m=transverse_stations_m,
             load_case=load_case,
+            stiffness_modifiers=stiffness_modifiers,
         )
         analysis = solve_vertical_grillage(model)
         cases.append(

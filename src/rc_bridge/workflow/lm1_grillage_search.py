@@ -19,7 +19,10 @@ from rc_bridge.export.model_verification_package import (
     build_model_verification_export_package,
 )
 from rc_bridge.export.verification_model import VerificationModel
-from rc_bridge.workflow.grillage_verification_export import GrillageSectionProperties
+from rc_bridge.workflow.grillage_verification_export import (
+    GrillageSectionProperties,
+    GrillageStiffnessModifiers,
+)
 from rc_bridge.workflow.lm1_grillage_verification import (
     LM1LaneVerificationPlacement,
     LM1LongitudinalRegion,
@@ -535,6 +538,7 @@ def run_project_native_lm1_grillage_search(
     longitudinal_sections_by_span: tuple[GrillageSectionProperties, ...] | None = None,
     transverse_section: GrillageSectionProperties | None = None,
     factors: LM1AdjustmentFactors | None = None,
+    stiffness_modifiers: GrillageStiffnessModifiers | None = None,
     longitudinal_step_m: float = 0.5,
     max_exhaustive_tandem_combinations: int = 5000,
     include_spanwise_udl_patterns: bool = True,
@@ -567,6 +571,7 @@ def run_project_native_lm1_grillage_search(
             lane_placements=placement.lane_placements,
             remaining_area_placements=placement.remaining_area_placements,
             factors=factors,
+            stiffness_modifiers=stiffness_modifiers,
             name=case_name,
         )
         analysis = solve_vertical_grillage(model)

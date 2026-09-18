@@ -18,7 +18,10 @@ from rc_bridge.core.models import (
     SupportSystem,
     TGirderProfile,
 )
-from rc_bridge.workflow.grillage_verification_export import GrillageSectionProperties
+from rc_bridge.workflow.grillage_verification_export import (
+    GrillageSectionProperties,
+    GrillageStiffnessModifiers,
+)
 from rc_bridge.workflow.lm1_grillage_search import (
     build_governing_lm1_search_verification_packages,
     generate_lm1_search_placements,
@@ -335,3 +338,39 @@ def test_native_lm1_search_can_use_automatic_physical_grillage_properties() -> N
     first_model = result.cases[0].model
     assert "gross composite" in first_model.metadata["longitudinal_stiffness_basis"]
     assert "station-specific" in first_model.metadata["transverse_stiffness_basis"]
+
+
+def test_native_lm1_search_propagates_explicit_stiffness_modifiers() -> None:
+    project = ProjectInput(
+        name="Modified physical native search",
+        geometry=BridgeGeometry(
+            span_lengths_m=[15.0],
+            deck_width_m=5.0,
+            carriageway_width_m=3.0,
+            girder_count=3,
+            girder_spacing_m=2.0,
+            section_type=SectionType.T,
+            girder_profile=TGirderProfile(
+                flange_width_m=0.70,
+                flange_thickness_m=0.15,
+                web_width_m=0.30,
+                total_depth_m=0.95,
+            ),
+        ),
+    )
+    result = run_project_native_lm1_grillage_search(
+        project,
+        transverse_stations_m=(7.5,),
+        stiffness_modifiers=GrillageStiffnessModifiers(
+            longitudinal_bending_factors_by_span=(0.60,),
+            transverse_bending_factor=0.50,
+            basis="native modifier test",
+        ),
+        longitudinal_step_m=15.0,
+        max_exhaustive_tandem_combinations=10,
+    )
+
+    model = result.cases[0].model
+    assert model.metadata["stiffness_modifier_basis"] == "native modifier test"
+    assert model.metadata["longitudinal_bending_factors_by_span"] == "0.6"
+    assert model.metadata["transverse_bending_factor"] == "0.5"

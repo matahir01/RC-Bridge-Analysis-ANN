@@ -20,6 +20,7 @@ from rc_bridge.workflow.grillage_verification_export import (
     GrillageAreaLoad,
     GrillagePointLoad,
     GrillageSectionProperties,
+    GrillageStiffnessModifiers,
     GrillageVerificationLoadCase,
     build_project_grillage_verification_model,
 )
@@ -279,6 +280,7 @@ def build_project_lm1_grillage_verification_model(
     transverse_section: GrillageSectionProperties | None = None,
     remaining_area_placements: tuple[LM1RemainingAreaVerificationPlacement, ...] = (),
     factors: LM1AdjustmentFactors | None = None,
+    stiffness_modifiers: GrillageStiffnessModifiers | None = None,
     name: str = "EN 1991-2 LM1 verification snapshot",
 ) -> VerificationModel:
     load_case = build_lm1_grillage_load_case(
@@ -286,6 +288,7 @@ def build_project_lm1_grillage_verification_model(
         lane_placements=lane_placements,
         remaining_area_placements=remaining_area_placements,
         factors=factors,
+        stiffness_modifiers=stiffness_modifiers,
         name=name,
     )
     model = build_project_grillage_verification_model(
@@ -294,6 +297,7 @@ def build_project_lm1_grillage_verification_model(
         transverse_section=transverse_section,
         transverse_stations_m=transverse_stations_m,
         load_case=load_case,
+        stiffness_modifiers=stiffness_modifiers,
     )
     lane_strips, tandem_positions, lane_regions = _lane_metadata(lane_placements)
     remaining_strips, remaining_regions = _remaining_metadata(remaining_area_placements)
@@ -333,6 +337,7 @@ def build_project_lm1_grillage_verification_package(
     transverse_section: GrillageSectionProperties | None = None,
     remaining_area_placements: tuple[LM1RemainingAreaVerificationPlacement, ...] = (),
     factors: LM1AdjustmentFactors | None = None,
+    stiffness_modifiers: GrillageStiffnessModifiers | None = None,
     name: str = "EN 1991-2 LM1 verification snapshot",
 ) -> ModelVerificationExportPackage:
     """Build the full grillage plus MIDAS/STAAD model-only verification bundle."""
