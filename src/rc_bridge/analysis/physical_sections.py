@@ -147,6 +147,7 @@ def composite_girder_properties(
     geometry: BridgeGeometry,
     *,
     slab_width_m: float | None = None,
+    slab_width_basis: str | None = None,
 ) -> PhysicalSectionProperties:
     """Derive gross composite longitudinal properties from project geometry.
 
@@ -177,7 +178,11 @@ def composite_girder_properties(
         _Rectangle(width, flange_depth, slab_centroid),
         *_girder_rectangles(profile, top_m=physical_deck_depth),
     )
-    source = "mean deck width/girder" if slab_width_m is None else "expert slab-width override"
+    source = (
+        "mean deck width/girder"
+        if slab_width_m is None
+        else slab_width_basis or "expert slab-width override"
+    )
     return _properties_from_rectangles(
         rectangles,
         basis=(
@@ -191,6 +196,7 @@ def transverse_deck_strip_properties(
     geometry: BridgeGeometry,
     *,
     strip_width_m: float,
+    strip_width_basis: str = "supplied longitudinal strip width",
 ) -> PhysicalSectionProperties:
     """Derive gross properties of a solid transverse physical deck strip."""
     width = float(strip_width_m)
@@ -200,7 +206,46 @@ def transverse_deck_strip_properties(
     return _properties_from_rectangles(
         (_Rectangle(width, depth, depth / 2.0),),
         basis=(
-            "gross physical deck strip; representative longitudinal strip width; "
+            f"gross physical deck strip; {strip_width_basis}; "
             "solid-rectangle Saint-Venant J approximation"
         ),
     )
+
+
+def girder_tributary_slab_widths_m(geometry: BridgeGeometry) -> tuple[float, ...]:
+    """Return edge-aware physical deck strip widths for all girder lines."""
+    count = int(geometry.girder_count)
+    spacing = float(geometry.girder_spacing_m)
+    edge = float(geometry.nominal_edge_overhang_m)
+    if count == 1:
+        return (float(geometry.deck_width_m),)
+    widths = (edge + spacing / 2.0, *((spacing,) * (count - 2)), edge + spacing / 2.0)
+    if abs(sum(widths) - float(geometry.deck_width_m)) > 1.0e-9:
+        raise ValueError("Girder tributary slab widths do not recover the physical deck width.")
+    return widths
+
+
+def station_tributary_strip_widths_m(
+    x_stations_m: tuple[float, ...],
+) -> tuple[float, ...]:
+    """Return longitudinal tributary widths represented by transverse grid lines."""
+    if len(x_stations_m) < 2:
+        raise ValueError("At least two longitudinal stations are required.")
+    if any(
+        x_stations_m[index + 1] <= x_stations_m[index]
+        for index in range(len(x_stations_m) - 1)
+    ):
+        raise ValueError("Longitudinal stations must be strictly increasing.")
+    widths = []
+    for index, station in enumerate(x_stations_m):
+        if index == 0:
+            width = (x_stations_m[1] - station) / 2.0
+        elif index == len(x_stations_m) - 1:
+            width = (station - x_stations_m[index - 1]) / 2.0
+        else:
+            width = (x_stations_m[index + 1] - x_stations_m[index - 1]) / 2.0
+        widths.append(width)
+    total_length = x_stations_m[-1] - x_stations_m[0]
+    if abs(sum(widths) - total_length) > 1.0e-9:
+        raise ValueError("Transverse station tributary widths do not recover bridge length.")
+    return tuple(widths)

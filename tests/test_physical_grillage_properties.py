@@ -2,7 +2,9 @@ import pytest
 
 from rc_bridge.analysis.physical_sections import (
     composite_girder_properties,
+    girder_tributary_slab_widths_m,
     rectangular_torsion_constant_m4,
+    station_tributary_strip_widths_m,
     transverse_deck_strip_properties,
 )
 from rc_bridge.core.models import (
@@ -90,6 +92,20 @@ def test_transverse_strip_matches_closed_form_rectangle_properties() -> None:
     )
 
 
+def test_edge_aware_girder_strips_recover_exact_deck_width() -> None:
+    widths = girder_tributary_slab_widths_m(BridgeGeometry())
+
+    assert widths == pytest.approx((1.25, 1.70, 1.70, 1.70, 1.70, 1.70, 1.25))
+    assert sum(widths) == pytest.approx(11.0)
+
+
+def test_station_strip_widths_recover_length_for_nonuniform_grid() -> None:
+    widths = station_tributary_strip_widths_m((0.0, 2.0, 7.0, 15.0))
+
+    assert widths == pytest.approx((1.0, 3.5, 6.5, 4.0))
+    assert sum(widths) == pytest.approx(15.0)
+
+
 def test_automatic_grillage_sections_flow_into_exact_analysis_model() -> None:
     project = ProjectInput(
         geometry=BridgeGeometry(
@@ -110,16 +126,39 @@ def test_automatic_grillage_sections_flow_into_exact_analysis_model() -> None:
         load_case=GrillageVerificationLoadCase(name="physical properties"),
     )
 
-    expected_longitudinal = composite_girder_properties(project.geometry)
-    expected_transverse = transverse_deck_strip_properties(
+    edge_longitudinal = composite_girder_properties(
+        project.geometry,
+        slab_width_m=1.25,
+    )
+    internal_longitudinal = composite_girder_properties(
+        project.geometry,
+        slab_width_m=1.70,
+    )
+    end_transverse = transverse_deck_strip_properties(
+        project.geometry,
+        strip_width_m=2.5,
+    )
+    internal_transverse = transverse_deck_strip_properties(
         project.geometry,
         strip_width_m=5.0,
     )
-    assert model.sections[0].area_m2 == pytest.approx(expected_longitudinal.area_m2)
-    assert model.sections[0].iy_m4 == pytest.approx(expected_longitudinal.iy_m4)
-    assert model.sections[1].area_m2 == pytest.approx(expected_transverse.area_m2)
+    assert len(model.sections) == 11
+    assert model.sections[0].area_m2 == pytest.approx(edge_longitudinal.area_m2)
+    assert model.sections[1].iy_m4 == pytest.approx(internal_longitudinal.iy_m4)
+    assert model.sections[6].area_m2 == pytest.approx(edge_longitudinal.area_m2)
+    assert model.sections[7].area_m2 == pytest.approx(end_transverse.area_m2)
+    assert model.sections[8].area_m2 == pytest.approx(internal_transverse.area_m2)
+    assert model.sections[10].area_m2 == pytest.approx(end_transverse.area_m2)
     assert "gross composite" in model.metadata["longitudinal_stiffness_basis"]
-    assert "gross physical deck strip" in model.metadata["transverse_stiffness_basis"]
+    assert "edge-aware" in model.metadata["longitudinal_stiffness_basis"]
+    assert "station-specific" in model.metadata["transverse_stiffness_basis"]
+
+    longitudinal_beams = model.beams[:21]
+    assert [beam.section_id for beam in longitudinal_beams[:7]] == list(range(1, 8))
+    assert [beam.section_id for beam in longitudinal_beams[7:14]] == list(range(1, 8))
+    transverse_beams = model.beams[21:]
+    assert {beam.section_id for beam in transverse_beams[:8]} == {8}
+    assert {beam.section_id for beam in transverse_beams[8:16]} == {9}
 
 
 def test_explicit_grillage_sections_remain_expert_overrides() -> None:

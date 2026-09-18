@@ -5,6 +5,8 @@ from dataclasses import dataclass
 
 from rc_bridge.analysis.physical_sections import (
     composite_girder_properties,
+    girder_tributary_slab_widths_m,
+    station_tributary_strip_widths_m,
     transverse_deck_strip_properties,
 )
 from rc_bridge.codes.eurocode.materials import secant_elastic_modulus_mpa
@@ -218,44 +220,86 @@ def build_project_grillage_verification_model(
     y_lines = _transverse_y_coordinates(project, load_case.area_loads)
     y_line_count = len(y_lines)
     girder_y_indices = tuple(_coordinate_index(y_lines, value) for value in y_girders)
+    longitudinal_sections: list[GrillageSectionProperties] = []
+    longitudinal_section_ids: list[list[int]] = []
     if longitudinal_sections_by_span is None:
-        generated = composite_girder_properties(
-            project.geometry,
-            slab_width_m=longitudinal_slab_width_m,
+        slab_widths = (
+            (float(longitudinal_slab_width_m),) * girder_count
+            if longitudinal_slab_width_m is not None
+            else girder_tributary_slab_widths_m(project.geometry)
         )
-        longitudinal_sections_by_span = tuple(
-            GrillageSectionProperties(
-                name=f"Physical composite longitudinal span {index + 1}",
-                area_m2=generated.area_m2,
-                torsion_constant_m4=generated.torsion_constant_m4,
-                iy_m4=generated.iy_m4,
-                iz_m4=generated.iz_m4,
-            )
-            for index in range(span_count)
+        slab_basis = (
+            "expert uniform slab-width override"
+            if longitudinal_slab_width_m is not None
+            else "edge-aware physical tributary slab width"
         )
-        longitudinal_basis = generated.basis
+        for span_index in range(span_count):
+            span_ids: list[int] = []
+            for girder_index, slab_width in enumerate(slab_widths):
+                generated = composite_girder_properties(
+                    project.geometry,
+                    slab_width_m=slab_width,
+                    slab_width_basis=slab_basis,
+                )
+                longitudinal_sections.append(
+                    GrillageSectionProperties(
+                        name=(
+                            f"Physical composite span {span_index + 1} "
+                            f"girder {girder_index + 1}"
+                        ),
+                        area_m2=generated.area_m2,
+                        torsion_constant_m4=generated.torsion_constant_m4,
+                        iy_m4=generated.iy_m4,
+                        iz_m4=generated.iz_m4,
+                    )
+                )
+                span_ids.append(len(longitudinal_sections))
+            longitudinal_section_ids.append(span_ids)
+        longitudinal_basis = (
+            f"{generated.basis}; distinct physical section per span/girder line"
+        )
     else:
+        longitudinal_sections.extend(longitudinal_sections_by_span)
+        longitudinal_section_ids = [
+            [span_index + 1] * girder_count for span_index in range(span_count)
+        ]
         longitudinal_basis = "explicit expert override A, J, Iy and Iz per span"
 
+    transverse_sections: list[GrillageSectionProperties] = []
+    transverse_section_ids: list[int] = []
     if transverse_section is None:
-        representative_width = (
-            float(transverse_strip_width_m)
+        strip_widths = (
+            (float(transverse_strip_width_m),) * len(x_stations)
             if transverse_strip_width_m is not None
-            else _support_stations(project)[-1] / (len(x_stations) - 1)
+            else station_tributary_strip_widths_m(x_stations)
         )
-        generated_transverse = transverse_deck_strip_properties(
-            project.geometry,
-            strip_width_m=representative_width,
+        strip_basis = (
+            "expert uniform longitudinal strip-width override"
+            if transverse_strip_width_m is not None
+            else "station-specific longitudinal tributary strip width"
         )
-        transverse_section = GrillageSectionProperties(
-            name="Physical transverse deck strip",
-            area_m2=generated_transverse.area_m2,
-            torsion_constant_m4=generated_transverse.torsion_constant_m4,
-            iy_m4=generated_transverse.iy_m4,
-            iz_m4=generated_transverse.iz_m4,
+        for x_index, strip_width in enumerate(strip_widths):
+            generated_transverse = transverse_deck_strip_properties(
+                project.geometry,
+                strip_width_m=strip_width,
+                strip_width_basis=strip_basis,
+            )
+            transverse_sections.append(
+                GrillageSectionProperties(
+                    name=f"Physical transverse deck strip station {x_index + 1}",
+                    area_m2=generated_transverse.area_m2,
+                    torsion_constant_m4=generated_transverse.torsion_constant_m4,
+                    iy_m4=generated_transverse.iy_m4,
+                    iz_m4=generated_transverse.iz_m4,
+                )
+            )
+            transverse_section_ids.append(len(longitudinal_sections) + x_index + 1)
+        transverse_basis = (
+            f"{generated_transverse.basis}; distinct physical section per transverse grid line"
         )
-        transverse_basis = generated_transverse.basis
     else:
+        transverse_sections.append(transverse_section)
+        transverse_section_ids = [len(longitudinal_sections) + 1] * len(x_stations)
         transverse_basis = "explicit expert override A, J, Iy and Iz"
     e_kn_m2 = _elastic_modulus_mpa(project) * 1000.0
     material = VerificationMaterial(
@@ -266,7 +310,7 @@ def build_project_grillage_verification_model(
         weight_density_kn_m3=float(project.materials.concrete_density_kn_m3),
     )
 
-    longitudinal_sections = tuple(
+    verification_sections = tuple(
         VerificationSection(
             section_id=index + 1,
             name=section.name,
@@ -275,16 +319,7 @@ def build_project_grillage_verification_model(
             iy_m4=section.iy_m4,
             iz_m4=section.iz_m4,
         )
-        for index, section in enumerate(longitudinal_sections_by_span)
-    )
-    transverse_section_id = span_count + 1
-    transverse_verification_section = VerificationSection(
-        section_id=transverse_section_id,
-        name=transverse_section.name,
-        area_m2=transverse_section.area_m2,
-        torsion_constant_m4=transverse_section.torsion_constant_m4,
-        iy_m4=transverse_section.iy_m4,
-        iz_m4=transverse_section.iz_m4,
+        for index, section in enumerate((*longitudinal_sections, *transverse_sections))
     )
 
     def node_id(x_index: int, y_index: int) -> int:
@@ -315,7 +350,7 @@ def build_project_grillage_verification_model(
                     node_i=node_id(x_index, y_index),
                     node_j=node_id(x_index + 1, y_index),
                     material_id=1,
-                    section_id=span_index + 1,
+                    section_id=longitudinal_section_ids[span_index][girder_index],
                 )
             )
             longitudinal_member_ids[girder_index].append(member_id)
@@ -330,7 +365,7 @@ def build_project_grillage_verification_model(
                     node_i=node_id(x_index, y_index),
                     node_j=node_id(x_index, y_index + 1),
                     material_id=1,
-                    section_id=transverse_section_id,
+                    section_id=transverse_section_ids[x_index],
                 )
             )
             member_id += 1
@@ -438,7 +473,7 @@ def build_project_grillage_verification_model(
         name=f"{project.name} - full grillage - {load_case.name}",
         nodes=nodes,
         materials=(material,),
-        sections=(*longitudinal_sections, transverse_verification_section),
+        sections=verification_sections,
         beams=tuple(beams),
         supports=tuple(supports),
         load_cases=(verification_case,),
