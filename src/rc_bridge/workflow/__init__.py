@@ -16,6 +16,12 @@ from rc_bridge.workflow.project_envelope_detailing import (
     native_lm1_uls_detailing_envelope,
     run_project_t_girder_envelope_detailing,
 )
+from rc_bridge.workflow.project_native_fatigue import (
+    NativeFLM3TGirderFatigueResult,
+    ProjectNativeFLM3GrillageSearchResult,
+    run_project_native_flm3_grillage_search,
+    run_project_t_girder_fatigue_from_native_flm3,
+)
 from rc_bridge.workflow.project_native_lm1 import (
     NativeLM1ProjectTGirderResult,
     ProjectNativeLM1TGirderDesignSuite,
@@ -39,9 +45,11 @@ __all__ = [
     "GrillagePointLoad",
     "GrillageSectionProperties",
     "GrillageVerificationLoadCase",
+    "NativeFLM3TGirderFatigueResult",
     "NativeLM1MatchedShearTorsionResult",
     "NativeLM1ProjectTGirderResult",
     "NativeLM1ShearTorsionPoint",
+    "ProjectNativeFLM3GrillageSearchResult",
     "ProjectNativeLM1GrillageSearchResult",
     "ProjectNativeLM1TGirderDesignSuite",
     "ProjectTGirderEnvelopeDetailingResult",
@@ -57,7 +65,9 @@ __all__ = [
     "project_girder_combinations_from_native_lm1",
     "require_native_lm1_external_benchmark",
     "run_project_all_t_girders_from_native_lm1",
+    "run_project_native_flm3_grillage_search",
     "run_project_native_lm1_grillage_search",
     "run_project_t_girder_envelope_detailing",
+    "run_project_t_girder_fatigue_from_native_flm3",
     "run_project_t_girder_from_native_lm1",
 ]
