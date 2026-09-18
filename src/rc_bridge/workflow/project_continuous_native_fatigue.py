@@ -2,6 +2,9 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from rc_bridge.analysis.grillage_station_response import (
+    longitudinal_station_end_response,
+)
 from rc_bridge.codes.eurocode.materials import concrete_properties_ec2
 from rc_bridge.core.models import DesignCode, ProjectInput, SupportSystem
 from rc_bridge.design.eurocode_fatigue import (
@@ -21,7 +24,6 @@ from rc_bridge.workflow.project_continuous_native import (
 )
 from rc_bridge.workflow.project_continuous_sls import support_layers_from_project
 from rc_bridge.workflow.project_native_fatigue import (
-    NativeFLM3ContinuousStationRange,
     NativeFLM3FatigueDesignInput,
     ProjectNativeFLM3ContinuousGrillageSearchResult,
 )
@@ -44,7 +46,10 @@ class ContinuousTopSteelFatigueInput:
 
 @dataclass(frozen=True)
 class ContinuousFatigueStationResult:
+    span_index: int
+    local_position_m: float
     x_m: float
+    side: str
     permanent_moment_knm: float
     traffic_minimum_moment_knm: float
     traffic_maximum_moment_knm: float
@@ -100,33 +105,51 @@ def _reverse_layers(
     )
 
 
-def _permanent_moments_by_x(
-    production: ProjectContinuousNativeLM1EnvelopeResult,
-) -> dict[float, float]:
-    values: dict[float, float] = {}
-    for station in production.envelope.stations:
-        key = round(station.global_position_m, 12)
-        previous = values.get(key)
-        if previous is None:
-            values[key] = station.permanent_moment_knm
-        elif abs(previous - station.permanent_moment_knm) > 1.0e-7:
-            raise ValueError(
-                "Continuous permanent moment is discontinuous between station sides; "
-                "fatigue section design requires one physical bending moment at each x."
-            )
-    return values
+def _span_bounds(
+    project: ProjectInput,
+    span_index: int,
+) -> tuple[float, float]:
+    spans = tuple(float(value) for value in project.geometry.span_lengths_m)
+    if not 0 <= span_index < len(spans):
+        raise IndexError("span_index is outside the project span layout.")
+    start = sum(spans[:span_index])
+    return start, start + spans[span_index]
 
 
-def _range_by_x(
-    fatigue: ProjectNativeFLM3ContinuousGrillageSearchResult,
+def _traffic_moment_range_at_trace(
     *,
-    girder_index: int,
-) -> dict[float, NativeFLM3ContinuousStationRange]:
-    return {
-        round(item.x_m, 12): item
-        for item in fatigue.ranges_for_girder(girder_index)
-    }
+    project: ProjectInput,
+    production: ProjectContinuousNativeLM1EnvelopeResult,
+    fatigue_search: ProjectNativeFLM3ContinuousGrillageSearchResult,
+    trace_index: int,
+    target_y_m: float,
+) -> tuple[float, float, int | None, int | None]:
+    """Recover signed FLM3 moment range at the exact production station side."""
+    trace = production.trace[trace_index]
+    span_start, span_end = _span_bounds(project, trace.span_index)
+    minimum = 0.0
+    maximum = 0.0
+    minimum_case_id: int | None = None
+    maximum_case_id: int | None = None
 
+    for case in fatigue_search.cases:
+        response = longitudinal_station_end_response(
+            case.model,
+            case.analysis.members,
+            target_y_m=target_y_m,
+            x_m=trace.global_position_m,
+            side=trace.side,
+            span_start_m=span_start,
+            span_end_m=span_end,
+        )
+        if response.moment_knm < minimum:
+            minimum = response.moment_knm
+            minimum_case_id = case.case_id
+        if response.moment_knm > maximum:
+            maximum = response.moment_knm
+            maximum_case_id = case.case_id
+
+    return minimum, maximum, minimum_case_id, maximum_case_id
 
 def run_project_continuous_native_fatigue(
     project: ProjectInput,
@@ -184,14 +207,14 @@ def run_project_continuous_native_fatigue(
     concrete = concrete_properties_ec2(float(project.materials.fck_mpa))
     modular_ratio = es_mpa / concrete.ecm_mpa
 
-    permanent_by_x = _permanent_moments_by_x(production)
-    fatigue_by_x = _range_by_x(fatigue_search, girder_index=girder_index)
-    missing = tuple(sorted(set(permanent_by_x) - set(fatigue_by_x)))
-    if missing:
-        raise ValueError(
-            "Continuous FLM3 search is missing production design stations: "
-            + ", ".join(f"{value:.6g}" for value in missing)
-        )
+    if not fatigue_search.cases:
+        raise ValueError("Continuous fatigue design requires solved FLM3 traffic cases.")
+    search_ranges = fatigue_search.ranges_for_girder(girder_index)
+    target_y_m = search_ranges[0].y_m
+    if any(abs(item.y_m - target_y_m) > 1.0e-9 for item in search_ranges):
+        raise ValueError("Continuous FLM3 girder ranges do not share one transverse line.")
+    if len(production.trace) != len(production.envelope.stations):
+        raise ValueError("Continuous production trace/station counts do not match.")
 
     bottom_depth_from_top = bottom_section.effective_depth_m
     top_depth_from_top = total_depth_m - top_section.steel_depth_from_bottom_m
@@ -253,10 +276,30 @@ def run_project_continuous_native_fatigue(
         )
 
     stations: list[ContinuousFatigueStationResult] = []
-    for x_key, permanent_moment in sorted(permanent_by_x.items()):
-        traffic = fatigue_by_x[x_key]
-        minimum_total = permanent_moment + traffic.minimum_moment_knm
-        maximum_total = permanent_moment + traffic.maximum_moment_knm
+    for trace_index, trace in enumerate(production.trace):
+        station = production.envelope.stations[trace.envelope_station_index]
+        if (
+            station.span_index != trace.span_index
+            or abs(station.global_position_m - trace.global_position_m) > 1.0e-9
+            or station.section_side != trace.side
+        ):
+            raise ValueError("Continuous production trace no longer matches its envelope station.")
+
+        (
+            traffic_minimum,
+            traffic_maximum,
+            minimum_case_id,
+            maximum_case_id,
+        ) = _traffic_moment_range_at_trace(
+            project=project,
+            production=production,
+            fatigue_search=fatigue_search,
+            trace_index=trace_index,
+            target_y_m=target_y_m,
+        )
+        permanent_moment = station.permanent_moment_knm
+        minimum_total = permanent_moment + traffic_minimum
+        maximum_total = permanent_moment + traffic_maximum
         bottom_min, top_min, top_concrete_min_state, bottom_concrete_min_state = state(
             minimum_total
         )
@@ -309,10 +352,13 @@ def run_project_continuous_native_fatigue(
         )
         stations.append(
             ContinuousFatigueStationResult(
-                x_m=traffic.x_m,
+                span_index=trace.span_index,
+                local_position_m=trace.local_position_m,
+                x_m=trace.global_position_m,
+                side=trace.side,
                 permanent_moment_knm=permanent_moment,
-                traffic_minimum_moment_knm=traffic.minimum_moment_knm,
-                traffic_maximum_moment_knm=traffic.maximum_moment_knm,
+                traffic_minimum_moment_knm=traffic_minimum,
+                traffic_maximum_moment_knm=traffic_maximum,
                 minimum_total_moment_knm=minimum_total,
                 maximum_total_moment_knm=maximum_total,
                 bottom_steel_stress_min_mpa=bottom_min,
@@ -323,8 +369,8 @@ def run_project_continuous_native_fatigue(
                 top_reinforcement=top_fatigue,
                 top_concrete=top_concrete,
                 bottom_concrete=bottom_concrete,
-                minimum_case_id=traffic.minimum_moment_case_id,
-                maximum_case_id=traffic.maximum_moment_case_id,
+                minimum_case_id=minimum_case_id,
+                maximum_case_id=maximum_case_id,
             )
         )
 
@@ -352,7 +398,8 @@ def run_project_continuous_native_fatigue(
         ),
         status=(
             "Continuous FLM3 fatigue uses signed staged permanent moment plus native "
-            "full-width traffic ranges at every production station. A two-reinforcement-"
+            "full-width traffic ranges at every exact production station side, preserving "
+            "real longitudinal member-end moment jumps. A two-reinforcement-"
             "layer cracked transformed section retains top and bottom steel stresses "
             "through sagging, hogging and sign reversal. Final clause/project parameter "
             "verification and independent external acceptance remain Stage 7 tasks."

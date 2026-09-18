@@ -274,4 +274,10 @@ def test_continuous_native_fatigue_checks_top_and_bottom_steel_through_reversal(
     assert result.governing_top_reinforcement.top_reinforcement.utilization >= 0.0
     assert any(item.minimum_total_moment_knm < 0.0 for item in result.stations)
     assert any(item.maximum_total_moment_knm > 0.0 for item in result.stations)
-    assert "sign reversal" in result.status
+    support_sides = {
+        item.side
+        for item in result.stations
+        if abs(item.x_m - 10.0) <= 1.0e-9
+    }
+    assert support_sides == {"left", "right"}
+    assert "moment jumps" in result.status
