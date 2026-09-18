@@ -18,6 +18,10 @@ from rc_bridge.codes.eurocode.fatigue_traffic import (
 )
 from rc_bridge.core.models import DesignCode, ProjectInput, SupportSystem
 from rc_bridge.design.eurocode_cracking import cracked_t_section_sls
+from rc_bridge.design.eurocode_fatigue import (
+    ReinforcementFatigueResult,
+    reinforcement_fatigue_check,
+)
 from rc_bridge.design.eurocode_layered_section import cracked_layered_section_sls
 from rc_bridge.export.verification_model import VerificationModel
 from rc_bridge.workflow.eurocode_girder import TGirderDesignInput
@@ -133,6 +137,19 @@ class ProjectNativeFLM3GrillageSearchResult:
 
 
 @dataclass(frozen=True)
+class NativeFLM3ShearLinkFatigueResult:
+    """Conservative vertical-link fatigue check from the native FLM3 shear range."""
+
+    traffic_range: NativeFLM3GirderShearRange
+    provided_asw_per_s_mm2_per_m: float
+    lever_arm_m: float
+    cot_theta: float
+    reference_link_stress_range_mpa: float
+    fatigue: ReinforcementFatigueResult
+    status: str
+
+
+@dataclass(frozen=True)
 class NativeFLM3TGirderFatigueResult:
     """EC2 longitudinal reinforcement/concrete fatigue check from native FLM3."""
 
@@ -145,6 +162,7 @@ class NativeFLM3TGirderFatigueResult:
     minimum_concrete_compression_mpa: float
     maximum_concrete_compression_mpa: float
     fatigue: ProjectFatigueResult
+    shear_links: NativeFLM3ShearLinkFatigueResult | None
     status: str
 
 
@@ -161,6 +179,7 @@ class NativeFLM3LayeredGirderFatigueResult:
     minimum_concrete_compression_mpa: float
     maximum_concrete_compression_mpa: float
     fatigue: ProjectFatigueResult
+    shear_links: NativeFLM3ShearLinkFatigueResult | None
     status: str
 
 
@@ -177,6 +196,11 @@ class NativeFLM3FatigueDesignInput:
     concrete_alpha_cc: float = 1.0
     concrete_k1: float = 0.85
     concrete_beta_cc_t0: float = 1.0
+    shear_link_characteristic_fatigue_strength_mpa: float | None = None
+    shear_link_lambda_s: float | None = None
+    shear_link_phi_fat: float = 1.0
+    shear_link_z_factor: float = 0.9
+    shear_link_cot_theta: float = 2.0
 
     def __post_init__(self) -> None:
         if min(
@@ -188,8 +212,18 @@ class NativeFLM3FatigueDesignInput:
             self.concrete_alpha_cc,
             self.concrete_k1,
             self.concrete_beta_cc_t0,
+            self.shear_link_phi_fat,
+            self.shear_link_z_factor,
+            self.shear_link_cot_theta,
         ) <= 0.0:
             raise ValueError("Native FLM3 fatigue design factors must be positive.")
+        if (
+            self.shear_link_characteristic_fatigue_strength_mpa is not None
+            and self.shear_link_characteristic_fatigue_strength_mpa <= 0.0
+        ):
+            raise ValueError("Shear-link fatigue strength must be positive when supplied.")
+        if self.shear_link_lambda_s is not None and self.shear_link_lambda_s <= 0.0:
+            raise ValueError("Shear-link lambda_s must be positive when supplied.")
 
 
 @dataclass
@@ -561,6 +595,64 @@ def run_project_native_flm3_grillage_search(
     )
 
 
+def _run_native_flm3_shear_link_fatigue(
+    *,
+    search: ProjectNativeFLM3GrillageSearchResult,
+    girder_index: int,
+    provided_asw_per_s_mm2_per_m: float | None,
+    effective_depth_m: float,
+    characteristic_fatigue_strength_mpa: float | None,
+    lambda_s: float,
+    gamma_s_fat: float,
+    phi_fat: float,
+    z_factor: float,
+    cot_theta: float,
+) -> NativeFLM3ShearLinkFatigueResult | None:
+    """Recover a conservative vertical-link stress range from the FLM3 V range."""
+    if characteristic_fatigue_strength_mpa is None:
+        return None
+    if provided_asw_per_s_mm2_per_m is None or provided_asw_per_s_mm2_per_m <= 0.0:
+        raise ValueError(
+            "Shear-link fatigue requires the actual provided A_sw/s for the girder."
+        )
+    if not search.shears:
+        raise ValueError(
+            "Shear-link fatigue requires native FLM3 shear ranges; legacy moment-only "
+            "fatigue fixtures cannot be used for this check."
+        )
+    if min(effective_depth_m, lambda_s, gamma_s_fat, phi_fat, z_factor, cot_theta) <= 0.0:
+        raise ValueError("Shear-link fatigue geometry and factors must be positive.")
+
+    traffic = search.shear_range_for_girder(girder_index)
+    lever_arm_m = z_factor * effective_depth_m
+    asw_per_s_mm2_per_mm = provided_asw_per_s_mm2_per_m / 1000.0
+    reference_stress = (
+        traffic.shear_range_kn
+        * 1000.0
+        / (asw_per_s_mm2_per_mm * lever_arm_m * 1000.0 * cot_theta)
+    )
+    fatigue = reinforcement_fatigue_check(
+        reference_stress_range_mpa=reference_stress,
+        lambda_s=lambda_s,
+        characteristic_fatigue_strength_mpa=characteristic_fatigue_strength_mpa,
+        gamma_s_fat=gamma_s_fat,
+        phi_fat=phi_fat,
+    )
+    return NativeFLM3ShearLinkFatigueResult(
+        traffic_range=traffic,
+        provided_asw_per_s_mm2_per_m=provided_asw_per_s_mm2_per_m,
+        lever_arm_m=lever_arm_m,
+        cot_theta=cot_theta,
+        reference_link_stress_range_mpa=reference_stress,
+        fatigue=fatigue,
+        status=(
+            "Native FLM3 vertical-link fatigue using the full cyclic shear range and "
+            "actual provided A_sw/s. The full-truss stress-range assumption is "
+            "conservative; independent clause/software validation remains required."
+        ),
+    )
+
+
 def run_project_t_girder_fatigue_from_native_flm3(
     project: ProjectInput,
     *,
@@ -578,6 +670,11 @@ def run_project_t_girder_fatigue_from_native_flm3(
     concrete_alpha_cc: float = 1.0,
     concrete_k1: float = 0.85,
     concrete_beta_cc_t0: float = 1.0,
+    shear_link_characteristic_fatigue_strength_mpa: float | None = None,
+    shear_link_lambda_s: float | None = None,
+    shear_link_phi_fat: float = 1.0,
+    shear_link_z_factor: float = 0.9,
+    shear_link_cot_theta: float = 2.0,
 ) -> NativeFLM3TGirderFatigueResult:
     """Run T-girder longitudinal reinforcement/concrete fatigue from native FLM3.
 
@@ -703,6 +800,20 @@ def run_project_t_girder_fatigue_from_native_flm3(
             concrete=concrete_input,
         ),
     )
+    shear_links = _run_native_flm3_shear_link_fatigue(
+        search=search,
+        girder_index=girder_index,
+        provided_asw_per_s_mm2_per_m=section.provided_shear_asw_per_s_mm2_per_m,
+        effective_depth_m=section.effective_depth_m,
+        characteristic_fatigue_strength_mpa=(
+            shear_link_characteristic_fatigue_strength_mpa
+        ),
+        lambda_s=shear_link_lambda_s or lambda_s,
+        gamma_s_fat=gamma_s_fat,
+        phi_fat=shear_link_phi_fat,
+        z_factor=shear_link_z_factor,
+        cot_theta=shear_link_cot_theta,
+    )
     return NativeFLM3TGirderFatigueResult(
         girder_index=girder_index,
         traffic_range=traffic,
@@ -713,11 +824,13 @@ def run_project_t_girder_fatigue_from_native_flm3(
         minimum_concrete_compression_mpa=concrete_min,
         maximum_concrete_compression_mpa=concrete_max,
         fatigue=fatigue,
+        shear_links=shear_links,
         status=(
             "Simple-span T-girder fatigue derived from a dedicated native full-width FLM3 "
             "moving analysis, not LM1. Longitudinal reinforcement and concrete compression "
-            "are checked; fatigue-lane/NA choices, shear-reinforcement fatigue, local deck "
-            "fatigue and independent MIDAS/STAAD validation remain explicit later scope."
+            "are checked; vertical-link fatigue is also checked when an actual A_sw/s and "
+            "link fatigue category are supplied. Local deck fatigue and independent "
+            "MIDAS/STAAD validation remain explicit later scope."
         ),
     )
 
@@ -740,6 +853,11 @@ def run_project_layered_girder_fatigue_from_native_flm3(
     concrete_alpha_cc: float = 1.0,
     concrete_k1: float = 0.85,
     concrete_beta_cc_t0: float = 1.0,
+    shear_link_characteristic_fatigue_strength_mpa: float | None = None,
+    shear_link_lambda_s: float | None = None,
+    shear_link_phi_fat: float = 1.0,
+    shear_link_z_factor: float = 0.9,
+    shear_link_cot_theta: float = 2.0,
 ) -> NativeFLM3LayeredGirderFatigueResult:
     """Run longitudinal reinforcement/concrete fatigue for rectangular/T/I profiles.
 
@@ -856,6 +974,20 @@ def run_project_layered_girder_fatigue_from_native_flm3(
             concrete=concrete_input,
         ),
     )
+    shear_links = _run_native_flm3_shear_link_fatigue(
+        search=search,
+        girder_index=girder_index,
+        provided_asw_per_s_mm2_per_m=section.provided_shear_asw_per_s_mm2_per_m,
+        effective_depth_m=section.effective_depth_m,
+        characteristic_fatigue_strength_mpa=(
+            shear_link_characteristic_fatigue_strength_mpa
+        ),
+        lambda_s=shear_link_lambda_s or lambda_s,
+        gamma_s_fat=gamma_s_fat,
+        phi_fat=shear_link_phi_fat,
+        z_factor=shear_link_z_factor,
+        cot_theta=shear_link_cot_theta,
+    )
     return NativeFLM3LayeredGirderFatigueResult(
         girder_index=girder_index,
         traffic_range=traffic,
@@ -866,10 +998,12 @@ def run_project_layered_girder_fatigue_from_native_flm3(
         minimum_concrete_compression_mpa=concrete_min,
         maximum_concrete_compression_mpa=concrete_max,
         fatigue=fatigue,
+        shear_links=shear_links,
         status=(
             "Simple-span rectangular/T/I layered-section fatigue derived from dedicated "
             "native full-width FLM3 traffic, not LM1. Longitudinal reinforcement and "
-            "concrete compression are checked; fatigue-lane/NA choices, shear/link fatigue, "
-            "local deck fatigue and independent external validation remain explicit scope."
+            "concrete compression are checked; vertical-link fatigue is also checked when "
+            "actual A_sw/s and a link fatigue category are supplied. Local deck fatigue "
+            "and independent external validation remain explicit scope."
         ),
     )
