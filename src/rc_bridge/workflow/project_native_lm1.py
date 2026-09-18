@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import TYPE_CHECKING
 
 from rc_bridge.analysis.grillage_import import (
     GrillageImportMetadata,
@@ -42,6 +43,12 @@ from rc_bridge.workflow.project_detailing import (
     ProjectTGirderDetailingResult,
     run_project_t_girder_detailing,
 )
+from rc_bridge.workflow.project_torsion import TorsionCellInput
+
+if TYPE_CHECKING:
+    from rc_bridge.workflow.project_native_lm1_torsion import (
+        NativeLM1MatchedShearTorsionResult,
+    )
 
 
 @dataclass(frozen=True)
@@ -53,6 +60,7 @@ class NativeLM1ProjectTGirderResult:
     materials: EurocodeMaterialInput
     design: EurocodeTGirderWorkflowResult
     detailing: ProjectTGirderDetailingResult
+    shear_torsion: NativeLM1MatchedShearTorsionResult | None
     traffic_trace: LM1GirderGoverningEnvelope
     benchmark_source: str
     status: str
@@ -260,6 +268,7 @@ def run_project_t_girder_from_native_lm1(
     deflection_beta: float = 0.5,
     crack_kt: float = 0.4,
     cot_theta: float = 2.0,
+    torsion_cell: TorsionCellInput | None = None,
 ) -> NativeLM1ProjectTGirderResult:
     """Run simple-span EC2 flexure/shear/crack/deflection design from native LM1 traffic.
 
@@ -320,6 +329,24 @@ def run_project_t_girder_from_native_lm1(
         section=section,
         design=design,
     )
+    shear_torsion: NativeLM1MatchedShearTorsionResult | None = None
+    if torsion_cell is not None:
+        from rc_bridge.workflow.project_native_lm1_torsion import (
+            check_project_native_lm1_matched_shear_torsion,
+        )
+
+        shear_torsion = check_project_native_lm1_matched_shear_torsion(
+            project,
+            search=search,
+            benchmark_suite=benchmark_suite,
+            benchmark_report=benchmark_report,
+            girder_index=girder_index,
+            section=section,
+            torsion_cell=torsion_cell,
+            additional_permanent=additional_permanent,
+            uls_factors=uls_factors,
+            cot_theta=cot_theta,
+        )
     trace = next(item for item in search.girders if item.girder_index == girder_index)
     return NativeLM1ProjectTGirderResult(
         combinations=combinations,
@@ -327,12 +354,14 @@ def run_project_t_girder_from_native_lm1(
         materials=materials,
         design=design,
         detailing=detailing,
+        shear_torsion=shear_torsion,
         traffic_trace=trace,
         benchmark_source=benchmark_report.source_name,
         status=(
             "Simple-span Eurocode girder design and current reinforcement detailing driven by "
             "externally benchmarked native LM1 per-girder traffic envelopes; independent M/V/T "
-            "governing case IDs are retained."
+            "governing case IDs are retained, with matched co-located V-T interaction checked "
+            "when explicit torsion-cell geometry is supplied."
         ),
     )
 
@@ -357,6 +386,7 @@ def run_project_all_t_girders_from_native_lm1(
     deflection_beta: float = 0.5,
     crack_kt: float = 0.4,
     cot_theta: float = 2.0,
+    torsion_cells_by_girder: dict[int, TorsionCellInput] | None = None,
 ) -> ProjectNativeLM1TGirderDesignSuite:
     """Run the benchmark-gated native LM1 Eurocode design path for every girder."""
     _require_simple_span_native_design_project(project)
@@ -367,11 +397,18 @@ def run_project_all_t_girders_from_native_lm1(
             "sections_by_girder must contain exactly one T-section for every project girder."
         )
     additional = additional_permanent_by_girder or {}
+    torsion_cells = torsion_cells_by_girder or {}
     unexpected_additional = set(additional) - required
     if unexpected_additional:
         raise ValueError(
             "additional_permanent_by_girder contains unknown girder indices: "
             + ", ".join(str(value) for value in sorted(unexpected_additional))
+        )
+    unexpected_torsion = set(torsion_cells) - required
+    if unexpected_torsion:
+        raise ValueError(
+            "torsion_cells_by_girder contains unknown girder indices: "
+            + ", ".join(str(value) for value in sorted(unexpected_torsion))
         )
 
     results = tuple(
@@ -395,6 +432,7 @@ def run_project_all_t_girders_from_native_lm1(
             deflection_beta=deflection_beta,
             crack_kt=crack_kt,
             cot_theta=cot_theta,
+            torsion_cell=torsion_cells.get(girder_index),
         )
         for girder_index in range(1, girder_count + 1)
     )
