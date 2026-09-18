@@ -3,7 +3,12 @@ from types import SimpleNamespace
 import pytest
 
 from rc_bridge.codes.eurocode.combinations import ServiceabilityPsiFactors
-from rc_bridge.core.models import ProjectInput
+from rc_bridge.core.models import (
+    BridgeGeometry,
+    ProjectInput,
+    SectionType,
+    TGirderProfile,
+)
 from rc_bridge.research.lm1_benchmark_runner import LM1ExternalBenchmarkSuiteReport
 from rc_bridge.research.lm1_grillage_benchmark import (
     LM1ExternalGrillageBenchmarkReport,
@@ -11,6 +16,7 @@ from rc_bridge.research.lm1_grillage_benchmark import (
     compare_lm1_external_grillage_case,
 )
 from rc_bridge.workflow.eurocode_girder import TGirderDesignInput
+from rc_bridge.workflow.eurocode_layered_girder import LayeredGirderDesignInput
 from rc_bridge.workflow.grillage_verification_export import GrillageSectionProperties
 from rc_bridge.workflow.lm1_grillage_search import run_project_native_lm1_grillage_search
 from rc_bridge.workflow.project_bridge import SLSCombinationChoice
@@ -232,3 +238,42 @@ def test_native_lm1_production_result_can_carry_dedicated_flm3_fatigue(
     assert result.fatigue.reference_steel_stress_range_mpa > 0.0
     assert "FLM3" in result.fatigue.fatigue.source_description
     assert "without reusing LM1" in result.status
+
+
+
+def test_matched_native_lm1_torsion_accepts_physical_layered_section(
+    native_benchmark_case,
+) -> None:
+    _, search, suite, report = native_benchmark_case
+    project = ProjectInput(
+        geometry=BridgeGeometry(
+            section_type=SectionType.T,
+            girder_profile=TGirderProfile(
+                flange_width_m=0.70,
+                flange_thickness_m=0.15,
+                web_width_m=0.30,
+                total_depth_m=0.95,
+            ),
+        )
+    )
+    section = LayeredGirderDesignInput(
+        composite_slab_width_m=1.70,
+        effective_depth_m=1.10,
+        steel_area_mm2=6500.0,
+        bar_diameter_mm=32.0,
+        bar_spacing_mm=150.0,
+        cover_mm=50.0,
+    )
+    result = check_project_native_lm1_matched_shear_torsion(
+        project,
+        search=search,
+        benchmark_suite=suite,
+        benchmark_report=report,
+        girder_index=4,
+        section=section,
+        torsion_cell=TorsionCellInput(ak_m2=0.10, uk_m=1.40, tef_m=0.15),
+    )
+
+    assert result.evaluated_points
+    assert result.governing_interaction.interaction.utilization >= 0.0
+    assert "physical rectangular/T/I profile" in result.status

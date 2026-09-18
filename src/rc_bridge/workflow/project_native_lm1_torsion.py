@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from rc_bridge.codes.eurocode.combinations import EurocodeFactors
+from rc_bridge.analysis.physical_sections import girder_web_width_m
 from rc_bridge.core.models import DesignCode, ProjectInput, SupportSystem
 from rc_bridge.design.eurocode_shear import (
     ShearReinforcementResult,
@@ -17,6 +18,7 @@ from rc_bridge.design.eurocode_torsion import (
 from rc_bridge.research.lm1_benchmark_runner import LM1ExternalBenchmarkSuiteReport
 from rc_bridge.research.lm1_grillage_benchmark import LM1GoverningBenchmarkSuite
 from rc_bridge.workflow.eurocode_girder import TGirderDesignInput
+from rc_bridge.workflow.eurocode_layered_girder import LayeredGirderDesignInput
 from rc_bridge.workflow.lm1_grillage_search import ProjectNativeLM1GrillageSearchResult
 from rc_bridge.workflow.project_bridge import (
     UniformPermanentLoadInput,
@@ -118,7 +120,7 @@ def check_project_native_lm1_matched_shear_torsion(
     benchmark_suite: LM1GoverningBenchmarkSuite,
     benchmark_report: LM1ExternalBenchmarkSuiteReport,
     girder_index: int,
-    section: TGirderDesignInput,
+    section: TGirderDesignInput | LayeredGirderDesignInput,
     torsion_cell: TorsionCellInput,
     additional_permanent: UniformPermanentLoadInput | None = None,
     uls_factors: EurocodeFactors | None = None,
@@ -151,8 +153,15 @@ def check_project_native_lm1_matched_shear_torsion(
         raise IndexError("girder_index is outside the project girder layout.")
     if len(search.girders) != int(project.geometry.girder_count):
         raise ValueError("Native LM1 search girder count does not match the project.")
-    if section.web_width_m <= 0.0 or section.effective_depth_m <= 0.0:
-        raise ValueError("T-girder shear dimensions must be positive.")
+    if section.effective_depth_m <= 0.0:
+        raise ValueError("Girder effective depth must be positive.")
+    web_width_m = (
+        section.web_width_m
+        if isinstance(section, TGirderDesignInput)
+        else girder_web_width_m(project.geometry)
+    )
+    if web_width_m <= 0.0:
+        raise ValueError("Girder web width must be positive.")
 
     policy = uls_factors or EurocodeFactors()
     permanent = girder_characteristic_permanent_effects(
@@ -226,7 +235,7 @@ def check_project_native_lm1_matched_shear_torsion(
                 )
                 shear_strut = required_vertical_shear_reinforcement(
                     ved_kn=design_shear,
-                    web_width_m=section.web_width_m,
+                    web_width_m=web_width_m,
                     effective_depth_m=section.effective_depth_m,
                     fck_mpa=fck_mpa,
                     fyk_mpa=fyk_mpa,
@@ -317,6 +326,7 @@ def check_project_native_lm1_matched_shear_torsion(
             "shear-torsion strut interaction is governed by co-located V/T from the same "
             "traffic case and member end. The governing local T and V/T member-end "
             "magnitudes require passing external comparison, and simple-span permanent "
-            "UDL shear is added conservatively by magnitude."
+            "UDL shear is added conservatively by magnitude. Shear geometry may come "
+            "from either the legacy T-section input or the physical rectangular/T/I profile."
         ),
     )
