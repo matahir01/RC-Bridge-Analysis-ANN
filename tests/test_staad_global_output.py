@@ -109,12 +109,15 @@ def test_staad_export_requests_global_member_forces_and_global_nodal_results() -
     assert "PRINT MEMBER FORCES ALL" not in text
 
 
-def test_staad_export_compacts_member_ranges_for_properties_and_materials() -> None:
+def test_staad_export_chunks_member_ranges_for_properties_and_materials() -> None:
     text = export_staad_std(_model(85))
 
     assert "SET Z UP" in text
-    assert "1 TO 85 PRIS" in text
-    assert "MATERIAL Concrete MEMB 1 TO 85" in text
+    assert "1 TO 12 PRIS" in text
+    assert "73 TO 84 PRIS" in text
+    assert "85 PRIS" in text
+    assert "MATERIAL Concrete MEMB 1 TO 24" in text
+    assert "MATERIAL Concrete MEMB 73 TO 85" in text
 
 
 def test_staad_export_chunks_strided_grillage_property_assignments() -> None:
@@ -142,7 +145,7 @@ def test_large_staad_model_chunks_global_member_force_requests() -> None:
         if line.startswith("PRINT MEMBER FORCES GLOBAL LIST ")
     ]
 
-    assert len(commands) == 3
+    assert len(commands) == 4
     member_ids = [
         int(value)
         for command in commands
