@@ -12,6 +12,8 @@ from rc_bridge.analysis.physical_sections import (
 )
 from rc_bridge.application.design_checks import ApplicationDesignSettings
 from rc_bridge.application.extended_actions import ExtendedActionSettings
+from rc_bridge.application.fatigue import FatigueApplicationSettings
+from rc_bridge.application.local_deck import LocalDeckSettings
 from rc_bridge.application.load_cases import (
     ApplicationLoadCaseFields,
     SurfacingExtent,
@@ -75,6 +77,7 @@ def main() -> int:
     actions_tab = ttk.Frame(notebook, padding=12)
     analysis_tab = ttk.Frame(notebook, padding=12)
     design_tab = ttk.Frame(notebook, padding=12)
+    local_tab = ttk.Frame(notebook, padding=12)
     verification_tab = ttk.Frame(notebook, padding=12)
     research_tab = ttk.Frame(notebook, padding=12)
 
@@ -84,6 +87,7 @@ def main() -> int:
     notebook.add(actions_tab, text="Additional actions")
     notebook.add(analysis_tab, text="Analysis")
     notebook.add(design_tab, text="Design & checks")
+    notebook.add(local_tab, text="Deck & fatigue")
     notebook.add(verification_tab, text="Verification")
     notebook.add(research_tab, text="Research")
 
@@ -656,7 +660,7 @@ def main() -> int:
     ttk.Label(
         actions_tab,
         text=(
-            "Six additional action families required for an inclusive road-bridge design. "
+            "Required additional action families for this bridge plus static wind. "
             "Vertical actions are solved on the native grillage where the current physics "
             "supports them; longitudinal/horizontal/local actions are calculated explicitly "
             "and kept outside the vertical solver rather than being silently approximated."
@@ -918,11 +922,97 @@ def main() -> int:
         justify=tk.LEFT,
     ).grid(row=10, column=0, columnspan=2, sticky="w", pady=(8, 0))
 
+    wind_actions_frame = ttk.LabelFrame(
+        actions_input,
+        text="Static wind action & transverse bearing capacity",
+        padding=8,
+    )
+    wind_actions_frame.grid(
+        row=1,
+        column=0,
+        columnspan=3,
+        sticky="ew",
+        pady=(8, 0),
+    )
+    for column in range(6):
+        wind_actions_frame.columnconfigure(column, weight=1)
+    ttk.Checkbutton(
+        wind_actions_frame,
+        text="Wind action",
+        variable=bvar("action_wind_enabled"),
+    ).grid(row=0, column=0, columnspan=2, sticky="w")
+    add_entry_at(
+        wind_actions_frame,
+        row=1,
+        label="Basic/project wind speed (m/s)",
+        key="action_wind_velocity",
+        label_column=0,
+        entry_column=1,
+    )
+    add_entry_at(
+        wind_actions_frame,
+        row=2,
+        label="Air density (kg/m³)",
+        key="action_wind_density",
+        label_column=0,
+        entry_column=1,
+    )
+    add_entry_at(
+        wind_actions_frame,
+        row=1,
+        label="Exposure factor",
+        key="action_wind_exposure",
+        label_column=2,
+        entry_column=3,
+    )
+    add_entry_at(
+        wind_actions_frame,
+        row=2,
+        label="Transverse force coefficient",
+        key="action_wind_transverse_cf",
+        label_column=2,
+        entry_column=3,
+    )
+    add_entry_at(
+        wind_actions_frame,
+        row=1,
+        label="Vertical force coefficient",
+        key="action_wind_vertical_cf",
+        label_column=4,
+        entry_column=5,
+    )
+    add_entry_at(
+        wind_actions_frame,
+        row=2,
+        label="Loaded height (m; 0 = auto)",
+        key="action_wind_height",
+        label_column=4,
+        entry_column=5,
+    )
+    add_entry_at(
+        wind_actions_frame,
+        row=3,
+        label="Bearing transverse capacity / bearing (kN)",
+        key="action_bearing_transverse_capacity",
+        label_column=0,
+        entry_column=1,
+    )
+    ttk.Label(
+        wind_actions_frame,
+        text=(
+            "Wind speed is a project/site input. The program derives static pressure/resultants "
+            "and sends the transverse resultant to the support/bearing design path; it does "
+            "not invent site terrain/orography or aerodynamic-instability data."
+        ),
+        wraplength=900,
+        justify=tk.LEFT,
+    ).grid(row=3, column=2, columnspan=4, sticky="w", padx=(8, 0))
+
     action_buttons = ttk.Frame(actions_tab)
     action_buttons.grid(row=2, column=0, sticky="ne", pady=(0, 6))
     run_actions_button = ttk.Button(
         action_buttons,
-        text="Run actions 1–6",
+        text="Run required actions + wind",
     )
     run_actions_button.pack(side=tk.RIGHT)
     analysis_buttons.append(run_actions_button)
@@ -1290,6 +1380,128 @@ def main() -> int:
         text="Refresh dashboard",
     )
     refresh_dashboard_button.pack(anchor=tk.E, pady=(6, 0))
+
+    # ------------------------------------------------------------------
+    # Deck & fatigue tab
+    # ------------------------------------------------------------------
+    local_tab.columnconfigure(0, weight=1)
+    local_tab.columnconfigure(1, weight=1)
+    local_tab.rowconfigure(1, weight=1)
+
+    deck_controls = ttk.LabelFrame(
+        local_tab,
+        text="Native local deck/slab design",
+        padding=8,
+    )
+    deck_controls.grid(row=0, column=0, sticky="nsew", padx=(0, 5))
+    deck_controls.columnconfigure(1, weight=1)
+    add_entry(
+        deck_controls,
+        row=0,
+        label="Load dispersion H/V ratio",
+        key="deck_dispersion_ratio",
+    )
+    add_entry(
+        deck_controls,
+        row=1,
+        label="Additional dispersion depth (m)",
+        key="deck_additional_dispersion",
+    )
+    add_entry(
+        deck_controls,
+        row=2,
+        label="Nominal slab bar dia. (mm)",
+        key="deck_nominal_bar_diameter",
+    )
+    run_local_deck_button = ttk.Button(
+        deck_controls,
+        text="Run local deck design",
+    )
+    run_local_deck_button.grid(row=3, column=1, sticky="e", pady=(8, 0))
+
+    fatigue_controls = ttk.LabelFrame(
+        local_tab,
+        text="Native FLM3 fatigue",
+        padding=8,
+    )
+    fatigue_controls.grid(row=0, column=1, sticky="nsew", padx=(5, 0))
+    fatigue_controls.columnconfigure(1, weight=1)
+    add_entry(
+        fatigue_controls,
+        row=0,
+        label="FLM3 movement step (m)",
+        key="fatigue_movement_step",
+    )
+    add_entry(
+        fatigue_controls,
+        row=1,
+        label="FLM3 section step (m)",
+        key="fatigue_section_step",
+    )
+    add_entry(
+        fatigue_controls,
+        row=2,
+        label="FLM3 axle load factor",
+        key="fatigue_axle_factor",
+    )
+    add_entry(
+        fatigue_controls,
+        row=3,
+        label="Longitudinal λs (0 = required input)",
+        key="fatigue_lambda_s",
+    )
+    add_entry(
+        fatigue_controls,
+        row=4,
+        label="Longitudinal ΔσRsk (MPa; 0 = input needed)",
+        key="fatigue_strength",
+    )
+    add_entry(
+        fatigue_controls,
+        row=5,
+        label="Link λs (0 = required input)",
+        key="fatigue_link_lambda_s",
+    )
+    add_entry(
+        fatigue_controls,
+        row=6,
+        label="Link ΔσRsk (MPa; 0 = input needed)",
+        key="fatigue_link_strength",
+    )
+    run_fatigue_button = ttk.Button(
+        fatigue_controls,
+        text="Run FLM3 fatigue",
+    )
+    run_fatigue_button.grid(row=7, column=1, sticky="e", pady=(8, 0))
+    analysis_buttons.extend((run_local_deck_button, run_fatigue_button))
+
+    local_result_frame = ttk.LabelFrame(
+        local_tab,
+        text="Deck / fatigue results",
+        padding=8,
+    )
+    local_result_frame.grid(
+        row=1,
+        column=0,
+        columnspan=2,
+        sticky="nsew",
+        pady=(8, 0),
+    )
+    local_result_tree = ttk.Treeview(
+        local_result_frame,
+        columns=("check", "result", "value", "status"),
+        show="headings",
+        height=15,
+    )
+    local_result_tree.heading("check", text="Check")
+    local_result_tree.heading("result", text="Result")
+    local_result_tree.heading("value", text="Value")
+    local_result_tree.heading("status", text="Status / boundary")
+    local_result_tree.column("check", width=190, anchor=tk.W)
+    local_result_tree.column("result", width=230, anchor=tk.W)
+    local_result_tree.column("value", width=210, anchor=tk.CENTER)
+    local_result_tree.column("status", width=720, anchor=tk.W)
+    local_result_tree.pack(fill=tk.BOTH, expand=True)
 
     # ------------------------------------------------------------------
     # Verification tab
