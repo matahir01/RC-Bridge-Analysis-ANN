@@ -5,7 +5,6 @@ from dataclasses import dataclass
 from rc_bridge.application.design_checks import ApplicationDesignInterpretationSuite
 from rc_bridge.application.fatigue import FatigueApplicationResult
 from rc_bridge.application.load_cases import (
-    ApplicationGirderCombinationSummary,
     application_combination_summary,
     permanent_load_audit,
 )
