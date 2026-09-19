@@ -359,7 +359,6 @@ def _response(solution: _BeamSolution) -> LocalDeckResponse:
                 - 0.5 * element.udl_kn_m * x**2
             )
             shears.append(v_left - element.udl_kn_m * x)
-    last = solution.elements[-1]
     positions.append(solution.coordinates_m[-1])
     moments.append(-float(solution.element_end_forces[-1][3]))
     shears.append(-float(solution.element_end_forces[-1][2]))
