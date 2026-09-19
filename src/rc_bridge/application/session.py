@@ -423,11 +423,23 @@ class BridgeApplicationSession:
             raise RuntimeError(
                 "Run FLM3 fatigue before export so governing fatigue vehicle cases are included."
             )
+        basis = self.preferences.eurocode
+        combination_factors = BridgeActionCombinationFactors(
+            uls=basis.uls_factors,
+            gamma_q_nontraffic=basis.gamma_q_nontraffic,
+            psi1_lm2=basis.psi1_lm2,
+            psi0_thermal_uls=basis.psi0_thermal_uls,
+            psi0_thermal_sls=basis.psi0_thermal_sls,
+            psi1_thermal=basis.psi1_thermal,
+            psi2_thermal=basis.psi2_thermal,
+        )
         return write_application_verification_campaign(
             self.project,
             self.last_lm1_search,
             directory,
             extended_actions=self.last_extended_actions,
+            action_settings=self.preferences.actions,
+            combination_factors=combination_factors,
             action_combinations=self.last_action_combinations,
             local_deck=self.last_local_deck_design,
             fatigue=self.last_fatigue,
