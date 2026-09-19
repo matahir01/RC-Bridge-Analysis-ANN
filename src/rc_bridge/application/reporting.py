@@ -7,6 +7,7 @@ from rc_bridge.analysis.physical_sections import (
     composite_section_description,
     girder_tributary_slab_widths_m,
 )
+from rc_bridge.application.calculation_trace import CalculationTrace
 from rc_bridge.application.dashboard import build_application_dashboard
 from rc_bridge.application.design_checks import ApplicationDesignInterpretationSuite
 from rc_bridge.application.extended_actions import ExtendedActionSuite
@@ -26,6 +27,50 @@ def _number(value: float, digits: int = 3) -> str:
     return f"{float(value):.{digits}f}"
 
 
+def calculation_trace_html(trace: CalculationTrace | None) -> str:
+    if trace is None or not trace.blocks:
+        return ""
+    blocks: list[str] = []
+    for block in trace.blocks:
+        rows = []
+        for step in block.steps:
+            status = (
+                f"<div><strong>{escape(step.status)}</strong></div>"
+                if step.status
+                else ""
+            )
+            rows.append(
+                "<tr>"
+                f"<td class=\"left ref\">{escape(step.reference)}</td>"
+                "<td class=\"left calc\">"
+                f"<strong>{escape(step.label)}</strong>"
+                f"<div class=\"formula\">{escape(step.expression)}</div>"
+                f"<div class=\"substitution\">= {escape(step.substitution)}</div>"
+                "</td>"
+                f"<td class=\"left result\"><strong>{escape(step.result)}</strong>{status}</td>"
+                "</tr>"
+            )
+        blocks.append(
+            f"<h3>{escape(block.title)}</h3>"
+            f"<p class=\"small\">{escape(block.scope)}</p>"
+            "<table class=\"calculation-sheet\"><thead><tr>"
+            "<th class=\"left\">Reference</th>"
+            "<th class=\"left\">Calculation / substitution</th>"
+            "<th class=\"left\">Result</th>"
+            "</tr></thead><tbody>"
+            + "".join(rows)
+            + "</tbody></table>"
+        )
+    return (
+        "<h2>Step-by-step calculation sheets</h2>"
+        "<p class=\"note\">The following sheets expose the calculation path used by "
+        "the deterministic engine: input/effect, equation, numerical substitution, "
+        "result and design reference. Summary tables later in the report do not "
+        "replace these calculations.</p>"
+        + "".join(blocks)
+    )
+
+
 def application_html_report(
     project: ProjectInput,
     result: ProjectNativeLM1GrillageSearchResult,
@@ -35,6 +80,7 @@ def application_html_report(
     local_deck_design: LocalDeckDesignResult | None = None,
     design_interpretation: ApplicationDesignInterpretationSuite | None = None,
     fatigue: FatigueApplicationResult | None = None,
+    calculation_trace: CalculationTrace | None = None,
 ) -> str:
     """Render the desktop calculation/reporting view without claiming validation."""
 
@@ -266,6 +312,8 @@ def application_html_report(
             + fatigue_blockers
         )
 
+    calculation_trace_section = calculation_trace_html(calculation_trace)
+
     integrated_design_html = ""
     if design_interpretation is not None:
         design_rows = "".join(
@@ -380,6 +428,12 @@ th {{ background: #eaf2f8; }}
 .note {{ border-left: 4px solid #829ab1; padding: 10px 14px; background: #f5f7fa; }}
 .warn {{ border-left: 4px solid #d97706; padding: 10px 14px; background: #fff7ed; }}
 .small {{ font-size: 0.9rem; color: #52606d; }}
+.calculation-sheet td {{ vertical-align: top; }}
+.calculation-sheet .ref {{ width: 20%; }}
+.calculation-sheet .calc {{ width: 58%; }}
+.calculation-sheet .result {{ width: 22%; }}
+.formula {{ margin-top: 5px; font-family: "Courier New", monospace; }}
+.substitution {{ margin-top: 3px; font-family: "Courier New", monospace; color: #334e68; }}
 @media print {{
   body {{ margin: 12mm; }}
   .screen-only {{ display: none; }}
@@ -477,6 +531,7 @@ actions retain their actual extents in the deterministic permanent-load routines
 <tbody>{"".join(rows)}</tbody>
 </table>
 {deflection_section}
+{calculation_trace_section}
 {additional_action_html}
 {local_deck_html}
 {integrated_design_html}
@@ -521,8 +576,9 @@ def write_native_lm1_pdf_report(
     local_deck_design: LocalDeckDesignResult | None = None,
     design_interpretation: ApplicationDesignInterpretationSuite | None = None,
     fatigue: FatigueApplicationResult | None = None,
+    calculation_trace: CalculationTrace | None = None,
 ) -> Path:
-    """Write a compact printable PDF report using the same application provenance."""
+    """Write a printable engineering calculation report using shared trace records."""
 
     try:
         from reportlab.lib import colors
@@ -656,6 +712,59 @@ def write_native_lm1_pdf_report(
         )
     )
     story.extend([basis_table, Spacer(1, 4 * mm)])
+
+    if calculation_trace is not None and calculation_trace.blocks:
+        story.extend(
+            [
+                PageBreak(),
+                Paragraph("Step-by-step calculation sheets", styles["Heading2"]),
+                Paragraph(
+                    "Each calculation sheet shows the design reference, equation, "
+                    "numerical substitution and result. The later summary tables are "
+                    "retained for review but do not replace the worked calculation path.",
+                    body,
+                ),
+                Spacer(1, 3 * mm),
+            ]
+        )
+        for block in calculation_trace.blocks:
+            story.append(Paragraph(escape(block.title), styles["Heading3"]))
+            story.append(Paragraph(escape(block.scope), small))
+            trace_rows = [["Reference", "Calculation / substitution", "Result"]]
+            for step in block.steps:
+                calc_text = (
+                    f"<b>{escape(step.label)}</b><br/>"
+                    f"{escape(step.expression)}<br/>"
+                    f"= {escape(step.substitution)}"
+                )
+                result_text = f"<b>{escape(step.result)}</b>"
+                if step.status:
+                    result_text += f"<br/><b>{escape(step.status)}</b>"
+                trace_rows.append(
+                    [
+                        Paragraph(escape(step.reference), small),
+                        Paragraph(calc_text, small),
+                        Paragraph(result_text, small),
+                    ]
+                )
+            trace_table = Table(
+                trace_rows,
+                colWidths=[42 * mm, 101 * mm, 37 * mm],
+                repeatRows=1,
+            )
+            trace_table.setStyle(
+                TableStyle(
+                    [
+                        ("GRID", (0, 0), (-1, -1), 0.25, colors.grey),
+                        ("BACKGROUND", (0, 0), (-1, 0), colors.whitesmoke),
+                        ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+                        ("FONTSIZE", (0, 0), (-1, -1), 7.0),
+                        ("VALIGN", (0, 0), (-1, -1), "TOP"),
+                    ]
+                )
+            )
+            story.extend([trace_table, Spacer(1, 3 * mm)])
+        story.append(PageBreak())
 
     story.append(Paragraph("Load cases and combinations", styles["Heading2"]))
     permanent_rows_pdf = [
