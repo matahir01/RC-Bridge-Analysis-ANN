@@ -73,7 +73,8 @@ def test_full_application_verification_campaign_exports_all_available_action_fam
     assert "vertical wind" in families
     assert "construction stage" in families
     assert "FLM3 fatigue" in families
-    assert campaign.model_count >= 8
+    assert "unified final service" in families
+    assert campaign.model_count >= 9
     assert campaign.manifest_json.exists()
     assert campaign.action_summary_json.exists()
 
@@ -81,6 +82,7 @@ def test_full_application_verification_campaign_exports_all_available_action_fam
     assert manifest["model_count"] == campaign.model_count
     assert manifest["family_counts"]["LM1 characteristic"] == 1
     assert manifest["family_counts"]["permanent actions"] == 1
+    assert manifest["family_counts"]["unified final service"] == 1
     assert "scalar_or_kinematic_verification_records" in manifest["coverage"]
 
     summary = json.loads(campaign.action_summary_json.read_text(encoding="utf-8"))
@@ -115,3 +117,52 @@ def test_full_campaign_requires_full_analysis_workflow(tmp_path) -> None:
         assert "Additional actions" in str(exc)
     else:
         raise AssertionError("Full verification campaign must not silently omit actions.")
+
+
+def test_stage5_model_contains_completed_grillage_and_real_combinations(tmp_path) -> None:
+    session = _session()
+    session.run_native_lm1()
+    session.run_extended_actions()
+    session.run_local_deck_design()
+    session.run_design_interpretation()
+    session.run_fatigue()
+
+    campaign = session.export_verification_campaign(tmp_path / "verification")
+    final_service = next(
+        item for item in campaign.models if item.family == "unified final service"
+    )
+    std_path = next(path for path in final_service.files if path.suffix.lower() == ".std")
+    mct_path = next(path for path in final_service.files if path.suffix.lower() == ".mct")
+    std = std_path.read_text(encoding="utf-8")
+    mct = mct_path.read_text(encoding="utf-8")
+
+    assert "LOAD COMB 10001" in std
+    assert "ULS_GR1A" in std
+    assert "*LOADCOMB" in mct
+    assert "NAME=ULS_GR1A" in mct
+    assert "SLS_QUASI_PERMANENT_G" in std
+
+
+def test_completed_construction_stage_uses_full_transverse_deck_grillage(tmp_path) -> None:
+    session = _session()
+    session.run_native_lm1()
+    session.run_extended_actions()
+    session.run_local_deck_design()
+    session.run_design_interpretation()
+    session.run_fatigue()
+
+    campaign = session.export_verification_campaign(tmp_path / "verification")
+    final_stage = next(
+        item
+        for item in campaign.models
+        if item.family == "construction stage" and item.label == "superimposed"
+    )
+    std_path = next(path for path in final_stage.files if path.suffix.lower() == ".std")
+    text = std_path.read_text(encoding="utf-8")
+
+    incidences = text.split("MEMBER INCIDENCES", 1)[1].split("MEMBER PROPERTY", 1)[0]
+    lines = [line.strip() for line in incidences.splitlines() if line.strip()]
+    # A seven-girder line-only model would contain longitudinal members only.
+    # The completed stage must also contain transverse deck-strip members.
+    assert len(lines) > 7
+    assert "completed_composite_construction_stage" in text.lower()

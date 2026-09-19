@@ -217,6 +217,17 @@ def export_staad_std(model: VerificationModel) -> str:
                 if active:
                     lines.append(f"{load.node_id} {active}")
 
+    for combination in model.load_combinations:
+        lines.append(
+            f"LOAD COMB {combination.combination_id} {_safe_name(combination.name)}"
+        )
+        terms = [
+            f"{term.load_case_id} {term.factor:.12g}"
+            for term in combination.terms
+        ]
+        for start in range(0, len(terms), 6):
+            lines.append(" ".join(terms[start : start + 6]))
+
     lines.extend(["PERFORM ANALYSIS", "PRINT SUPPORT REACTION ALL"])
     lines.extend(_global_member_force_print_commands(model))
     lines.extend(["PRINT JOINT DISPLACEMENTS ALL", "FINISH"])

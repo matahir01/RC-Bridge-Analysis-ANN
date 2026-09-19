@@ -1,9 +1,15 @@
+from dataclasses import replace
+
 import pytest
 
 from rc_bridge.analysis.moving_loads import AxleTrain
 from rc_bridge.core.models import BridgeGeometry, ProjectInput, SupportSystem
 from rc_bridge.export.midas_mct import export_midas_mct
 from rc_bridge.export.staad_std import export_staad_std
+from rc_bridge.export.verification_model import (
+    VerificationLoadCombination,
+    VerificationLoadCombinationTerm,
+)
 from rc_bridge.workflow.project_continuous import GlobalBeamPointLoad, ProjectContinuousLoadCase
 from rc_bridge.workflow.verification_export import (
     build_moving_train_snapshot_verification_model,
@@ -142,3 +148,34 @@ def test_moving_train_snapshot_freezes_exact_axle_position() -> None:
     assert loads[1].distance_from_i_m == pytest.approx(9.8)
     assert model.metadata["lead_position_m"] == "11"
     assert model.metadata["snapshot_type"] == "static_axle_position_from_internal_moving_load_solver"
+
+
+def test_verification_export_writes_static_load_combinations() -> None:
+    model = build_project_continuous_verification_model(
+        _project(),
+        _load_case(),
+        analysis_area_m2_by_span=(0.45, 0.45),
+    )
+    model = replace(
+        model,
+        load_combinations=(
+            VerificationLoadCombination(
+                combination_id=10001,
+                name="ULS_TEST",
+                terms=(
+                    VerificationLoadCombinationTerm(load_case_id=1, factor=1.35),
+                ),
+                category="ULS",
+                description="verification combination",
+            ),
+        ),
+    )
+
+    staad = export_staad_std(model)
+    assert "LOAD COMB 10001 ULS_TEST" in staad
+    assert "1 1.35" in staad
+
+    midas = export_midas_mct(model)
+    assert "*LOADCOMB" in midas
+    assert "NAME=ULS_TEST, GEN, ACTIVE, 0" in midas
+    assert "ST, verification service load, 1.35" in midas

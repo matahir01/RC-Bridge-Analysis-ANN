@@ -11,8 +11,11 @@ from rc_bridge.analysis.physical_sections import (
     girder_tributary_slab_widths_m,
     precast_girder_properties,
 )
-from rc_bridge.application.action_combinations import IntegratedActionCombinationSuite
-from rc_bridge.application.extended_actions import ExtendedActionSuite
+from rc_bridge.application.action_combinations import (
+    BridgeActionCombinationFactors,
+    IntegratedActionCombinationSuite,
+)
+from rc_bridge.application.extended_actions import ExtendedActionSettings, ExtendedActionSuite
 from rc_bridge.application.fatigue import FatigueApplicationResult
 from rc_bridge.application.local_deck import LocalDeckDesignResult
 from rc_bridge.codes.eurocode.materials import secant_elastic_modulus_mpa
@@ -26,9 +29,13 @@ from rc_bridge.export.model_verification_package import build_model_verification
 from rc_bridge.export.verification_model import (
     VerificationBeam,
     VerificationLoadCase,
+    VerificationLoadCombination,
+    VerificationLoadCombinationTerm,
     VerificationMaterial,
     VerificationModel,
+    VerificationNodalLoad,
     VerificationNode,
+    VerificationPointLoad,
     VerificationSection,
     VerificationSupport,
     VerificationUniformLoad,
@@ -217,7 +224,7 @@ def _all_permanent_reference_model(
     )
 
 
-def _construction_stage_line_model(
+def _construction_stage_physical_model(
     project: ProjectInput,
     actions: ExtendedActionSuite,
     stage: PermanentActionStage,
@@ -252,6 +259,81 @@ def _construction_stage_line_model(
             stations.add(float(segment.x_start_m))
             stations.add(float(segment.x_end_m))
     x_values = tuple(sorted(stations))
+
+    if stage is PermanentActionStage.SUPERIMPOSED:
+        base = build_project_grillage_verification_model(
+            project,
+            transverse_stations_m=x_values,
+            load_case=GrillageVerificationLoadCase(
+                name="completed composite bridge - superimposed permanent actions",
+            ),
+        )
+        nodes_by_id = {node.node_id: node for node in base.nodes}
+        loads: list[VerificationUniformLoad] = []
+        for beam in base.beams:
+            ni = nodes_by_id[beam.node_i]
+            nj = nodes_by_id[beam.node_j]
+            if abs(ni.y_m - nj.y_m) > 1.0e-9 or nj.x_m <= ni.x_m + 1.0e-12:
+                continue
+            girder_index = next(
+                (
+                    index + 1
+                    for index, y_m in enumerate(girder_y)
+                    if abs(ni.y_m - y_m) <= 1.0e-9
+                ),
+                None,
+            )
+            if girder_index is None:
+                continue
+            midpoint = 0.5 * (ni.x_m + nj.x_m)
+            magnitude = sum(
+                segment.magnitude_kn_m
+                for segment in segments_by_girder[girder_index]
+                if (
+                    segment.x_start_m - 1.0e-9
+                    <= midpoint
+                    <= segment.x_end_m + 1.0e-9
+                )
+            )
+            if magnitude > 0.0:
+                loads.append(
+                    VerificationUniformLoad(
+                        member_id=beam.member_id,
+                        direction="GZ",
+                        magnitude_kn_m=-magnitude,
+                    )
+                )
+        return replace(
+            base,
+            name=f"{project.name} - completed composite construction stage",
+            load_cases=(
+                VerificationLoadCase(
+                    load_case_id=1,
+                    name="superimposed permanent actions on completed composite bridge",
+                    uniform_loads=tuple(loads),
+                ),
+            ),
+            metadata={
+                **base.metadata,
+                "source": "RC-Bridge-Analysis-ANN",
+                "purpose": "construction_stage_application_verification",
+                "construction_stage": stage.value,
+                "structural_model": (
+                    "completed physical final-stage bridge grillage with longitudinal "
+                    "composite girders and transverse deck-strip members"
+                ),
+                "physical_presence": (
+                    "precast girders + precast false slab + hardened in-situ deck present; "
+                    "superimposed permanent actions applied to completed composite structure"
+                ),
+                "construction_history_boundary": (
+                    "earlier girder/false-slab/wet-deck loads are not reapplied here; "
+                    "their response belongs to the earlier construction increments"
+                ),
+                "stiffness_basis": "final hardened composite bridge section and deck grillage",
+                "load_basis": "SUPERIMPOSED-stage permanent segments only",
+            },
+        )
 
     e_kn_m2 = _elastic_modulus_kn_m2(project)
     material = VerificationMaterial(
@@ -376,10 +458,16 @@ def _construction_stage_line_model(
             "purpose": "construction_stage_application_verification",
             "construction_stage": stage.value,
             "structural_model": (
-                "independent simply-supported longitudinal girder lines matching "
-                "the desktop construction-stage summary"
+                "independent longitudinal girder lines for the pre-final construction "
+                "state; deck components that have not developed verified structural "
+                "stiffness are represented as loads, not fictitious beam members"
             ),
-            "stiffness_basis": "physical section active at this construction stage",
+            "physical_presence": (
+                "precast girders present; precast false slab is present from the precast "
+                "stage as permanent load; wet in-situ deck is present as load during the "
+                "deck-construction stage but is not credited with hardened deck stiffness"
+            ),
+            "stiffness_basis": "physical longitudinal section active at this construction stage",
             "load_basis": "exact stage-tagged permanent segments plus explicit execution UDL",
         },
     )
@@ -432,6 +520,511 @@ def _vertical_wind_model(
             "vertical_pressure_kn_m2": f"{wind.vertical_pressure_kn_m2:.12g}",
         },
     )
+
+
+
+def _coordinate_key(x_m: float, y_m: float, z_m: float) -> tuple[float, float, float]:
+    return (round(float(x_m), 10), round(float(y_m), 10), round(float(z_m), 10))
+
+
+def _remap_load_case_to_common_model(
+    source_model: VerificationModel,
+    source_case: VerificationLoadCase,
+    target_model: VerificationModel,
+    *,
+    load_case_id: int,
+    name: str,
+) -> VerificationLoadCase:
+    """Map one exact static load case onto a geometrically richer common grillage mesh.
+
+    The unified Stage-5 model is built from the union of every retained service-action
+    grid line. Source nodal loads therefore map by exact coordinates. Member loads are
+    split over collinear target members while preserving their physical loaded length
+    and intensity. No load is smeared to a different girder or transverse line.
+    """
+
+    source_nodes = {node.node_id: node for node in source_model.nodes}
+    source_beams = {beam.member_id: beam for beam in source_model.beams}
+    target_nodes = {node.node_id: node for node in target_model.nodes}
+    target_by_coordinate = {
+        _coordinate_key(node.x_m, node.y_m, node.z_m): node.node_id
+        for node in target_model.nodes
+    }
+
+    nodal: list[VerificationNodalLoad] = []
+    for load in source_case.nodal_loads:
+        node = source_nodes[load.node_id]
+        target_id = target_by_coordinate.get(
+            _coordinate_key(node.x_m, node.y_m, node.z_m)
+        )
+        if target_id is None:
+            raise RuntimeError("Unified service mesh is missing a source nodal-load coordinate.")
+        nodal.append(
+            replace(
+                load,
+                node_id=target_id,
+            )
+        )
+
+    uniform: list[VerificationUniformLoad] = []
+    point: list[VerificationPointLoad] = []
+
+    def target_members_on_line(
+        *,
+        longitudinal: bool,
+        fixed_coordinate: float,
+    ):
+        rows = []
+        for beam in target_model.beams:
+            ni = target_nodes[beam.node_i]
+            nj = target_nodes[beam.node_j]
+            if longitudinal:
+                if (
+                    abs(ni.y_m - fixed_coordinate) <= 1.0e-9
+                    and abs(nj.y_m - fixed_coordinate) <= 1.0e-9
+                    and abs(nj.x_m - ni.x_m) > 1.0e-12
+                ):
+                    rows.append((beam, ni, nj))
+            elif (
+                abs(ni.x_m - fixed_coordinate) <= 1.0e-9
+                and abs(nj.x_m - fixed_coordinate) <= 1.0e-9
+                and abs(nj.y_m - ni.y_m) > 1.0e-12
+            ):
+                rows.append((beam, ni, nj))
+        return rows
+
+    for load in source_case.uniform_loads:
+        beam = source_beams[load.member_id]
+        ni = source_nodes[beam.node_i]
+        nj = source_nodes[beam.node_j]
+        length = source_model.member_length_m(beam.member_id)
+        start = 0.0 if load.start_m is None else float(load.start_m)
+        end = length if load.end_m is None else float(load.end_m)
+        if abs(nj.x_m - ni.x_m) > 1.0e-12 and abs(nj.y_m - ni.y_m) <= 1.0e-9:
+            sign = 1.0 if nj.x_m > ni.x_m else -1.0
+            x0 = ni.x_m + sign * start
+            x1 = ni.x_m + sign * end
+            lo, hi = sorted((x0, x1))
+            candidates = target_members_on_line(
+                longitudinal=True,
+                fixed_coordinate=ni.y_m,
+            )
+            for target_beam, ti, tj in candidates:
+                member_lo, member_hi = sorted((ti.x_m, tj.x_m))
+                overlap_lo = max(lo, member_lo)
+                overlap_hi = min(hi, member_hi)
+                if overlap_hi <= overlap_lo + 1.0e-12:
+                    continue
+                if tj.x_m >= ti.x_m:
+                    local_start = overlap_lo - ti.x_m
+                    local_end = overlap_hi - ti.x_m
+                else:
+                    local_start = ti.x_m - overlap_hi
+                    local_end = ti.x_m - overlap_lo
+                uniform.append(
+                    VerificationUniformLoad(
+                        member_id=target_beam.member_id,
+                        direction=load.direction,
+                        magnitude_kn_m=load.magnitude_kn_m,
+                        start_m=local_start,
+                        end_m=local_end,
+                    )
+                )
+        elif abs(nj.y_m - ni.y_m) > 1.0e-12 and abs(nj.x_m - ni.x_m) <= 1.0e-9:
+            sign = 1.0 if nj.y_m > ni.y_m else -1.0
+            y0 = ni.y_m + sign * start
+            y1 = ni.y_m + sign * end
+            lo, hi = sorted((y0, y1))
+            candidates = target_members_on_line(
+                longitudinal=False,
+                fixed_coordinate=ni.x_m,
+            )
+            for target_beam, ti, tj in candidates:
+                member_lo, member_hi = sorted((ti.y_m, tj.y_m))
+                overlap_lo = max(lo, member_lo)
+                overlap_hi = min(hi, member_hi)
+                if overlap_hi <= overlap_lo + 1.0e-12:
+                    continue
+                if tj.y_m >= ti.y_m:
+                    local_start = overlap_lo - ti.y_m
+                    local_end = overlap_hi - ti.y_m
+                else:
+                    local_start = ti.y_m - overlap_hi
+                    local_end = ti.y_m - overlap_lo
+                uniform.append(
+                    VerificationUniformLoad(
+                        member_id=target_beam.member_id,
+                        direction=load.direction,
+                        magnitude_kn_m=load.magnitude_kn_m,
+                        start_m=local_start,
+                        end_m=local_end,
+                    )
+                )
+        else:
+            raise RuntimeError(
+                "Unified Stage-5 remapping currently requires horizontal orthogonal "
+                "grillage members."
+            )
+
+    for load in source_case.point_loads:
+        beam = source_beams[load.member_id]
+        ni = source_nodes[beam.node_i]
+        nj = source_nodes[beam.node_j]
+        length = source_model.member_length_m(beam.member_id)
+        ratio = 0.0 if length <= 0.0 else load.distance_from_i_m / length
+        x = ni.x_m + ratio * (nj.x_m - ni.x_m)
+        y = ni.y_m + ratio * (nj.y_m - ni.y_m)
+        z = ni.z_m + ratio * (nj.z_m - ni.z_m)
+        exact_node = target_by_coordinate.get(_coordinate_key(x, y, z))
+        if exact_node is not None and load.direction in {"GX", "GY", "GZ"}:
+            kwargs = {
+                "fx_kn": load.magnitude_kn if load.direction == "GX" else 0.0,
+                "fy_kn": load.magnitude_kn if load.direction == "GY" else 0.0,
+                "fz_kn": load.magnitude_kn if load.direction == "GZ" else 0.0,
+            }
+            nodal.append(VerificationNodalLoad(node_id=exact_node, **kwargs))
+            continue
+
+        longitudinal = abs(nj.x_m - ni.x_m) > 1.0e-12
+        candidates = target_members_on_line(
+            longitudinal=longitudinal,
+            fixed_coordinate=ni.y_m if longitudinal else ni.x_m,
+        )
+        found = False
+        for target_beam, ti, tj in candidates:
+            if longitudinal:
+                lo, hi = sorted((ti.x_m, tj.x_m))
+                coordinate = x
+                if not (lo - 1.0e-9 <= coordinate <= hi + 1.0e-9):
+                    continue
+                distance = (
+                    coordinate - ti.x_m
+                    if tj.x_m >= ti.x_m
+                    else ti.x_m - coordinate
+                )
+            else:
+                lo, hi = sorted((ti.y_m, tj.y_m))
+                coordinate = y
+                if not (lo - 1.0e-9 <= coordinate <= hi + 1.0e-9):
+                    continue
+                distance = (
+                    coordinate - ti.y_m
+                    if tj.y_m >= ti.y_m
+                    else ti.y_m - coordinate
+                )
+            point.append(
+                VerificationPointLoad(
+                    member_id=target_beam.member_id,
+                    direction=load.direction,
+                    magnitude_kn=load.magnitude_kn,
+                    distance_from_i_m=max(distance, 0.0),
+                )
+            )
+            found = True
+            break
+        if not found:
+            raise RuntimeError("Unified service mesh could not locate a source point load.")
+
+    return VerificationLoadCase(
+        load_case_id=load_case_id,
+        name=name,
+        self_weight_gz_factor=source_case.self_weight_gz_factor,
+        uniform_loads=tuple(uniform),
+        point_loads=tuple(point),
+        nodal_loads=tuple(nodal),
+    )
+
+
+def build_unified_final_service_verification_model(
+    project: ProjectInput,
+    lm1: ProjectNativeLM1GrillageSearchResult,
+    actions: ExtendedActionSuite,
+    *,
+    action_settings: ExtendedActionSettings,
+    combination_factors: BridgeActionCombinationFactors,
+    grid_spacing_m: float,
+) -> VerificationModel:
+    """Build one completed-bridge model containing the global in-service vertical actions.
+
+    For the current simple-span application profile, permanent force effects are
+    statically determinate, so the final-composite permanent load case reproduces
+    staged reactions/M/V even though staged deflection must still be checked from the
+    construction-stage results. Continuous-span permanent redistribution is therefore
+    rejected here until a genuine construction-stage external-result combination is
+    implemented rather than being silently approximated.
+    """
+
+    if project.geometry.support_system is not SupportSystem.SIMPLY_SUPPORTED:
+        raise ValueError(
+            "Unified Stage-5 verification currently requires a simply-supported bridge; "
+            "continuous bridges need construction-stage result combination rather than "
+            "reapplying all permanent loads to final stiffness."
+        )
+    if len(project.geometry.span_lengths_m) != 1:
+        raise ValueError(
+            "Unified Stage-5 verification currently requires one simple span."
+        )
+
+    permanent = _all_permanent_reference_model(
+        project,
+        grid_spacing_m=grid_spacing_m,
+    )
+    characteristic_lm1 = build_consolidated_governing_lm1_verification_model(
+        project,
+        lm1,
+    )
+
+    source_groups: list[tuple[str, VerificationModel]] = [
+        ("permanent", permanent),
+        ("lm1", characteristic_lm1),
+    ]
+    if actions.gr2_frequent_lm1 is not None:
+        source_groups.append(
+            (
+                "gr2",
+                build_consolidated_governing_lm1_verification_model(
+                    project,
+                    actions.gr2_frequent_lm1.search,
+                ),
+            )
+        )
+    if actions.pedestrian is not None and actions.pedestrian.applied:
+        if actions.pedestrian.model is None:
+            raise RuntimeError("Pedestrian result is missing its analysed grillage model.")
+        source_groups.append(("pedestrian", actions.pedestrian.model))
+    if actions.lm2 is not None:
+        source_groups.extend(
+            ("lm2", model) for model in actions.lm2.governing_models
+        )
+    wind = _vertical_wind_model(
+        project,
+        actions,
+        grid_spacing_m=grid_spacing_m,
+    )
+    if wind is not None:
+        source_groups.append(("wind", wind))
+
+    x_stations = tuple(
+        sorted(
+            {
+                round(float(node.x_m), 12)
+                for _, model in source_groups
+                for node in model.nodes
+            }
+        )
+    )
+    y_stations = tuple(
+        sorted(
+            {
+                round(float(node.y_m), 12)
+                for _, model in source_groups
+                for node in model.nodes
+            }
+        )
+    )
+    base = build_project_grillage_verification_model(
+        project,
+        transverse_stations_m=x_stations,
+        additional_transverse_y_m=y_stations,
+        load_case=GrillageVerificationLoadCase(name="Stage 5 common final-service mesh"),
+    )
+
+    load_cases: list[VerificationLoadCase] = []
+    case_groups: dict[str, list[int]] = {}
+    case_identity: list[dict[str, object]] = []
+    next_case_id = 1
+    for group, model in source_groups:
+        for source_case in model.load_cases:
+            case_id = next_case_id
+            next_case_id += 1
+            name = f"{group.upper()}_{source_case.name}"
+            remapped = _remap_load_case_to_common_model(
+                model,
+                source_case,
+                base,
+                load_case_id=case_id,
+                name=name,
+            )
+            load_cases.append(remapped)
+            case_groups.setdefault(group, []).append(case_id)
+            case_identity.append(
+                {
+                    "stage5_case_id": case_id,
+                    "group": group,
+                    "source_case_id": source_case.load_case_id,
+                    "source_case_name": source_case.name,
+                }
+            )
+
+    permanent_id = case_groups["permanent"][0]
+    combinations: list[VerificationLoadCombination] = []
+    next_combination_id = 10001
+
+    def add_combination(
+        name: str,
+        terms: tuple[tuple[int, float], ...],
+        *,
+        category: str,
+        description: str,
+    ) -> None:
+        nonlocal next_combination_id
+        combinations.append(
+            VerificationLoadCombination(
+                combination_id=next_combination_id,
+                name=name,
+                terms=tuple(
+                    VerificationLoadCombinationTerm(load_case_id=case_id, factor=factor)
+                    for case_id, factor in terms
+                    if abs(factor) > 1.0e-12
+                ),
+                category=category,
+                description=description,
+            )
+        )
+        next_combination_id += 1
+
+    gamma_g = combination_factors.uls.gamma_g_unfavourable
+    gamma_q = combination_factors.uls.gamma_q_traffic
+    pedestrian_ratio = 0.0
+    pedestrian_ids = case_groups.get("pedestrian", [])
+    if pedestrian_ids and action_settings.pedestrian_load_kn_m2 > 0.0:
+        pedestrian_ratio = min(
+            action_settings.pedestrian_reduced_with_lm1_kn_m2
+            / action_settings.pedestrian_load_kn_m2,
+            1.0,
+        )
+
+    for index, case_id in enumerate(case_groups.get("lm1", ()), start=1):
+        extra = (
+            ((pedestrian_ids[0], gamma_q * pedestrian_ratio),)
+            if pedestrian_ids and pedestrian_ratio > 0.0
+            else ()
+        )
+        add_combination(
+            f"ULS_GR1A_{index:02d}",
+            ((permanent_id, gamma_g), (case_id, gamma_q), *extra),
+            category="ULS",
+            description="gr1a LM1 leading plus reduced pedestrian footway",
+        )
+        extra_sls = (
+            ((pedestrian_ids[0], pedestrian_ratio),)
+            if pedestrian_ids and pedestrian_ratio > 0.0
+            else ()
+        )
+        add_combination(
+            f"SLS_CHAR_GR1A_{index:02d}",
+            ((permanent_id, 1.0), (case_id, 1.0), *extra_sls),
+            category="SLS characteristic",
+            description="gr1a characteristic service combination",
+        )
+
+    for index, case_id in enumerate(case_groups.get("gr2", ()), start=1):
+        add_combination(
+            f"ULS_GR2_VERTICAL_{index:02d}",
+            ((permanent_id, gamma_g), (case_id, gamma_q)),
+            category="ULS",
+            description="gr2 vertical frequent-LM1 component; braking checked at bearings",
+        )
+        add_combination(
+            f"SLS_FREQ_GR1A_{index:02d}",
+            ((permanent_id, 1.0), (case_id, 1.0)),
+            category="SLS frequent",
+            description="frequent LM1 vertical component",
+        )
+
+    for index, case_id in enumerate(case_groups.get("lm2", ()), start=1):
+        add_combination(
+            f"ULS_GR1B_{index:02d}",
+            ((permanent_id, gamma_g), (case_id, gamma_q)),
+            category="ULS",
+            description="gr1b LM2 isolated axle",
+        )
+        add_combination(
+            f"SLS_CHAR_GR1B_{index:02d}",
+            ((permanent_id, 1.0), (case_id, 1.0)),
+            category="SLS characteristic",
+            description="gr1b characteristic LM2",
+        )
+        add_combination(
+            f"SLS_FREQ_GR1B_{index:02d}",
+            (
+                (permanent_id, 1.0),
+                (case_id, combination_factors.psi1_lm2),
+            ),
+            category="SLS frequent",
+            description="gr1b frequent LM2",
+        )
+
+    if pedestrian_ids:
+        add_combination(
+            "ULS_GR3_PEDESTRIAN",
+            ((permanent_id, gamma_g), (pedestrian_ids[0], gamma_q)),
+            category="ULS",
+            description="gr3 pedestrian footway leading",
+        )
+        add_combination(
+            "SLS_CHAR_GR3_PEDESTRIAN",
+            ((permanent_id, 1.0), (pedestrian_ids[0], 1.0)),
+            category="SLS characteristic",
+            description="gr3 characteristic pedestrian footway",
+        )
+
+    for index, case_id in enumerate(case_groups.get("wind", ()), start=1):
+        add_combination(
+            f"ULS_VERTICAL_WIND_{index:02d}",
+            (
+                (permanent_id, gamma_g),
+                (case_id, combination_factors.gamma_q_nontraffic),
+            ),
+            category="ULS",
+            description="vertical wind leading",
+        )
+        add_combination(
+            f"SLS_CHAR_VERTICAL_WIND_{index:02d}",
+            ((permanent_id, 1.0), (case_id, 1.0)),
+            category="SLS characteristic",
+            description="vertical wind characteristic",
+        )
+
+    add_combination(
+        "SLS_QUASI_PERMANENT_G",
+        ((permanent_id, 1.0),),
+        category="SLS quasi-permanent",
+        description="permanent actions only for current traffic psi2 basis",
+    )
+
+    metadata = {
+        **base.metadata,
+        "verification_export": "unified_stage5_final_service",
+        "service_model_scope": (
+            "completed final composite bridge; global vertical service actions and "
+            "Eurocode application combinations represented as static cases/combinations"
+        ),
+        "construction_history": (
+            "simple-span reactions/M/V from permanent actions are statically determinate; "
+            "staged permanent deflection remains verified from construction-stage models "
+            "and is not replaced by the final-stiffness permanent displacement"
+        ),
+        "horizontal_action_boundary": (
+            "braking, transverse wind and thermal restraint/movement remain bearing/"
+            "restraint verification actions; they are not fabricated as vertical-grillage loads"
+        ),
+        "case_identity": json.dumps(case_identity, sort_keys=True),
+        "combination_basis": (
+            "gr1a characteristic LM1 plus reduced footway; gr1b LM2; gr2 vertical "
+            "frequent-LM1 component with braking checked separately; gr3 pedestrian; "
+            "vertical wind; ULS/SLS factors from persisted application design basis"
+        ),
+    }
+    model = replace(
+        base,
+        name=f"{project.name} - Stage 5 unified final-service verification",
+        load_cases=tuple(load_cases),
+        load_combinations=tuple(combinations),
+        metadata=metadata,
+    )
+    model.validate_load_positions()
+    return model
 
 
 def _selected_flm3_case_models(
@@ -610,6 +1203,8 @@ def write_application_verification_campaign(
     directory: str | Path,
     *,
     extended_actions: ExtendedActionSuite | None = None,
+    action_settings: ExtendedActionSettings | None = None,
+    combination_factors: BridgeActionCombinationFactors | None = None,
     action_combinations: IntegratedActionCombinationSuite | None = None,
     local_deck: LocalDeckDesignResult | None = None,
     fatigue: FatigueApplicationResult | None = None,
@@ -653,6 +1248,29 @@ def write_application_verification_campaign(
             base_name=f"{stem}_permanent_reference",
         )
     )
+
+    if (
+        extended_actions is not None
+        and action_settings is not None
+        and combination_factors is not None
+    ):
+        final_service = build_unified_final_service_verification_model(
+            project,
+            lm1,
+            extended_actions,
+            action_settings=action_settings,
+            combination_factors=combination_factors,
+            grid_spacing_m=grid_spacing_m,
+        )
+        written.append(
+            _write_model(
+                final_service,
+                root / "final_service_verification",
+                family="unified final service",
+                label="Stage 5 completed bridge with load cases and combinations",
+                base_name=f"{stem}_final_service",
+            )
+        )
 
     if extended_actions is not None:
         if extended_actions.gr2_frequent_lm1 is not None:
@@ -714,7 +1332,7 @@ def write_application_verification_campaign(
 
         if extended_actions.construction is not None:
             for stage in PermanentActionStage:
-                model = _construction_stage_line_model(project, extended_actions, stage)
+                model = _construction_stage_physical_model(project, extended_actions, stage)
                 if model is None:
                     continue
                 written.append(
@@ -776,7 +1394,8 @@ def write_application_verification_campaign(
                 "pedestrian footway grillage when applicable",
                 "LM2 governing M/V/T axle placements",
                 "vertical wind grillage when a non-zero vertical coefficient is supplied",
-                "simple-span construction-stage longitudinal girder models",
+                "construction-stage models with completed final-stage physical deck grillage",
+                "unified Stage-5 completed bridge with static service load cases and ULS/SLS combinations",
                 "FLM3 governing minimum/maximum moment/shear range cases",
             ],
             "scalar_or_kinematic_verification_records": [
