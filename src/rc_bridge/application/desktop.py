@@ -2190,13 +2190,27 @@ def main() -> int:
         started_at = time.monotonic()
         status_var.set("Running braking, thermal, pedestrian, LM2, barrier and construction actions...")
 
+        def gr2_progress(completed: int, total: int) -> None:
+            if total <= 0:
+                return
+            root.after(
+                0,
+                lambda: (
+                    progress.configure(value=50.0 * completed / total),
+                    status_var.set(
+                        f"gr2 frequent-LM1 case {completed:,}/{total:,} — "
+                        f"{100.0 * completed / total:.1f}% of gr2 search"
+                    ),
+                ),
+            )
+
         def lm2_progress(completed: int, total: int) -> None:
             if total <= 0:
                 return
             root.after(
                 0,
                 lambda: (
-                    progress.configure(value=100.0 * completed / total),
+                    progress.configure(value=50.0 + 50.0 * completed / total),
                     status_var.set(
                         f"LM2 placement {completed:,}/{total:,} — "
                         f"{100.0 * completed / total:.1f}%"
@@ -2208,6 +2222,7 @@ def main() -> int:
             try:
                 result = session.run_extended_actions(
                     lm2_progress_callback=lm2_progress,
+                    gr2_progress_callback=gr2_progress,
                 )
             except (OSError, TypeError, ValueError, RuntimeError) as exc:
                 message = str(exc)
