@@ -1,9 +1,9 @@
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass
 from itertools import permutations, product
 from math import sqrt
-from collections.abc import Callable
 
 from rc_bridge.analysis.grillage_effects import (
     NativeGrillageEnvelopeResult,
@@ -630,6 +630,39 @@ def _generate_lm1_search_plan(
     )
 
 
+def _fixed_search_mesh_coordinates(
+    project: ProjectInput,
+    plan: _LM1SearchPlan,
+    *,
+    base_x_stations_m: tuple[float, ...],
+) -> tuple[tuple[float, ...], tuple[float, ...]]:
+    """Return one union mesh containing every LM1 load boundary/axle location."""
+
+    total_length = sum(float(value) for value in project.geometry.span_lengths_m)
+    axle_spacing = lm1_tandem_axle_spacing_m()
+    x_values = {round(float(value), 12) for value in base_x_stations_m}
+    y_values: set[float] = set()
+    for placement in plan.placements:
+        for lane in placement.lane_placements:
+            y_values.update((round(lane.y_start_m, 12), round(lane.y_end_m, 12)))
+            for region in lane.udl_regions:
+                x_values.update((round(region.x_start_m, 12), round(region.x_end_m, 12)))
+            if lane.tandem_lead_x_m is not None:
+                for axle_x in (
+                    lane.tandem_lead_x_m,
+                    lane.tandem_lead_x_m + axle_spacing,
+                ):
+                    if -1.0e-9 <= axle_x <= total_length + 1.0e-9:
+                        x_values.add(round(min(max(axle_x, 0.0), total_length), 12))
+        for remaining in placement.remaining_area_placements:
+            y_values.update(
+                (round(remaining.y_start_m, 12), round(remaining.y_end_m, 12))
+            )
+            for region in remaining.udl_regions:
+                x_values.update((round(region.x_start_m, 12), round(region.x_end_m, 12)))
+    return tuple(sorted(x_values)), tuple(sorted(y_values))
+
+
 def generate_lm1_search_placements(
     project: ProjectInput,
     *,
@@ -682,6 +715,11 @@ def run_project_native_lm1_grillage_search(
     if not plan.placements:
         raise ValueError("Automated LM1 search generated no candidate placements.")
 
+    fixed_x_stations, fixed_y_stations = _fixed_search_mesh_coordinates(
+        project,
+        plan,
+        base_x_stations_m=transverse_stations_m,
+    )
     cases: list[LM1SearchCaseResult] = []
     prepared: PreparedVerticalGrillageSystem | None = None
     total_cases = len(plan.placements)
@@ -695,8 +733,9 @@ def run_project_native_lm1_grillage_search(
             project,
             longitudinal_sections_by_span=longitudinal_sections_by_span,
             transverse_section=transverse_section,
-            transverse_stations_m=transverse_stations_m,
+            transverse_stations_m=fixed_x_stations,
             lane_placements=placement.lane_placements,
+            supplemental_y_stations_m=fixed_y_stations,
             remaining_area_placements=placement.remaining_area_placements,
             factors=factors,
             stiffness_modifiers=stiffness_modifiers,
