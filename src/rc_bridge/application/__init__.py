@@ -28,7 +28,9 @@ from rc_bridge.application.session import (
     longitudinal_grid_stations,
 )
 from rc_bridge.application.verification_files import (
+    WrittenConsolidatedVerificationFiles,
     WrittenVerificationPackage,
+    write_consolidated_governing_lm1_verification_files,
     write_governing_lm1_verification_packages,
     write_verification_package,
 )
@@ -43,6 +45,7 @@ __all__ = [
     "EurocodeApplicationBasis",
     "ProjectDocument",
     "UnitDisplay",
+    "WrittenConsolidatedVerificationFiles",
     "WrittenVerificationPackage",
     "application_html_report",
     "build_application_dashboard",
@@ -53,6 +56,7 @@ __all__ = [
     "longitudinal_grid_stations",
     "native_lm1_html_report",
     "save_project",
+    "write_consolidated_governing_lm1_verification_files",
     "write_governing_lm1_verification_packages",
     "write_native_lm1_pdf_report",
     "write_verification_package",
