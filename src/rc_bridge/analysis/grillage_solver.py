@@ -4,6 +4,7 @@ import math
 from dataclasses import dataclass
 
 import numpy as np
+from scipy.linalg import lu_factor, lu_solve
 
 from rc_bridge.export.verification_model import (
     VerificationBeam,
@@ -54,8 +55,20 @@ class _ElementMechanics:
     length_m: float
     transformation: np.ndarray
     local_stiffness: np.ndarray
-    local_equivalent_load: np.ndarray
     global_dofs: tuple[int, ...]
+
+
+@dataclass(frozen=True)
+class PreparedVerticalGrillageSystem:
+    """Reusable stiffness/factorization for repeated load cases on one grillage."""
+
+    structural_signature: tuple[object, ...]
+    node_index_by_id: dict[int, int]
+    mechanics: tuple[_ElementMechanics, ...]
+    stiffness: np.ndarray
+    free_dofs: tuple[int, ...]
+    constrained_dofs: frozenset[int]
+    reduced_lu: tuple[np.ndarray, np.ndarray]
 
 
 def _selected_load_case(model: VerificationModel, load_case_id: int | None) -> VerificationLoadCase:
@@ -253,7 +266,6 @@ def _member_load_vector(
 def _element_mechanics(
     model: VerificationModel,
     beam: VerificationBeam,
-    load_case: VerificationLoadCase,
     node_index_by_id: dict[int, int],
 ) -> _ElementMechanics:
     cx, cy, length = _horizontal_basis(model, beam)
@@ -274,37 +286,30 @@ def _element_mechanics(
         length_m=length,
         transformation=transformation,
         local_stiffness=local_stiffness,
-        local_equivalent_load=_member_load_vector(
-            model,
-            load_case,
-            beam,
-            length_m=length,
-        ),
         global_dofs=(*i_dofs, *j_dofs),
     )
 
 
-def solve_vertical_grillage(
-    model: VerificationModel,
-    *,
-    load_case_id: int | None = None,
-) -> GrillageAnalysisResult:
-    """Solve a horizontal beam grillage for vertical bending and Saint-Venant torsion.
+def _structural_signature(model: VerificationModel) -> tuple[object, ...]:
+    """Return the load-independent model identity used by prepared systems."""
 
-    Each node has three active DOFs: global vertical displacement ``w`` and global
-    rotations ``Rx``/``Ry``. In-plane translations, axial response, lateral bending,
-    drilling rotation and geometric nonlinearity are intentionally outside this
-    first solver generation. Member vertical bending uses ``E*Iy`` and torsion uses
-    ``G*J`` from the same verification model exported to MIDAS/STAAD.
-    """
-    load_case = _selected_load_case(model, load_case_id)
+    return (
+        model.nodes,
+        model.materials,
+        model.sections,
+        model.beams,
+        model.supports,
+    )
+
+
+def prepare_vertical_grillage(model: VerificationModel) -> PreparedVerticalGrillageSystem:
+    """Assemble and factorize the load-independent vertical grillage stiffness once."""
+
     node_index_by_id = {node.node_id: index for index, node in enumerate(model.nodes)}
     dof_count = 3 * len(model.nodes)
     stiffness = np.zeros((dof_count, dof_count), dtype=float)
-    loads = np.zeros(dof_count, dtype=float)
-
     mechanics = tuple(
-        _element_mechanics(model, beam, load_case, node_index_by_id)
+        _element_mechanics(model, beam, node_index_by_id)
         for beam in model.beams
     )
     for element in mechanics:
@@ -314,19 +319,7 @@ def solve_vertical_grillage(
             @ element.local_stiffness
             @ element.transformation
         )
-        global_load = element.transformation.T @ element.local_equivalent_load
         stiffness[np.ix_(dofs, dofs)] += global_stiffness
-        loads[dofs] += global_load
-
-    for load in load_case.nodal_loads:
-        if abs(load.fx_kn) > 1.0e-12 or abs(load.fy_kn) > 1.0e-12:
-            raise ValueError("Native vertical grillage solver does not model in-plane nodal forces.")
-        if abs(load.mz_knm) > 1.0e-12:
-            raise ValueError("Native vertical grillage solver does not model nodal Mz drilling moment.")
-        w_dof, rx_dof, ry_dof = _node_dofs(node_index_by_id[load.node_id])
-        loads[w_dof] += load.fz_kn
-        loads[rx_dof] += load.mx_knm
-        loads[ry_dof] += load.my_knm
 
     constrained: set[int] = set()
     for support in model.supports:
@@ -349,10 +342,72 @@ def solve_vertical_grillage(
             "Grillage stiffness matrix is singular; check vertical/rotational supports, "
             "member connectivity and torsional mechanisms."
         )
+    return PreparedVerticalGrillageSystem(
+        structural_signature=_structural_signature(model),
+        node_index_by_id=node_index_by_id,
+        mechanics=mechanics,
+        stiffness=stiffness,
+        free_dofs=free,
+        constrained_dofs=frozenset(constrained),
+        reduced_lu=lu_factor(reduced),
+    )
+
+
+def solve_vertical_grillage(
+    model: VerificationModel,
+    *,
+    load_case_id: int | None = None,
+    prepared: PreparedVerticalGrillageSystem | None = None,
+) -> GrillageAnalysisResult:
+    """Solve vertical bending/torsion, optionally reusing a prepared stiffness system.
+
+    Reusing a prepared system is mathematically identical to a fresh solve when model
+    geometry, material/section stiffness, connectivity and supports are unchanged.
+    Only the load vector is rebuilt for each case, which is the intended path for
+    moving-load searches containing thousands of LM1 placements.
+    """
+
+    load_case = _selected_load_case(model, load_case_id)
+    system = prepared or prepare_vertical_grillage(model)
+    if system.structural_signature != _structural_signature(model):
+        raise ValueError(
+            "Prepared grillage system does not match the model geometry/stiffness/supports."
+        )
+
+    node_index_by_id = system.node_index_by_id
+    dof_count = 3 * len(model.nodes)
+    loads = np.zeros(dof_count, dtype=float)
+    local_loads: dict[int, np.ndarray] = {}
+
+    for element in system.mechanics:
+        dofs = np.array(element.global_dofs, dtype=int)
+        local_load = _member_load_vector(
+            model,
+            load_case,
+            element.beam,
+            length_m=element.length_m,
+        )
+        local_loads[element.beam.member_id] = local_load
+        loads[dofs] += element.transformation.T @ local_load
+
+    for load in load_case.nodal_loads:
+        if abs(load.fx_kn) > 1.0e-12 or abs(load.fy_kn) > 1.0e-12:
+            raise ValueError(
+                "Native vertical grillage solver does not model in-plane nodal forces."
+            )
+        if abs(load.mz_knm) > 1.0e-12:
+            raise ValueError(
+                "Native vertical grillage solver does not model nodal Mz drilling moment."
+            )
+        w_dof, rx_dof, ry_dof = _node_dofs(node_index_by_id[load.node_id])
+        loads[w_dof] += load.fz_kn
+        loads[rx_dof] += load.mx_knm
+        loads[ry_dof] += load.my_knm
 
     displacement = np.zeros(dof_count, dtype=float)
-    displacement[list(free)] = np.linalg.solve(reduced, loads[list(free)])
-    residual = stiffness @ displacement - loads
+    free = system.free_dofs
+    displacement[list(free)] = lu_solve(system.reduced_lu, loads[list(free)])
+    residual = system.stiffness @ displacement - loads
 
     node_results: list[GrillageNodeResult] = []
     for node_index, node in enumerate(model.nodes):
@@ -363,21 +418,32 @@ def solve_vertical_grillage(
                 vertical_displacement_m=float(displacement[w_dof]),
                 rotation_x_rad=float(displacement[rx_dof]),
                 rotation_y_rad=float(displacement[ry_dof]),
-                vertical_reaction_kn=float(residual[w_dof]) if w_dof in constrained else 0.0,
-                reaction_mx_knm=float(residual[rx_dof]) if rx_dof in constrained else 0.0,
-                reaction_my_knm=float(residual[ry_dof]) if ry_dof in constrained else 0.0,
+                vertical_reaction_kn=(
+                    float(residual[w_dof])
+                    if w_dof in system.constrained_dofs
+                    else 0.0
+                ),
+                reaction_mx_knm=(
+                    float(residual[rx_dof])
+                    if rx_dof in system.constrained_dofs
+                    else 0.0
+                ),
+                reaction_my_knm=(
+                    float(residual[ry_dof])
+                    if ry_dof in system.constrained_dofs
+                    else 0.0
+                ),
             )
         )
 
     member_results: list[GrillageMemberEndResult] = []
-    for element in mechanics:
+    for element in system.mechanics:
         dofs = np.array(element.global_dofs, dtype=int)
         local_displacement = element.transformation @ displacement[dofs]
         local_end_action = (
-            element.local_stiffness @ local_displacement - element.local_equivalent_load
+            element.local_stiffness @ local_displacement
+            - local_loads[element.beam.member_id]
         )
-        # Local slope is the negative of physical +local-y rotation. Therefore
-        # its generalized moment has the opposite sign of physical local-y moment.
         member_results.append(
             GrillageMemberEndResult(
                 member_id=element.beam.member_id,
