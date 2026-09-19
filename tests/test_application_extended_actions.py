@@ -94,6 +94,12 @@ def test_lm2_action_scans_carriageway_and_retains_contact_patch_pressure() -> No
     assert result.evaluated_case_count == 9
     assert len(result.girders) == 7
     assert len(result.governing_positions) == 7
+    assert len(result.governing_moment_positions) == 7
+    assert len(result.governing_shear_positions) == 7
+    assert len(result.governing_torsion_positions) == 7
+    assert all(item.effects.moment_knm >= 0.0 for item in result.girders)
+    assert all(item.effects.shear_kn >= 0.0 for item in result.girders)
+    assert all(item.effects.torsion_knm >= 0.0 for item in result.girders)
 
 
 def test_barrier_impact_calculates_horizontal_local_action_without_faking_3d_solve() -> None:
