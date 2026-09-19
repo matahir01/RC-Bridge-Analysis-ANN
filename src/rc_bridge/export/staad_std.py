@@ -40,6 +40,28 @@ def _staad_id_list(values: list[int]) -> str:
         tokens.extend((str(start), "TO", str(previous)))
     return " ".join(tokens)
 
+def _staad_id_chunks(
+    values: list[int],
+    *,
+    max_ids_per_command: int,
+) -> list[str]:
+    """Return short, independently valid STAAD member-list fragments.
+
+    STAAD may split overlong input lines internally. For MEMBER PROPERTY and
+    CONSTANTS assignments that is unsafe because the split continuation may no
+    longer carry the PRIS/material clause. Chunking before rendering guarantees
+    every emitted line remains a complete command, including strided grillage
+    member IDs that cannot be compacted into a single TO range.
+    """
+    if max_ids_per_command < 1:
+        raise ValueError("max_ids_per_command must be positive.")
+    ordered = sorted(set(values))
+    return [
+        _staad_id_list(ordered[start : start + max_ids_per_command])
+        for start in range(0, len(ordered), max_ids_per_command)
+    ]
+
+
 def _support_command(support: VerificationSupport) -> str:
     restrained = (support.ux, support.uy, support.uz, support.rx, support.ry, support.rz)
     if all(restrained):
@@ -61,7 +83,7 @@ def _support_command(support: VerificationSupport) -> str:
 def _global_member_force_print_commands(
     model: VerificationModel,
     *,
-    members_per_command: int = 40,
+    members_per_command: int = 24,
 ) -> list[str]:
     if members_per_command < 1:
         raise ValueError("members_per_command must be positive.")
@@ -122,7 +144,11 @@ def export_staad_std(model: VerificationModel) -> str:
             properties.append(f"AY {section.shear_area_y_m2:.12g}")
         if section.shear_area_z_m2 is not None:
             properties.append(f"AZ {section.shear_area_z_m2:.12g}")
-        lines.append(f"{_staad_id_list(member_ids)} PRIS {' '.join(properties)}")
+        for member_fragment in _staad_id_chunks(
+            member_ids,
+            max_ids_per_command=12,
+        ):
+            lines.append(f"{member_fragment} PRIS {' '.join(properties)}")
 
     lines.append("DEFINE MATERIAL START")
     for material in model.materials:
@@ -144,9 +170,13 @@ def export_staad_std(model: VerificationModel) -> str:
             beam.member_id for beam in model.beams if beam.material_id == material.material_id
         ]
         if member_ids:
-            lines.append(
-                f"MATERIAL {_safe_name(material.name)} MEMB {_staad_id_list(member_ids)}"
-            )
+            for member_fragment in _staad_id_chunks(
+                member_ids,
+                max_ids_per_command=24,
+            ):
+                lines.append(
+                    f"MATERIAL {_safe_name(material.name)} MEMB {member_fragment}"
+                )
 
     if model.supports:
         lines.append("SUPPORTS")
