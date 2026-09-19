@@ -15,7 +15,9 @@ from rc_bridge.application.reporting import (
     write_native_lm1_pdf_report,
 )
 from rc_bridge.application.verification_files import (
+    WrittenConsolidatedVerificationFiles,
     WrittenVerificationPackage,
+    write_consolidated_governing_lm1_verification_files,
     write_governing_lm1_verification_packages,
 )
 from rc_bridge.core.models import ProjectInput
@@ -176,7 +178,28 @@ class BridgeApplicationSession:
         directory: str | Path,
         *,
         base_name: str = "lm1_governing",
+    ) -> WrittenConsolidatedVerificationFiles:
+        """Write one MIDAS and one STAAD file containing all governing LM1 cases."""
+
+        if self.last_lm1_search is None:
+            raise RuntimeError(
+                "Run native LM1 analysis before exporting governing verification models."
+            )
+        return write_consolidated_governing_lm1_verification_files(
+            self.project,
+            self.last_lm1_search,
+            directory,
+            base_name=base_name,
+        )
+
+    def export_last_lm1_verification_packages(
+        self,
+        directory: str | Path,
+        *,
+        base_name: str = "lm1_governing",
     ) -> tuple[WrittenVerificationPackage, ...]:
+        """Write legacy one-folder-per-case packages for detailed/debug inspection."""
+
         if self.last_lm1_search is None:
             raise RuntimeError(
                 "Run native LM1 analysis before exporting governing verification models."
