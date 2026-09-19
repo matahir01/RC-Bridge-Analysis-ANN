@@ -4,6 +4,11 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from rc_bridge.application.action_combinations import (
+    BridgeActionCombinationFactors,
+    IntegratedActionCombinationSuite,
+    build_integrated_action_combinations,
+)
 from rc_bridge.application.dashboard import (
     ApplicationDashboard,
     build_application_dashboard,
@@ -75,6 +80,7 @@ class BridgeApplicationSession:
     last_lm1_search: ProjectNativeLM1GrillageSearchResult | None = None
     last_design_interpretation: ApplicationDesignInterpretationSuite | None = None
     last_extended_actions: ExtendedActionSuite | None = None
+    last_action_combinations: IntegratedActionCombinationSuite | None = None
 
     @classmethod
     def open(cls, path: str | Path) -> BridgeApplicationSession:
@@ -103,20 +109,24 @@ class BridgeApplicationSession:
         self.last_lm1_search = None
         self.last_design_interpretation = None
         self.last_extended_actions = None
+        self.last_action_combinations = None
 
     def set_preferences(self, preferences: ApplicationPreferences) -> None:
         if preferences.analysis != self.preferences.analysis:
             self.last_lm1_search = None
             self.last_design_interpretation = None
             self.last_extended_actions = None
+            self.last_action_combinations = None
         elif preferences.actions != self.preferences.actions:
             self.last_extended_actions = None
+            self.last_action_combinations = None
             self.last_design_interpretation = None
         elif (
             preferences.eurocode != self.preferences.eurocode
             or preferences.design != self.preferences.design
         ):
             self.last_design_interpretation = None
+            self.last_action_combinations = None
         self.preferences = preferences
 
     def dashboard(self) -> ApplicationDashboard:
@@ -154,13 +164,19 @@ class BridgeApplicationSession:
         *,
         lm2_progress_callback: Callable[[int, int], None] | None = None,
     ) -> ExtendedActionSuite:
+        analysis = self.preferences.analysis
         result = run_extended_actions(
             self.project,
             self.preferences.actions,
-            grid_spacing_m=self.preferences.analysis.grid_spacing_m,
+            grid_spacing_m=analysis.grid_spacing_m,
+            traffic_step_m=analysis.traffic_step_m,
+            max_exhaustive_tandem_combinations=(
+                analysis.max_exhaustive_tandem_combinations
+            ),
             lm2_progress_callback=lm2_progress_callback,
         )
         self.last_extended_actions = result
+        self.last_action_combinations = None
         self.last_design_interpretation = None
         return result
 
@@ -169,7 +185,29 @@ class BridgeApplicationSession:
             raise RuntimeError(
                 "Run native LM1 analysis before running the design interpretation."
             )
+        if self.last_extended_actions is None:
+            raise RuntimeError(
+                "Run Additional actions 1-6 before design so LM2, pedestrian, "
+                "braking, thermal, barrier and construction actions cannot be "
+                "silently omitted."
+            )
         basis = self.preferences.eurocode
+        factors = BridgeActionCombinationFactors(
+            uls=basis.uls_factors,
+            gamma_q_nontraffic=basis.gamma_q_nontraffic,
+            psi1_lm2=basis.psi1_lm2,
+            psi0_thermal_uls=basis.psi0_thermal_uls,
+            psi0_thermal_sls=basis.psi0_thermal_sls,
+            psi1_thermal=basis.psi1_thermal,
+            psi2_thermal=basis.psi2_thermal,
+        )
+        combinations = build_integrated_action_combinations(
+            self.project,
+            self.last_lm1_search,
+            self.last_extended_actions,
+            settings=self.preferences.actions,
+            factors=factors,
+        )
         result = run_application_design_interpretation(
             self.project,
             self.last_lm1_search,
@@ -178,7 +216,11 @@ class BridgeApplicationSession:
             crack_limit_mm=basis.crack_limit_mm,
             deflection_limit_span_ratio=basis.deflection_limit_span_ratio,
             settings=self.preferences.design,
+            action_combinations=combinations,
+            extended_actions=self.last_extended_actions,
+            gamma_q_nontraffic=basis.gamma_q_nontraffic,
         )
+        self.last_action_combinations = combinations
         self.last_design_interpretation = result
         return result
 
@@ -228,6 +270,7 @@ class BridgeApplicationSession:
             name=f"{self.project.name} - application native LM1",
         )
         self.last_lm1_search = result
+        self.last_action_combinations = None
         self.last_design_interpretation = None
         return result
 
