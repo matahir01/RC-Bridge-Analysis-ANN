@@ -276,6 +276,7 @@ def build_project_lm1_grillage_verification_model(
     *,
     transverse_stations_m: tuple[float, ...],
     lane_placements: tuple[LM1LaneVerificationPlacement, ...],
+    supplemental_y_stations_m: tuple[float, ...] = (),
     longitudinal_sections_by_span: tuple[GrillageSectionProperties, ...] | None = None,
     transverse_section: GrillageSectionProperties | None = None,
     remaining_area_placements: tuple[LM1RemainingAreaVerificationPlacement, ...] = (),
@@ -296,6 +297,7 @@ def build_project_lm1_grillage_verification_model(
         transverse_section=transverse_section,
         transverse_stations_m=transverse_stations_m,
         load_case=load_case,
+        supplemental_y_stations_m=supplemental_y_stations_m,
         stiffness_modifiers=stiffness_modifiers,
     )
     lane_strips, tandem_positions, lane_regions = _lane_metadata(lane_placements)
@@ -332,6 +334,7 @@ def build_project_lm1_grillage_verification_package(
     *,
     transverse_stations_m: tuple[float, ...],
     lane_placements: tuple[LM1LaneVerificationPlacement, ...],
+    supplemental_y_stations_m: tuple[float, ...] = (),
     longitudinal_sections_by_span: tuple[GrillageSectionProperties, ...] | None = None,
     transverse_section: GrillageSectionProperties | None = None,
     remaining_area_placements: tuple[LM1RemainingAreaVerificationPlacement, ...] = (),
@@ -346,6 +349,7 @@ def build_project_lm1_grillage_verification_package(
         transverse_section=transverse_section,
         transverse_stations_m=transverse_stations_m,
         lane_placements=lane_placements,
+        supplemental_y_stations_m=supplemental_y_stations_m,
         remaining_area_placements=remaining_area_placements,
         factors=factors,
         stiffness_modifiers=stiffness_modifiers,
