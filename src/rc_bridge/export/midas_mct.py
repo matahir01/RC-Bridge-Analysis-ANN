@@ -123,5 +123,25 @@ def export_midas_mct(model: VerificationModel) -> str:
                     f"{load.mz_knm:.12g}"
                 )
 
+    if model.load_combinations:
+        lines.append("*LOADCOMB")
+        load_case_names = {
+            case.load_case_id: _safe_name(case.name)
+            for case in model.load_cases
+        }
+        for combination in model.load_combinations:
+            description = _safe_name(
+                combination.description or combination.category
+            )
+            lines.append(
+                f"NAME={_safe_name(combination.name)}, GEN, ACTIVE, 0, {description}"
+            )
+            terms = [
+                f"ST, {load_case_names[term.load_case_id]}, {term.factor:.12g}"
+                for term in combination.terms
+            ]
+            for start in range(0, len(terms), 4):
+                lines.append(", ".join(terms[start : start + 4]))
+
     lines.append("*ENDDATA")
     return "\n".join(lines) + "\n"
