@@ -643,6 +643,56 @@ def _design_one_girder(
             provided_longitudinal_steel_mm2=trial_as,
             design_required_asw_per_s_mm2_per_m=required_asw,
         )
+        governing_required_asw = (
+            requirements.shear.governing_required_asw_per_s_mm2_per_m
+        )
+        maximum_link_spacing = (
+            requirements.shear.maximum_longitudinal_link_spacing_mm
+        )
+        maximum_leg_spacing = (
+            requirements.shear.maximum_transverse_leg_spacing_mm
+        )
+        for stage_demand in stage_demands:
+            stage_d = stage_demand.section_depth_m - centroid_from_bottom_m
+            stage_shear = check_shear(
+                ved_kn=stage_demand.design_shear_kn,
+                web_width_m=web_width_m,
+                effective_depth_m=stage_d,
+                longitudinal_steel_area_mm2=trial_as,
+                fck_mpa=float(project.materials.fck_mpa),
+                fyk_mpa=float(project.materials.fyk_mpa),
+                cot_theta=settings.cot_theta,
+            )
+            stage_asw = (
+                0.0
+                if stage_shear.shear_reinforcement is None
+                else stage_shear.shear_reinforcement.asw_per_s_mm2_per_m
+            )
+            stage_requirements = beam_detailing_requirements(
+                fctm_mpa=concrete.fctm_mpa,
+                fck_mpa=float(project.materials.fck_mpa),
+                fyk_mpa=float(project.materials.fyk_mpa),
+                tension_zone_width_m=bottom_width_m,
+                web_width_m=web_width_m,
+                effective_depth_m=stage_d,
+                concrete_area_m2=sum(
+                    layer.area_m2 for layer in stage_demand.layers
+                ),
+                provided_longitudinal_steel_mm2=trial_as,
+                design_required_asw_per_s_mm2_per_m=stage_asw,
+            )
+            governing_required_asw = max(
+                governing_required_asw,
+                stage_requirements.shear.governing_required_asw_per_s_mm2_per_m,
+            )
+            maximum_link_spacing = min(
+                maximum_link_spacing,
+                stage_requirements.shear.maximum_longitudinal_link_spacing_mm,
+            )
+            maximum_leg_spacing = min(
+                maximum_leg_spacing,
+                stage_requirements.shear.maximum_transverse_leg_spacing_mm,
+            )
         governing_longitudinal = max(
             required_flexural,
             requirements.longitudinal.minimum_tension_steel_mm2,
@@ -666,16 +716,10 @@ def _design_one_girder(
             candidate_bars = selected_bars
 
         candidate_links = select_vertical_link_arrangement(
-            required_asw_per_s_mm2_per_m=(
-                requirements.shear.governing_required_asw_per_s_mm2_per_m
-            ),
+            required_asw_per_s_mm2_per_m=governing_required_asw,
             web_width_mm=web_width_m * 1000.0,
-            maximum_longitudinal_spacing_mm=(
-                requirements.shear.maximum_longitudinal_link_spacing_mm
-            ),
-            maximum_transverse_leg_spacing_mm=(
-                requirements.shear.maximum_transverse_leg_spacing_mm
-            ),
+            maximum_longitudinal_spacing_mm=maximum_link_spacing,
+            maximum_transverse_leg_spacing_mm=maximum_leg_spacing,
             cover_mm=settings.cover_mm,
         )
         refined_d = _bar_centroid_effective_depth_m(
