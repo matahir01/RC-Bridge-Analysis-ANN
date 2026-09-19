@@ -4,14 +4,14 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from rc_bridge.application.calculation_trace import (
-    CalculationTrace,
-    build_application_calculation_trace,
-)
 from rc_bridge.application.action_combinations import (
     BridgeActionCombinationFactors,
     IntegratedActionCombinationSuite,
     build_integrated_action_combinations,
+)
+from rc_bridge.application.calculation_trace import (
+    CalculationTrace,
+    build_application_calculation_trace,
 )
 from rc_bridge.application.dashboard import (
     ApplicationDashboard,
