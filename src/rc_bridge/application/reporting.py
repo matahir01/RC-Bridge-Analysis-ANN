@@ -267,8 +267,8 @@ def write_native_lm1_pdf_report(
     story.append(Paragraph("Application design basis", styles["Heading2"]))
     basis_rows = [
         ["Display units", prefs.units.value],
-        ["ULS factors", f"γG,unf={ec.gamma_g_unfavourable:g}; γG,fav={ec.gamma_g_favourable:g}; γQ={ec.gamma_q_traffic:g}"],
-        ["SLS traffic ψ", f"ψ1={ec.psi1_traffic:g}; ψ2={ec.psi2_traffic:g}"],
+        ["ULS factors", f"gamma_G,unf={ec.gamma_g_unfavourable:g}; gamma_G,fav={ec.gamma_g_favourable:g}; gamma_Q={ec.gamma_q_traffic:g}"],
+        ["SLS traffic ψ", f"psi1={ec.psi1_traffic:g}; psi2={ec.psi2_traffic:g}"],
         ["Crack / deflection criteria", f"{ec.crack_limit_mm:g} mm; L/{ec.deflection_limit_span_ratio:g}"],
         ["Native search", f"grid {prefs.analysis.grid_spacing_m:g} m; traffic step {prefs.analysis.traffic_step_m:g} m"],
     ]
