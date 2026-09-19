@@ -1,8 +1,8 @@
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass
 from math import ceil
-from typing import Callable
 
 from rc_bridge.analysis.grillage_effects import native_grillage_traffic_envelope
 from rc_bridge.analysis.prepared_grillage_solver import (
