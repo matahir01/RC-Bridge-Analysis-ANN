@@ -1071,13 +1071,12 @@ def main() -> int:
         if not require_analysis("Print / preview report"):
             return
         try:
-            handle = tempfile.NamedTemporaryFile(
+            with tempfile.NamedTemporaryFile(
                 suffix=".html",
                 prefix="rc_bridge_report_",
                 delete=False,
-            )
-            path = Path(handle.name)
-            handle.close()
+            ) as handle:
+                path = Path(handle.name)
             session.write_last_lm1_report(path)
             webbrowser.open(path.resolve().as_uri())
         except (OSError, TypeError, ValueError, RuntimeError) as exc:
