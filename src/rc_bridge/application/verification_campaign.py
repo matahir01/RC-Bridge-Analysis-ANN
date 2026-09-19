@@ -11,8 +11,11 @@ from rc_bridge.analysis.physical_sections import (
     girder_tributary_slab_widths_m,
     precast_girder_properties,
 )
-from rc_bridge.application.action_combinations import IntegratedActionCombinationSuite
-from rc_bridge.application.extended_actions import ExtendedActionSuite
+from rc_bridge.application.action_combinations import (
+    BridgeActionCombinationFactors,
+    IntegratedActionCombinationSuite,
+)
+from rc_bridge.application.extended_actions import ExtendedActionSettings, ExtendedActionSuite
 from rc_bridge.application.fatigue import FatigueApplicationResult
 from rc_bridge.application.local_deck import LocalDeckDesignResult
 from rc_bridge.codes.eurocode.materials import secant_elastic_modulus_mpa
@@ -26,9 +29,13 @@ from rc_bridge.export.model_verification_package import build_model_verification
 from rc_bridge.export.verification_model import (
     VerificationBeam,
     VerificationLoadCase,
+    VerificationLoadCombination,
+    VerificationLoadCombinationTerm,
     VerificationMaterial,
     VerificationModel,
+    VerificationNodalLoad,
     VerificationNode,
+    VerificationPointLoad,
     VerificationSection,
     VerificationSupport,
     VerificationUniformLoad,
@@ -41,6 +48,9 @@ from rc_bridge.workflow.grillage_verification_export import (
 from rc_bridge.workflow.lm1_grillage_search import (
     ProjectNativeLM1GrillageSearchResult,
     build_consolidated_governing_lm1_verification_model,
+)
+from rc_bridge.workflow.lm1_grillage_verification import (
+    build_project_lm1_grillage_verification_model,
 )
 from rc_bridge.workflow.project_bridge import girder_permanent_load_segments
 
