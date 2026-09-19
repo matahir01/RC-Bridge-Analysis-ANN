@@ -123,6 +123,7 @@ class BridgeApplicationSession:
         return build_application_dashboard(
             self.project,
             has_native_lm1_analysis=self.last_lm1_search is not None,
+            has_extended_actions=self.last_extended_actions is not None,
         )
 
     def load_case_fields(self) -> ApplicationLoadCaseFields:
