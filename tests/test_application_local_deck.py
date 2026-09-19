@@ -1,11 +1,16 @@
 import pytest
 
 from rc_bridge.application.extended_actions import ExtendedActionSettings
+from rc_bridge.application.local_deck import LocalDeckSettings
 from rc_bridge.application.preferences import (
     AnalysisApplicationSettings,
     ApplicationPreferences,
 )
 from rc_bridge.application.project_editor import application_default_project
+from rc_bridge.application.project_io import (
+    dumps_project_document,
+    loads_project_document,
+)
 from rc_bridge.application.session import BridgeApplicationSession
 
 
@@ -51,7 +56,7 @@ def test_native_local_deck_design_checks_lm2_barrier_flexure_and_shear() -> None
     assert result.top_transverse.arrangement.provided_area_mm2_per_m >= (
         result.top_transverse.governing_area_mm2_per_m
     )
-    assert result.bottom_transverse.effective_depth_m < pytest.approx(0.175)
+    assert result.bottom_transverse.effective_depth_m < 0.175
     assert result.one_way_shear.design_shear_kn_per_m > 0.0
     assert result.one_way_shear.concrete_resistance_kn_per_m > 0.0
     assert session.last_local_deck_design is result
@@ -73,12 +78,6 @@ def test_local_deck_barrier_edge_responses_are_symmetric_for_default_bridge() ->
 
 
 def test_local_deck_settings_round_trip_with_project_preferences() -> None:
-    from rc_bridge.application.local_deck import LocalDeckSettings
-    from rc_bridge.application.project_io import (
-        dumps_project_document,
-        loads_project_document,
-    )
-
     project = application_default_project()
     preferences = ApplicationPreferences(
         local_deck=LocalDeckSettings(
