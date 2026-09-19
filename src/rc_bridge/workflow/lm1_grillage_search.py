@@ -144,9 +144,17 @@ class ProjectNativeLM1GrillageSearchResult:
     deflections: tuple[LM1GirderGoverningDeflection, ...] = ()
     prepared_structure_count: int = 0
     reused_factorization_solve_count: int = 0
+    evaluated_case_count_total: int | None = None
+    retained_all_evaluated_cases: bool = True
 
     @property
     def evaluated_case_count(self) -> int:
+        if self.evaluated_case_count_total is not None:
+            return self.evaluated_case_count_total
+        return len(self.cases)
+
+    @property
+    def retained_case_count(self) -> int:
         return len(self.cases)
 
     @property
@@ -713,6 +721,7 @@ def run_project_native_lm1_grillage_search(
     include_spanwise_udl_patterns: bool = True,
     progress_callback: Callable[[int, int], None] | None = None,
     cancel_check: Callable[[], bool] | None = None,
+    retain_all_cases: bool = True,
     name: str = "EN 1991-2 LM1 native grillage automated search",
 ) -> ProjectNativeLM1GrillageSearchResult:
     """Run automated LM1 placement search and envelope M/V/T by girder.
@@ -738,7 +747,14 @@ def run_project_native_lm1_grillage_search(
     )
     common_y_lines = _common_lm1_transverse_grid_lines(plan.placements)
     prepared_by_signature: dict[tuple[object, ...], object] = {}
-    cases: list[LM1SearchCaseResult] = []
+    all_cases: list[LM1SearchCaseResult] = []
+    retained_cases: dict[int, LM1SearchCaseResult] = {}
+    governing_y: list[float] = []
+    governing_moment: list[LM1GoverningComponent | None] = []
+    governing_shear: list[LM1GoverningComponent | None] = []
+    governing_torsion: list[LM1GoverningComponent | None] = []
+    governing_deflection: list[LM1GirderGoverningDeflection | None] = []
+
     total_cases = len(plan.placements)
     if progress_callback is not None:
         progress_callback(0, total_cases)
@@ -746,7 +762,8 @@ def run_project_native_lm1_grillage_search(
     for completed_before, placement in enumerate(plan.placements):
         if cancel_check is not None and cancel_check():
             raise LM1SearchCancelled(
-                f"Native LM1 analysis cancelled after {completed_before} of {total_cases} cases."
+                f"Native LM1 analysis cancelled after {completed_before} "
+                f"of {total_cases} cases."
             )
 
         case_name = f"{name} case {placement.case_id}"
@@ -769,96 +786,134 @@ def run_project_native_lm1_grillage_search(
             prepared_by_signature[signature] = prepared
         analysis = solve_prepared_vertical_grillage(prepared, model)
         girder_envelope = native_grillage_traffic_envelope(model, analysis)
-        cases.append(
-            LM1SearchCaseResult(
-                placement=placement,
-                model=model,
-                analysis=analysis,
-                girder_envelope=girder_envelope,
-            )
+        case_result = LM1SearchCaseResult(
+            placement=placement,
+            model=model,
+            analysis=analysis,
+            girder_envelope=girder_envelope,
         )
-        if progress_callback is not None:
-            progress_callback(len(cases), total_cases)
 
-    girder_count = cases[0].girder_envelope.envelope.girder_count
-    governing: list[LM1GirderGoverningEnvelope] = []
-    governing_deflections: list[LM1GirderGoverningDeflection] = []
-    for girder_index in range(1, girder_count + 1):
-        details = [case.girder_envelope.details[girder_index - 1] for case in cases]
-        moment_case_index = max(
-            range(len(cases)),
-            key=lambda index: details[index].effects.moment_knm,
-        )
-        shear_case_index = max(
-            range(len(cases)),
-            key=lambda index: details[index].effects.shear_kn,
-        )
-        torsion_case_index = max(
-            range(len(cases)),
-            key=lambda index: details[index].effects.torsion_knm,
-        )
-        base = details[0]
-        moment_detail = details[moment_case_index]
-        shear_detail = details[shear_case_index]
-        torsion_detail = details[torsion_case_index]
-        governing.append(
-            LM1GirderGoverningEnvelope(
-                girder_index=girder_index,
-                y_m=base.y_m,
-                moment_knm=LM1GoverningComponent(
-                    value=moment_detail.effects.moment_knm,
-                    case_id=cases[moment_case_index].placement.case_id,
-                    member_id=moment_detail.governing_moment_member_id,
-                ),
-                shear_kn=LM1GoverningComponent(
-                    value=shear_detail.effects.shear_kn,
-                    case_id=cases[shear_case_index].placement.case_id,
-                    member_id=shear_detail.governing_shear_member_id,
-                ),
-                torsion_knm=LM1GoverningComponent(
-                    value=torsion_detail.effects.torsion_knm,
-                    case_id=cases[torsion_case_index].placement.case_id,
-                    member_id=torsion_detail.governing_torsion_member_id,
-                ),
-            )
-        )
-        displacement_candidates: list[
-            tuple[float, int, int | None, int | None, float]
-        ] = []
-        for case in cases:
-            displacement_candidates.extend(
-                (
-                    value_mm,
-                    case.placement.case_id,
-                    node_id,
-                    member_id,
-                    position_m,
+        if not governing_y:
+            girder_count = girder_envelope.envelope.girder_count
+            governing_y = [
+                detail.y_m for detail in girder_envelope.details
+            ]
+            governing_moment = [None] * girder_count
+            governing_shear = [None] * girder_count
+            governing_torsion = [None] * girder_count
+            governing_deflection = [None] * girder_count
+
+        for girder_index, detail in enumerate(
+            girder_envelope.details,
+            start=1,
+        ):
+            current = governing_moment[girder_index - 1]
+            if current is None or detail.effects.moment_knm > current.value:
+                governing_moment[girder_index - 1] = LM1GoverningComponent(
+                    value=detail.effects.moment_knm,
+                    case_id=placement.case_id,
+                    member_id=detail.governing_moment_member_id,
                 )
-                for value_mm, node_id, member_id, position_m in (
-                    _member_vertical_displacement_candidates(
-                        case,
-                        target_y_m=base.y_m,
+
+            current = governing_shear[girder_index - 1]
+            if current is None or detail.effects.shear_kn > current.value:
+                governing_shear[girder_index - 1] = LM1GoverningComponent(
+                    value=detail.effects.shear_kn,
+                    case_id=placement.case_id,
+                    member_id=detail.governing_shear_member_id,
+                )
+
+            current = governing_torsion[girder_index - 1]
+            if current is None or detail.effects.torsion_knm > current.value:
+                governing_torsion[girder_index - 1] = LM1GoverningComponent(
+                    value=detail.effects.torsion_knm,
+                    case_id=placement.case_id,
+                    member_id=detail.governing_torsion_member_id,
+                )
+
+            value_mm, node_id, member_id, position_m = max(
+                _member_vertical_displacement_candidates(
+                    case_result,
+                    target_y_m=detail.y_m,
+                ),
+                key=lambda item: item[0],
+            )
+            current_deflection = governing_deflection[girder_index - 1]
+            if (
+                current_deflection is None
+                or value_mm > current_deflection.value_mm
+            ):
+                governing_deflection[girder_index - 1] = (
+                    LM1GirderGoverningDeflection(
+                        girder_index=girder_index,
+                        value_mm=value_mm,
+                        case_id=placement.case_id,
+                        node_id=node_id,
+                        position_m=position_m,
+                        member_id=member_id,
                     )
                 )
+
+        if retain_all_cases:
+            all_cases.append(case_result)
+        else:
+            current_governing_case_ids = {
+                item.case_id
+                for item in (
+                    *governing_moment,
+                    *governing_shear,
+                    *governing_torsion,
+                )
+                if item is not None
+            }
+            current_governing_case_ids.update(
+                item.case_id
+                for item in governing_deflection
+                if item is not None
             )
-        value_mm, case_id, node_id, member_id, position_m = max(
-            displacement_candidates,
-            key=lambda item: item[0],
+            if placement.case_id in current_governing_case_ids:
+                retained_cases[placement.case_id] = case_result
+            for case_id in tuple(retained_cases):
+                if case_id not in current_governing_case_ids:
+                    del retained_cases[case_id]
+
+        if progress_callback is not None:
+            progress_callback(completed_before + 1, total_cases)
+
+    if any(item is None for item in governing_moment):
+        raise RuntimeError("Native LM1 search produced no governing moment result.")
+    if any(item is None for item in governing_shear):
+        raise RuntimeError("Native LM1 search produced no governing shear result.")
+    if any(item is None for item in governing_torsion):
+        raise RuntimeError("Native LM1 search produced no governing torsion result.")
+    if any(item is None for item in governing_deflection):
+        raise RuntimeError("Native LM1 search produced no governing deflection result.")
+
+    governing = tuple(
+        LM1GirderGoverningEnvelope(
+            girder_index=index,
+            y_m=governing_y[index - 1],
+            moment_knm=governing_moment[index - 1],
+            shear_kn=governing_shear[index - 1],
+            torsion_knm=governing_torsion[index - 1],
         )
-        governing_deflections.append(
-            LM1GirderGoverningDeflection(
-                girder_index=girder_index,
-                value_mm=value_mm,
-                case_id=case_id,
-                node_id=node_id,
-                position_m=position_m,
-                member_id=member_id,
-            )
+        for index in range(1, len(governing_y) + 1)
+    )
+    governing_deflections = tuple(
+        item for item in governing_deflection if item is not None
+    )
+    cases = (
+        tuple(all_cases)
+        if retain_all_cases
+        else tuple(
+            retained_cases[case_id]
+            for case_id in sorted(retained_cases)
         )
+    )
 
     return ProjectNativeLM1GrillageSearchResult(
-        cases=tuple(cases),
-        girders=tuple(governing),
+        cases=cases,
+        girders=governing,
         longitudinal_step_m=longitudinal_step_m,
         search_strategy=plan.strategy,
         tandem_combinations_exhaustive=plan.tandem_combinations_exhaustive,
@@ -866,11 +921,13 @@ def run_project_native_lm1_grillage_search(
             plan.theoretical_tandem_combinations_per_transverse_layout
         ),
         udl_pattern_count=plan.udl_pattern_count,
-        deflections=tuple(governing_deflections),
+        deflections=governing_deflections,
         prepared_structure_count=len(prepared_by_signature),
         reused_factorization_solve_count=(
-            len(cases) - len(prepared_by_signature)
+            total_cases - len(prepared_by_signature)
         ),
+        evaluated_case_count_total=total_cases,
+        retained_all_evaluated_cases=retain_all_cases,
     )
 
 
