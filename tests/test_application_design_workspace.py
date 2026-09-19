@@ -58,6 +58,7 @@ def test_design_preferences_round_trip() -> None:
 def test_design_interpretation_runs_real_ec2_checks_after_native_lm1() -> None:
     session = _session()
     search = session.run_native_lm1()
+    session.run_extended_actions()
     result = session.run_design_interpretation()
 
     assert result.girders
@@ -74,6 +75,10 @@ def test_design_interpretation_runs_real_ec2_checks_after_native_lm1() -> None:
         centre.traffic_characteristic.moment_knm
     )
     assert session.last_design_interpretation is result
+    assert result.action_combinations is not None
+    assert session.last_action_combinations is result.action_combinations
+    assert centre.construction_stage_checks
+    assert centre.governing_uls_moment_situation
 
     direct = run_application_design_interpretation(
         session.project,
@@ -92,6 +97,7 @@ def test_design_interpretation_runs_real_ec2_checks_after_native_lm1() -> None:
 def test_design_interpretation_invalidates_when_design_basis_changes() -> None:
     session = _session()
     session.run_native_lm1()
+    session.run_extended_actions()
     session.run_design_interpretation()
     changed = ApplicationPreferences(
         units=session.preferences.units,
