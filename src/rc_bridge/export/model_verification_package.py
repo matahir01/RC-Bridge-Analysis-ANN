@@ -305,6 +305,22 @@ def build_model_verification_export_package(
         "section_count": len(model.sections),
         "support_count": len(model.supports),
         "load_cases": [case.name for case in model.load_cases],
+        "load_combinations": [
+            {
+                "combination_id": combination.combination_id,
+                "name": combination.name,
+                "category": combination.category,
+                "description": combination.description,
+                "terms": [
+                    {
+                        "load_case_id": term.load_case_id,
+                        "factor": term.factor,
+                    }
+                    for term in combination.terms
+                ],
+            }
+            for combination in model.load_combinations
+        ],
         "metadata": model.metadata,
         "files": {
             "midas_mct": {"sha256": _sha256(midas), "extension": ".mct"},
