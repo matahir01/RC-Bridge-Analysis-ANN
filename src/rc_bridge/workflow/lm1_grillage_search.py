@@ -3,12 +3,18 @@ from __future__ import annotations
 from dataclasses import dataclass
 from itertools import permutations, product
 from math import sqrt
+from collections.abc import Callable
 
 from rc_bridge.analysis.grillage_effects import (
     NativeGrillageEnvelopeResult,
     native_grillage_traffic_envelope,
 )
-from rc_bridge.analysis.grillage_solver import GrillageAnalysisResult, solve_vertical_grillage
+from rc_bridge.analysis.grillage_solver import (
+    GrillageAnalysisResult,
+    PreparedVerticalGrillageSystem,
+    prepare_vertical_grillage,
+    solve_vertical_grillage,
+)
 from rc_bridge.codes.eurocode.en1991_2 import (
     LM1AdjustmentFactors,
     lm1_tandem_axle_spacing_m,
@@ -656,6 +662,8 @@ def run_project_native_lm1_grillage_search(
     longitudinal_step_m: float = 0.5,
     max_exhaustive_tandem_combinations: int = 5000,
     include_spanwise_udl_patterns: bool = True,
+    progress_callback: Callable[[int, int], None] | None = None,
+    cancel_requested: Callable[[], bool] | None = None,
     name: str = "EN 1991-2 LM1 native grillage automated search",
 ) -> ProjectNativeLM1GrillageSearchResult:
     """Run automated LM1 placement search and envelope M/V/T by girder.
@@ -675,7 +683,13 @@ def run_project_native_lm1_grillage_search(
         raise ValueError("Automated LM1 search generated no candidate placements.")
 
     cases: list[LM1SearchCaseResult] = []
-    for placement in plan.placements:
+    prepared: PreparedVerticalGrillageSystem | None = None
+    total_cases = len(plan.placements)
+    for completed, placement in enumerate(plan.placements, start=1):
+        if cancel_requested is not None and cancel_requested():
+            raise RuntimeError(
+                f"Native LM1 analysis cancelled after {completed - 1} of {total_cases} cases."
+            )
         case_name = f"{name} case {placement.case_id}"
         model = build_project_lm1_grillage_verification_model(
             project,
@@ -688,7 +702,9 @@ def run_project_native_lm1_grillage_search(
             stiffness_modifiers=stiffness_modifiers,
             name=case_name,
         )
-        analysis = solve_vertical_grillage(model)
+        if prepared is None:
+            prepared = prepare_vertical_grillage(model)
+        analysis = solve_vertical_grillage(model, prepared=prepared)
         girder_envelope = native_grillage_traffic_envelope(model, analysis)
         cases.append(
             LM1SearchCaseResult(
@@ -698,6 +714,8 @@ def run_project_native_lm1_grillage_search(
                 girder_envelope=girder_envelope,
             )
         )
+        if progress_callback is not None:
+            progress_callback(completed, total_cases)
 
     girder_count = cases[0].girder_envelope.envelope.girder_count
     governing: list[LM1GirderGoverningEnvelope] = []
