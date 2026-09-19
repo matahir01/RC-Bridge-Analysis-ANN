@@ -27,6 +27,10 @@ from rc_bridge.workflow.grillage_verification_export import (
     GrillageVerificationLoadCase,
     build_project_grillage_verification_model,
 )
+from rc_bridge.workflow.lm1_grillage_search import (
+    ProjectNativeLM1GrillageSearchResult,
+    run_project_native_lm1_grillage_search,
+)
 from rc_bridge.workflow.project_bridge import (
     girder_deck_tributary_width_m,
     girder_permanent_load_segments,
@@ -61,8 +65,13 @@ class ExtendedActionSettings:
     # 3. Pedestrian / footway loading
     pedestrian_enabled: bool = True
     pedestrian_load_kn_m2: float = 5.0
+    pedestrian_reduced_with_lm1_kn_m2: float = 3.0
     left_footway_width_m: float = 0.0
     right_footway_width_m: float = 0.0
+
+    # EN 1991-2 gr2 frequent LM1 component accompanying horizontal traffic.
+    gr2_lm1_tandem_factor: float = 0.75
+    gr2_lm1_udl_factor: float = 0.40
 
     # 4. LM2 local axle
     lm2_enabled: bool = True
@@ -81,6 +90,11 @@ class ExtendedActionSettings:
     barrier_vertical_factor: float = 0.75
     barrier_alpha_Q1: float = 1.0
 
+    # Simple longitudinal bearing/restraint design path. Zero capacity means
+    # demand-only reporting rather than a fabricated pass/fail check.
+    bearing_longitudinal_capacity_per_bearing_kn: float = 0.0
+    bearing_movement_capacity_mm: float = 0.0
+
     # 6. Construction-stage actions
     construction_enabled: bool = True
     construction_execution_udl_kn_m2: float = 0.0
@@ -91,6 +105,9 @@ class ExtendedActionSettings:
             self.braking_alpha_Q1,
             self.thermal_alpha_per_c,
             self.pedestrian_load_kn_m2,
+            self.pedestrian_reduced_with_lm1_kn_m2,
+            self.gr2_lm1_tandem_factor,
+            self.gr2_lm1_udl_factor,
             self.lm2_beta_Q,
             self.lm2_axle_load_kn,
             self.lm2_wheel_track_m,
@@ -113,6 +130,8 @@ class ExtendedActionSettings:
             self.left_footway_width_m,
             self.right_footway_width_m,
             self.construction_execution_udl_kn_m2,
+            self.bearing_longitudinal_capacity_per_bearing_kn,
+            self.bearing_movement_capacity_mm,
         )
         if any(value < 0.0 for value in nonnegative):
             raise ValueError("Bridge-action magnitudes/widths cannot be negative.")
@@ -169,6 +188,14 @@ class PedestrianActionResult:
 
 
 @dataclass(frozen=True)
+class Gr2FrequentLM1Result:
+    search: ProjectNativeLM1GrillageSearchResult
+    tandem_factor: float
+    udl_factor: float
+    status: str
+
+
+@dataclass(frozen=True)
 class LM2ActionResult:
     evaluated_case_count: int
     wheel_load_kn: float
@@ -208,6 +235,7 @@ class ExtendedActionSuite:
     braking: BrakingActionResult | None
     thermal: ThermalActionResult | None
     pedestrian: PedestrianActionResult | None
+    gr2_frequent_lm1: Gr2FrequentLM1Result | None
     lm2: LM2ActionResult | None
     barrier_impact: BarrierImpactResult | None
     construction: ConstructionActionResult | None
@@ -460,6 +488,53 @@ def _scan_positions(
     return tuple(sorted(round(value, 12) for value in values))
 
 
+def gr2_frequent_lm1_action(
+    project: ProjectInput,
+    settings: ExtendedActionSettings,
+    *,
+    longitudinal_step_m: float,
+    max_exhaustive_tandem_combinations: int,
+    progress_callback: Callable[[int, int], None] | None = None,
+) -> Gr2FrequentLM1Result:
+    """Run the EN 1991-2 gr2 accompanying frequent LM1 vertical component.
+
+    TS and UDL are reduced independently; this is intentionally a new native
+    search rather than scaling a characteristic LM1 envelope after the fact,
+    because the different TS/UDL factors can change the governing placement.
+    """
+
+    f_ts = settings.gr2_lm1_tandem_factor
+    f_udl = settings.gr2_lm1_udl_factor
+    factors = LM1AdjustmentFactors(
+        alpha_q1=f_udl,
+        alpha_q2=f_udl,
+        alpha_q3=f_udl,
+        alpha_q_other=f_udl,
+        alpha_q_remaining=f_udl,
+        alpha_Q1=f_ts,
+        alpha_Q2=f_ts,
+        alpha_Q3=f_ts,
+    )
+    search = run_project_native_lm1_grillage_search(
+        project,
+        factors=factors,
+        longitudinal_step_m=longitudinal_step_m,
+        max_exhaustive_tandem_combinations=max_exhaustive_tandem_combinations,
+        progress_callback=progress_callback,
+        retain_all_cases=False,
+        name="EN 1991-2 gr2 frequent LM1 vertical component",
+    )
+    return Gr2FrequentLM1Result(
+        search=search,
+        tandem_factor=f_ts,
+        udl_factor=f_udl,
+        status=(
+            "Native full-width EN 1991-2 gr2 frequent LM1 vertical component; "
+            "TS and UDL are reduced separately before moving-load search."
+        ),
+    )
+
+
 def lm2_action(
     project: ProjectInput,
     settings: ExtendedActionSettings,
@@ -681,7 +756,10 @@ def run_extended_actions(
     settings: ExtendedActionSettings,
     *,
     grid_spacing_m: float,
+    traffic_step_m: float = 0.5,
+    max_exhaustive_tandem_combinations: int = 5000,
     lm2_progress_callback: Callable[[int, int], None] | None = None,
+    gr2_progress_callback: Callable[[int, int], None] | None = None,
 ) -> ExtendedActionSuite:
     """Run the six additional action families without hiding unsupported physics."""
 
@@ -703,6 +781,19 @@ def run_extended_actions(
                 grid_spacing_m=grid_spacing_m,
             )
             if settings.pedestrian_enabled
+            else None
+        ),
+        gr2_frequent_lm1=(
+            gr2_frequent_lm1_action(
+                project,
+                settings,
+                longitudinal_step_m=traffic_step_m,
+                max_exhaustive_tandem_combinations=(
+                    max_exhaustive_tandem_combinations
+                ),
+                progress_callback=gr2_progress_callback,
+            )
+            if settings.braking_enabled
             else None
         ),
         lm2=(
