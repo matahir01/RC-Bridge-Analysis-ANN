@@ -581,6 +581,7 @@ def main() -> int:
         "uls_v",
         "sls_char_m",
         "sls_freq_m",
+        "sls_qp_m",
     )
     combination_tree = ttk.Treeview(
         combinations_frame,
@@ -598,6 +599,7 @@ def main() -> int:
         "uls_v": "ULS V",
         "sls_char_m": "SLS char M",
         "sls_freq_m": "SLS freq M",
+        "sls_qp_m": "SLS qp M",
     }
     for key in combination_columns:
         combination_tree.heading(key, text=combination_headings[key])
@@ -1142,6 +1144,7 @@ def main() -> int:
                     f"{row.uls.shear_kn:.2f}",
                     f"{row.sls_characteristic.moment_knm:.2f}",
                     f"{row.sls_frequent.moment_knm:.2f}",
+                    f"{row.sls_quasi_permanent.moment_knm:.2f}",
                 ),
             )
 
@@ -1324,8 +1327,10 @@ def main() -> int:
         displayed_unit = preferences.units
         populate_project(session.project)
         populate_preferences(session.preferences)
+        populate_load_cases(session.project)
         if project_changed or settings_changed:
             clear_results()
+        refresh_load_case_views()
         refresh_dashboard()
 
     def apply_project() -> None:
