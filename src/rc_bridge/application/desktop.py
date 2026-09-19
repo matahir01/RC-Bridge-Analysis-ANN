@@ -18,6 +18,7 @@ from rc_bridge.application.interface_contract import (
     APPLICATION_INTERFACE_VERSION,
     build_application_view_snapshot,
     validate_application_interface,
+    validate_engine_interface,
 )
 from rc_bridge.application.load_cases import (
     ApplicationLoadCaseFields,
@@ -56,6 +57,7 @@ def main() -> int:
     root.minsize(1180, 740)
     configure_desktop_theme(root, ttk)
 
+    validate_engine_interface()
     session = BridgeApplicationSession(application_default_project())
     validate_application_interface(session)
     displayed_unit = session.preferences.units
