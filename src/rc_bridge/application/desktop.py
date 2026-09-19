@@ -13,6 +13,13 @@ from rc_bridge.analysis.physical_sections import (
 from rc_bridge.application.design_checks import ApplicationDesignSettings
 from rc_bridge.application.extended_actions import ExtendedActionSettings
 from rc_bridge.application.fatigue import FatigueApplicationSettings
+from rc_bridge.application.gui_theme import configure_desktop_theme
+from rc_bridge.application.interface_contract import (
+    APPLICATION_INTERFACE_VERSION,
+    build_application_view_snapshot,
+    validate_application_interface,
+    validate_engine_interface,
+)
 from rc_bridge.application.load_cases import (
     ApplicationLoadCaseFields,
     SurfacingExtent,
@@ -45,16 +52,21 @@ def main() -> int:
         ) from exc
 
     root = tk.Tk()
-    root.title("RC Bridge Analysis & Design")
-    root.geometry("1360x860")
-    root.minsize(1120, 720)
+    root.title("RC Bridge Studio")
+    root.geometry("1480x900")
+    root.minsize(1180, 740)
+    configure_desktop_theme(root, ttk)
 
+    validate_engine_interface()
     session = BridgeApplicationSession(application_default_project())
+    validate_application_interface(session)
     displayed_unit = session.preferences.units
     string_vars: dict[str, tk.StringVar] = {}
     bool_vars: dict[str, tk.BooleanVar] = {}
     status_var = tk.StringVar(value="Ready")
     length_unit_var = tk.StringVar(value=displayed_unit.length_label)
+    workspace_title_var = tk.StringVar(value="Overview")
+    project_header_var = tk.StringVar(value="")
     analysis_buttons: list[ttk.Button] = []
     cancel_event = threading.Event()
 
@@ -68,9 +80,66 @@ def main() -> int:
         bool_vars[name] = item
         return item
 
-    notebook = ttk.Notebook(root)
-    notebook.pack(fill=tk.BOTH, expand=True, padx=10, pady=(10, 4))
+    header = ttk.Frame(root, style="Header.TFrame", padding=(18, 11))
+    header.pack(fill=tk.X)
+    header_text = ttk.Frame(header, style="Header.TFrame")
+    header_text.pack(side=tk.LEFT, fill=tk.X, expand=True)
+    ttk.Label(
+        header_text,
+        textvariable=workspace_title_var,
+        style="HeaderTitle.TLabel",
+    ).pack(anchor="w")
+    ttk.Label(
+        header_text,
+        textvariable=project_header_var,
+        style="HeaderSubtitle.TLabel",
+    ).pack(anchor="w", pady=(2, 0))
 
+    header_actions = ttk.Frame(header, style="Header.TFrame")
+    header_actions.pack(side=tk.RIGHT)
+    header_open_button = ttk.Button(
+        header_actions,
+        text="Open",
+        style="Secondary.TButton",
+    )
+    header_open_button.pack(side=tk.LEFT, padx=4)
+    header_save_button = ttk.Button(
+        header_actions,
+        text="Save",
+        style="Secondary.TButton",
+    )
+    header_save_button.pack(side=tk.LEFT, padx=4)
+    header_run_button = ttk.Button(
+        header_actions,
+        text="Run full analysis",
+        style="Primary.TButton",
+    )
+    header_run_button.pack(side=tk.LEFT, padx=(8, 0))
+    analysis_buttons.append(header_run_button)
+
+    body = ttk.Frame(root)
+    body.pack(fill=tk.BOTH, expand=True)
+
+    sidebar = ttk.Frame(body, style="Sidebar.TFrame", width=220, padding=(12, 14))
+    sidebar.pack(side=tk.LEFT, fill=tk.Y)
+    sidebar.pack_propagate(False)
+    ttk.Label(
+        sidebar,
+        text="RC BRIDGE STUDIO",
+        style="SidebarBrand.TLabel",
+    ).pack(anchor="w", padx=4)
+    ttk.Label(
+        sidebar,
+        text=f"ENGINE / APP API v{APPLICATION_INTERFACE_VERSION}",
+        style="SidebarCaption.TLabel",
+    ).pack(anchor="w", padx=4, pady=(2, 18))
+
+    content = ttk.Frame(body, padding=(12, 10, 12, 6))
+    content.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+    notebook = ttk.Notebook(content, style="Workspace.TNotebook")
+    notebook.pack(fill=tk.BOTH, expand=True)
+
+    overview_tab = ttk.Frame(notebook, padding=12)
     project_tab = ttk.Frame(notebook, padding=12)
     basis_tab = ttk.Frame(notebook, padding=12)
     load_cases_tab = ttk.Frame(notebook, padding=12)
@@ -78,21 +147,75 @@ def main() -> int:
     analysis_tab = ttk.Frame(notebook, padding=12)
     design_tab = ttk.Frame(notebook, padding=12)
     local_tab = ttk.Frame(notebook, padding=12)
+    calculations_tab = ttk.Frame(notebook, padding=12)
     verification_tab = ttk.Frame(notebook, padding=12)
     research_tab = ttk.Frame(notebook, padding=12)
 
-    notebook.add(project_tab, text="Project")
-    notebook.add(basis_tab, text="Design basis")
-    notebook.add(load_cases_tab, text="Load cases & combinations")
-    notebook.add(actions_tab, text="Additional actions")
-    notebook.add(analysis_tab, text="Analysis")
-    notebook.add(design_tab, text="Design & checks")
-    notebook.add(local_tab, text="Deck & fatigue")
-    notebook.add(verification_tab, text="Verification")
-    notebook.add(research_tab, text="Research")
+    workspace_pages = (
+        ("overview", "Overview", overview_tab, "WORKSPACE"),
+        ("project", "Project", project_tab, "SETUP"),
+        ("basis", "Design basis", basis_tab, "SETUP"),
+        ("loads", "Loads & combinations", load_cases_tab, "SETUP"),
+        ("actions", "Additional actions", actions_tab, "ANALYSIS"),
+        ("analysis", "Traffic analysis", analysis_tab, "ANALYSIS"),
+        ("design", "Design & checks", design_tab, "DESIGN"),
+        ("deck", "Deck & fatigue", local_tab, "DESIGN"),
+        ("calculations", "Calculations", calculations_tab, "REVIEW"),
+        ("verification", "Verification", verification_tab, "REVIEW"),
+        ("research", "Research", research_tab, "RESEARCH"),
+    )
+    for _, title, frame, _ in workspace_pages:
+        notebook.add(frame, text=title)
 
-    footer = ttk.Frame(root, padding=(10, 4, 10, 8))
+    nav_buttons: dict[str, ttk.Button] = {}
+    page_titles = {str(frame): title for _, title, frame, _ in workspace_pages}
+    page_keys = {str(frame): key for key, _, frame, _ in workspace_pages}
+    current_section: str | None = None
+    for key, title, frame, section in workspace_pages:
+        if section != current_section:
+            ttk.Label(
+                sidebar,
+                text=section,
+                style="SidebarSection.TLabel",
+            ).pack(anchor="w", padx=6, pady=((8 if current_section else 0), 4))
+            current_section = section
+        button = ttk.Button(
+            sidebar,
+            text=title,
+            style="Nav.TButton",
+            command=lambda target=frame: notebook.select(target),
+        )
+        button.pack(fill=tk.X, pady=1)
+        nav_buttons[key] = button
+
+    ttk.Label(
+        sidebar,
+        text=(
+            "Deterministic bridge analysis,\n"
+            "design, verification & research"
+        ),
+        style="SidebarCaption.TLabel",
+        justify=tk.LEFT,
+    ).pack(side=tk.BOTTOM, anchor="w", padx=6, pady=(16, 2))
+
+    def sync_workspace_navigation(_event=None) -> None:
+        selected = notebook.select()
+        workspace_title_var.set(page_titles.get(selected, "RC Bridge Studio"))
+        active_key = page_keys.get(selected)
+        for key, button in nav_buttons.items():
+            button.configure(
+                style="NavActive.TButton" if key == active_key else "Nav.TButton"
+            )
+
+    notebook.bind("<<NotebookTabChanged>>", sync_workspace_navigation)
+
+    footer = ttk.Frame(root, style="Status.TFrame", padding=(14, 7, 14, 8))
     footer.pack(fill=tk.X)
+    ttk.Label(
+        footer,
+        textvariable=status_var,
+        style="SurfaceMuted.TLabel",
+    ).pack(side=tk.LEFT)
     progress = ttk.Progressbar(
         footer,
         mode="determinate",
@@ -103,10 +226,13 @@ def main() -> int:
     full_run_button = ttk.Button(
         footer,
         text="Run Full Analysis & Design",
+        style="Primary.TButton",
     )
     full_run_button.pack(side=tk.RIGHT, padx=(0, 10))
     analysis_buttons.append(full_run_button)
-    ttk.Label(footer, textvariable=status_var).pack(side=tk.LEFT)
+
+    notebook.select(overview_tab)
+    sync_workspace_navigation()
 
     def add_entry(
         parent,
@@ -153,6 +279,237 @@ def main() -> int:
             sticky="ew",
             pady=3,
         )
+
+    # ------------------------------------------------------------------
+    # Overview workspace
+    # ------------------------------------------------------------------
+    overview_tab.columnconfigure(0, weight=1)
+    overview_tab.columnconfigure(1, weight=1)
+    overview_tab.rowconfigure(1, weight=1)
+
+    overview_project_var = tk.StringVar(value="")
+    overview_progress_var = tk.StringVar(value="0 / 0")
+    overview_design_var = tk.StringVar(value="Not run")
+    overview_verification_var = tk.StringVar(value="Not imported")
+    overview_performance_var = tk.StringVar(value="")
+    overview_performance_detail_var = tk.StringVar(value="")
+
+    overview_heading = ttk.Frame(overview_tab)
+    overview_heading.grid(row=0, column=0, columnspan=2, sticky="ew", pady=(0, 12))
+    ttk.Label(
+        overview_heading,
+        text="Project control centre",
+        style="PageTitle.TLabel",
+    ).pack(anchor="w")
+    ttk.Label(
+        overview_heading,
+        text=(
+            "Define the bridge, run the deterministic workflow, inspect worked "
+            "calculations and close the external verification loop from one workspace."
+        ),
+        style="Muted.TLabel",
+        wraplength=950,
+        justify=tk.LEFT,
+    ).pack(anchor="w", pady=(3, 0))
+
+    overview_metrics = ttk.Frame(overview_tab)
+    overview_metrics.grid(row=1, column=0, sticky="nsew", padx=(0, 8))
+    overview_metrics.columnconfigure(0, weight=1)
+    overview_metrics.columnconfigure(1, weight=1)
+
+    project_card = ttk.LabelFrame(
+        overview_metrics,
+        text="Current project",
+        style="Card.TLabelframe",
+        padding=14,
+    )
+    project_card.grid(row=0, column=0, columnspan=2, sticky="ew", pady=(0, 10))
+    ttk.Label(
+        project_card,
+        textvariable=overview_project_var,
+        style="CardTitle.TLabel",
+        wraplength=600,
+        justify=tk.LEFT,
+    ).pack(anchor="w")
+
+    progress_card = ttk.LabelFrame(
+        overview_metrics,
+        text="Workflow progress",
+        style="Card.TLabelframe",
+        padding=14,
+    )
+    progress_card.grid(row=1, column=0, sticky="nsew", padx=(0, 5), pady=(0, 10))
+    ttk.Label(
+        progress_card,
+        textvariable=overview_progress_var,
+        style="Metric.TLabel",
+    ).pack(anchor="w")
+    ttk.Label(
+        progress_card,
+        text="completed stages",
+        style="SurfaceMuted.TLabel",
+    ).pack(anchor="w")
+
+    design_card = ttk.LabelFrame(
+        overview_metrics,
+        text="Design status",
+        style="Card.TLabelframe",
+        padding=14,
+    )
+    design_card.grid(row=1, column=1, sticky="nsew", padx=(5, 0), pady=(0, 10))
+    ttk.Label(
+        design_card,
+        textvariable=overview_design_var,
+        style="Metric.TLabel",
+    ).pack(anchor="w")
+    ttk.Label(
+        design_card,
+        text="integrated ULS/SLS",
+        style="SurfaceMuted.TLabel",
+    ).pack(anchor="w")
+
+    verification_card = ttk.LabelFrame(
+        overview_metrics,
+        text="External verification",
+        style="Card.TLabelframe",
+        padding=14,
+    )
+    verification_card.grid(row=2, column=0, columnspan=2, sticky="ew", pady=(0, 10))
+    ttk.Label(
+        verification_card,
+        textvariable=overview_verification_var,
+        style="CardTitle.TLabel",
+        wraplength=600,
+        justify=tk.LEFT,
+    ).pack(anchor="w")
+
+    performance_card = ttk.LabelFrame(
+        overview_metrics,
+        text="Performance diagnostics",
+        style="Card.TLabelframe",
+        padding=14,
+    )
+    performance_card.grid(row=3, column=0, columnspan=2, sticky="ew")
+    ttk.Label(
+        performance_card,
+        textvariable=overview_performance_var,
+        style="CardTitle.TLabel",
+    ).pack(anchor="w")
+    ttk.Label(
+        performance_card,
+        textvariable=overview_performance_detail_var,
+        style="SurfaceMuted.TLabel",
+        wraplength=600,
+        justify=tk.LEFT,
+    ).pack(anchor="w", pady=(3, 0))
+
+    workflow_card = ttk.LabelFrame(
+        overview_tab,
+        text="Engineering workflow",
+        style="Card.TLabelframe",
+        padding=10,
+    )
+    workflow_card.grid(row=1, column=1, sticky="nsew", padx=(8, 0))
+    workflow_card.rowconfigure(0, weight=1)
+    workflow_card.columnconfigure(0, weight=1)
+    overview_stage_tree = ttk.Treeview(
+        workflow_card,
+        columns=("state", "detail"),
+        show="headings",
+        height=13,
+    )
+    overview_stage_tree.heading("state", text="Status")
+    overview_stage_tree.heading("detail", text="Stage / engineering note")
+    overview_stage_tree.column("state", width=90, anchor=tk.CENTER)
+    overview_stage_tree.column("detail", width=520, anchor=tk.W)
+    overview_stage_tree.grid(row=0, column=0, sticky="nsew")
+
+    overview_actions = ttk.Frame(overview_tab)
+    overview_actions.grid(row=2, column=0, columnspan=2, sticky="ew", pady=(12, 0))
+    overview_run_button = ttk.Button(
+        overview_actions,
+        text="Run Full Analysis & Design",
+        style="Primary.TButton",
+    )
+    overview_run_button.pack(side=tk.LEFT)
+    overview_calculations_button = ttk.Button(
+        overview_actions,
+        text="Review calculations",
+        style="Secondary.TButton",
+    )
+    overview_calculations_button.pack(side=tk.LEFT, padx=8)
+    overview_verification_button = ttk.Button(
+        overview_actions,
+        text="Open verification",
+        style="Secondary.TButton",
+    )
+    overview_verification_button.pack(side=tk.LEFT)
+    analysis_buttons.append(overview_run_button)
+
+    # ------------------------------------------------------------------
+    # Calculation review workspace
+    # ------------------------------------------------------------------
+    calculations_tab.columnconfigure(0, weight=2)
+    calculations_tab.columnconfigure(1, weight=3)
+    calculations_tab.rowconfigure(1, weight=1)
+
+    calculation_heading = ttk.Frame(calculations_tab)
+    calculation_heading.grid(row=0, column=0, columnspan=2, sticky="ew", pady=(0, 10))
+    ttk.Label(
+        calculation_heading,
+        text="Worked calculation review",
+        style="PageTitle.TLabel",
+    ).pack(side=tk.LEFT)
+    calculation_refresh_button = ttk.Button(
+        calculation_heading,
+        text="Refresh calculations",
+        style="Secondary.TButton",
+    )
+    calculation_refresh_button.pack(side=tk.RIGHT)
+
+    calculation_tree_frame = ttk.LabelFrame(
+        calculations_tab,
+        text="Calculation navigator",
+        style="Card.TLabelframe",
+        padding=8,
+    )
+    calculation_tree_frame.grid(row=1, column=0, sticky="nsew", padx=(0, 7))
+    calculation_tree_frame.rowconfigure(0, weight=1)
+    calculation_tree_frame.columnconfigure(0, weight=1)
+    calculation_tree = ttk.Treeview(
+        calculation_tree_frame,
+        columns=("status",),
+        show="tree headings",
+    )
+    calculation_tree.heading("#0", text="Block / step")
+    calculation_tree.heading("status", text="Status")
+    calculation_tree.column("#0", width=390, anchor=tk.W)
+    calculation_tree.column("status", width=90, anchor=tk.CENTER)
+    calculation_tree.grid(row=0, column=0, sticky="nsew")
+
+    calculation_detail_frame = ttk.LabelFrame(
+        calculations_tab,
+        text="Calculation detail",
+        style="Card.TLabelframe",
+        padding=10,
+    )
+    calculation_detail_frame.grid(row=1, column=1, sticky="nsew", padx=(7, 0))
+    calculation_detail_frame.rowconfigure(0, weight=1)
+    calculation_detail_frame.columnconfigure(0, weight=1)
+    calculation_detail = tk.Text(
+        calculation_detail_frame,
+        wrap="word",
+        relief="flat",
+        padx=14,
+        pady=12,
+        font=("Segoe UI", 10),
+        background="#FFFFFF",
+        foreground="#172033",
+        insertbackground="#172033",
+    )
+    calculation_detail.grid(row=0, column=0, sticky="nsew")
+    calculation_detail.configure(state=tk.DISABLED)
+    calculation_item_map: dict[str, tuple[object, object | None]] = {}
 
     # ------------------------------------------------------------------
     # Project tab
@@ -2360,6 +2717,7 @@ def main() -> int:
             design_tree,
             action_result_tree,
             local_result_tree,
+            calculation_tree,
         ):
             for item in tree.get_children():
                 tree.delete(item)
@@ -2367,6 +2725,12 @@ def main() -> int:
         design_status_var.set(
             "Run native LM1 and required additional actions + wind before the "
             "integrated design interpretation, or use Run Full Analysis & Design."
+        )
+        calculation_item_map.clear()
+        _set_text(
+            calculation_detail,
+            "Run analysis, then open Calculations to review the deterministic "
+            "equation/substitution/result trace.",
         )
 
     def show_result(result) -> None:
@@ -3200,7 +3564,160 @@ def main() -> int:
             on_success=completed,
         )
 
+    def refresh_overview() -> None:
+        snapshot = build_application_view_snapshot(session)
+        project_header_var.set(
+            f"{snapshot.project_name}  ·  {snapshot.project_subtitle}"
+        )
+        overview_project_var.set(
+            f"{snapshot.project_name}\n{snapshot.project_subtitle}"
+        )
+        overview_progress_var.set(
+            f"{snapshot.completed_stage_count} / {snapshot.total_stage_count}"
+        )
+
+        design_stage = next(
+            stage for stage in snapshot.stages if stage.key == "design"
+        )
+        overview_design_var.set(
+            {
+                "complete": "READY",
+                "review": "REVIEW",
+                "pending": "PENDING",
+                "ready": "READY",
+            }[design_stage.state]
+        )
+        overview_verification_var.set(snapshot.verification_summary)
+        overview_performance_var.set(snapshot.last_operation)
+        overview_performance_detail_var.set(snapshot.last_operation_detail)
+
+        for item in overview_stage_tree.get_children():
+            overview_stage_tree.delete(item)
+        overview_stage_tree.tag_configure("complete", foreground="#177245")
+        overview_stage_tree.tag_configure("review", foreground="#A06000")
+        overview_stage_tree.tag_configure("pending", foreground="#5F6F82")
+        overview_stage_tree.tag_configure("ready", foreground="#2F6FB3")
+        for stage in snapshot.stages:
+            overview_stage_tree.insert(
+                "",
+                tk.END,
+                values=(
+                    stage.state.upper(),
+                    f"{stage.title} — {stage.detail}",
+                ),
+                tags=(stage.state,),
+            )
+
+    def show_calculation_detail(_event=None) -> None:
+        selected = calculation_tree.selection()
+        if not selected:
+            return
+        item = calculation_item_map.get(selected[0])
+        if item is None:
+            return
+        block, step = item
+        if step is None:
+            detail = (
+                f"{block.title}\n\n"
+                f"Scope\n{block.scope}\n\n"
+                f"This block contains {len(block.steps)} calculation step(s). "
+                "Select an individual step to review the equation, substitution, "
+                "result and engineering reference."
+            )
+        else:
+            lines = [
+                step.label,
+                "",
+                "ENGINEERING REFERENCE",
+                step.reference or "No additional reference text recorded.",
+                "",
+                "EQUATION / METHOD",
+                step.expression,
+                "",
+                "NUMERICAL SUBSTITUTION",
+                f"= {step.substitution}",
+                "",
+                "RESULT",
+                step.result,
+            ]
+            if step.status:
+                lines.extend(("", "CHECK STATUS", step.status))
+            detail = "\n".join(lines)
+        _set_text(calculation_detail, detail)
+
+    def refresh_calculation_view() -> None:
+        calculation_item_map.clear()
+        for item in calculation_tree.get_children():
+            calculation_tree.delete(item)
+        if session.last_lm1_search is None:
+            placeholder = calculation_tree.insert(
+                "",
+                tk.END,
+                text="Run native LM1 or the full workflow first",
+                values=("PENDING",),
+            )
+            calculation_tree.selection_set(placeholder)
+            calculation_tree.focus(placeholder)
+            calculation_item_map[placeholder] = (
+                type(
+                    "_Placeholder",
+                    (),
+                    {
+                        "title": "Calculations are not available yet.",
+                        "scope": (
+                            "The calculation viewer is fed by the deterministic "
+                            "CalculationTrace. Run analysis before reviewing equations."
+                        ),
+                        "steps": (),
+                    },
+                )(),
+                None,
+            )
+            show_calculation_detail()
+            return
+
+        try:
+            trace = session.calculation_trace()
+        except (TypeError, ValueError, RuntimeError) as exc:
+            messagebox.showerror("Calculation review", str(exc))
+            return
+
+        first_step_id: str | None = None
+        for block_index, block in enumerate(trace.blocks, start=1):
+            block_id = calculation_tree.insert(
+                "",
+                tk.END,
+                text=f"{block_index}. {block.title}",
+                values=("",),
+                open=block_index <= 2,
+            )
+            calculation_item_map[block_id] = (block, None)
+            for step_index, step in enumerate(block.steps, start=1):
+                step_id = calculation_tree.insert(
+                    block_id,
+                    tk.END,
+                    text=f"{block_index}.{step_index}  {step.label}",
+                    values=(step.status,),
+                )
+                calculation_item_map[step_id] = (block, step)
+                if first_step_id is None:
+                    first_step_id = step_id
+        if first_step_id is not None:
+            calculation_tree.selection_set(first_step_id)
+            calculation_tree.focus(first_step_id)
+            calculation_tree.see(first_step_id)
+            show_calculation_detail()
+        status_var.set(
+            f"Calculation trace loaded: {trace.step_count} worked step(s) "
+            f"across {len(trace.blocks)} block(s)."
+        )
+
+    def open_calculation_workspace() -> None:
+        notebook.select(calculations_tab)
+        refresh_calculation_view()
+
     def refresh_dashboard() -> None:
+        refresh_overview()
         for item in capability_tree.get_children():
             capability_tree.delete(item)
         dashboard = session.dashboard()
@@ -3775,6 +4292,17 @@ def main() -> int:
                 f"({format_duration(elapsed)})."
             ),
         )
+
+    calculation_tree.bind("<<TreeviewSelect>>", show_calculation_detail)
+    calculation_refresh_button.configure(command=refresh_calculation_view)
+    header_open_button.configure(command=open_project)
+    header_save_button.configure(command=save_current)
+    header_run_button.configure(command=run_full_workflow)
+    overview_run_button.configure(command=run_full_workflow)
+    overview_calculations_button.configure(command=open_calculation_workspace)
+    overview_verification_button.configure(
+        command=lambda: notebook.select(verification_tab)
+    )
 
     apply_project_button.configure(command=apply_project)
     apply_load_cases_button.configure(command=apply_load_cases)
