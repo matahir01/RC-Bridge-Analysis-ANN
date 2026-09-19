@@ -19,8 +19,11 @@ def test_application_default_project_has_complete_physical_profile() -> None:
     project = application_default_project()
 
     assert project.geometry.girder_profile is not None
-    assert project.geometry.section_type == SectionType.T
+    assert project.geometry.section_type == SectionType.RECTANGULAR
     assert project.geometry.girder_profile.total_depth_m == pytest.approx(0.95)
+    assert project.geometry.girder_profile.width_m == pytest.approx(0.40)
+    assert project.geometry.physical_deck_depth_m == pytest.approx(0.25)
+    assert project.geometry.composite_flange_depth_m == pytest.approx(0.175)
 
 
 def test_basic_editor_round_trip_preserves_unedited_project_actions() -> None:
