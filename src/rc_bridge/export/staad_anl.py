@@ -117,16 +117,19 @@ def _numeric_tokens(line: str) -> list[str] | None:
 
 
 def _selected_load_case_id(model: VerificationModel, load_case_id: int | None) -> int:
-    available = {case.load_case_id for case in model.load_cases}
+    available = {
+        *(case.load_case_id for case in model.load_cases),
+        *(combination.combination_id for combination in model.load_combinations),
+    }
     if load_case_id is None:
         if len(available) != 1:
             raise ValueError(
                 "STAAD ANL parsing requires load_case_id when the verification model contains "
-                "more than one load case."
+                "more than one load case or load combination."
             )
         return next(iter(available))
     if load_case_id not in available:
-        raise ValueError(f"Unknown verification load case {load_case_id}.")
+        raise ValueError(f"Unknown verification result ID {load_case_id}.")
     return load_case_id
 
 
