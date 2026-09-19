@@ -24,13 +24,16 @@ def _parser() -> argparse.ArgumentParser:
 
     analyse = sub.add_parser(
         "analyze-lm1",
-        help="Run native full-width Eurocode LM1 and write report/verification files.",
+        help=(
+            "Run native full-width Eurocode LM1 and write HTML/PDF reports plus "
+            "governing verification files."
+        ),
     )
     analyse.add_argument("project_file", type=Path)
     analyse.add_argument("--output", type=Path, required=True)
-    analyse.add_argument("--grid-spacing", type=float, default=1.0)
-    analyse.add_argument("--traffic-step", type=float, default=0.5)
-    analyse.add_argument("--max-tandem-combinations", type=int, default=5000)
+    analyse.add_argument("--grid-spacing", type=float, default=None)
+    analyse.add_argument("--traffic-step", type=float, default=None)
+    analyse.add_argument("--max-tandem-combinations", type=int, default=None)
     return parser
 
 
@@ -84,14 +87,20 @@ def main(argv: Sequence[str] | None = None) -> int:
             max_exhaustive_tandem_combinations=args.max_tandem_combinations,
         )
         args.output.mkdir(parents=True, exist_ok=True)
-        report = session.write_last_lm1_report(args.output / "calculation_report.html")
+        html_report = session.write_last_lm1_report(
+            args.output / "calculation_report.html"
+        )
+        pdf_report = session.write_last_lm1_pdf_report(
+            args.output / "calculation_report.pdf"
+        )
         packages = session.export_last_lm1_verification(
             args.output / "verification",
             base_name="application_lm1",
         )
         print(
             f"Completed {result.evaluated_case_count} LM1 cases; "
-            f"report: {report}; verification cases: {len(packages)}"
+            f"HTML: {html_report}; PDF: {pdf_report}; "
+            f"verification cases: {len(packages)}"
         )
         return 0
 

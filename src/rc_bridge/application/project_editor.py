@@ -4,6 +4,7 @@ from dataclasses import dataclass
 
 from rc_bridge.core.models import (
     BridgeGeometry,
+    DeckConstruction,
     DesignCode,
     IGirderProfile,
     MaterialProperties,
@@ -41,6 +42,12 @@ class ProjectBasicFields:
     i_web_depth_m: float | None = None
     i_bottom_flange_width_m: float | None = None
     i_bottom_flange_thickness_m: float | None = None
+    precast_false_slab_depth_m: float = 0.075
+    in_situ_slab_depth_m: float = 0.175
+    false_slab_composite_participation: bool = False
+    in_situ_slab_composite_participation: bool = True
+    concrete_density_kn_m3: float = 25.0
+    elastic_modulus_mpa: float | None = None
 
     @classmethod
     def from_project(cls, project: ProjectInput) -> ProjectBasicFields:
@@ -78,6 +85,7 @@ class ProjectBasicFields:
                 profile.bottom_flange_thickness_m
             )
 
+        construction = geometry.deck_construction
         return cls(
             name=project.name,
             design_code=project.design_code,
@@ -91,6 +99,22 @@ class ProjectBasicFields:
             section_type=geometry.section_type,
             fck_mpa=float(project.materials.fck_mpa),
             fyk_mpa=float(project.materials.fyk_mpa),
+            precast_false_slab_depth_m=float(
+                construction.precast_false_slab_depth_m
+            ),
+            in_situ_slab_depth_m=float(construction.in_situ_slab_depth_m),
+            false_slab_composite_participation=bool(
+                construction.false_slab_composite_participation
+            ),
+            in_situ_slab_composite_participation=bool(
+                construction.in_situ_slab_composite_participation
+            ),
+            concrete_density_kn_m3=float(project.materials.concrete_density_kn_m3),
+            elastic_modulus_mpa=(
+                None
+                if project.materials.elastic_modulus_mpa is None
+                else float(project.materials.elastic_modulus_mpa)
+            ),
             **values,
         )
 
@@ -143,6 +167,13 @@ class ProjectBasicFields:
         if not self.span_lengths_m or any(value <= 0.0 for value in self.span_lengths_m):
             raise ValueError("At least one positive span length is required.")
         profile = self._profile()
+        deck_construction = DeckConstruction(
+            precast_false_slab_depth_m=self.precast_false_slab_depth_m,
+            in_situ_slab_depth_m=self.in_situ_slab_depth_m,
+            false_slab_composite_participation=self.false_slab_composite_participation,
+            in_situ_slab_composite_participation=self.in_situ_slab_composite_participation,
+        )
+
         base_project = base or ProjectInput()
         geometry_data = base_project.geometry.model_dump(mode="python")
         geometry_data.update(
@@ -154,13 +185,22 @@ class ProjectBasicFields:
                 "girder_count": self.girder_count,
                 "girder_spacing_m": self.girder_spacing_m,
                 "girder_depth_m": profile.total_depth_m,
+                "deck_structural_depth_m": deck_construction.physical_depth_m,
+                "deck_construction": deck_construction.model_dump(mode="python"),
                 "support_system": self.support_system,
                 "section_type": self.section_type,
                 "girder_profile": profile.model_dump(mode="python"),
             }
         )
         material_data = base_project.materials.model_dump(mode="python")
-        material_data.update({"fck_mpa": self.fck_mpa, "fyk_mpa": self.fyk_mpa})
+        material_data.update(
+            {
+                "fck_mpa": self.fck_mpa,
+                "fyk_mpa": self.fyk_mpa,
+                "concrete_density_kn_m3": self.concrete_density_kn_m3,
+                "elastic_modulus_mpa": self.elastic_modulus_mpa,
+            }
+        )
 
         project_data = base_project.model_dump(mode="python")
         project_data.update(
@@ -176,6 +216,7 @@ class ProjectBasicFields:
 
 def application_default_project() -> ProjectInput:
     """Return an analysable physical T-girder starting project for the desktop app."""
+
     fields = ProjectBasicFields(
         name="15 m RC Girder Project",
         design_code=DesignCode.EUROCODE,
@@ -193,5 +234,10 @@ def application_default_project() -> ProjectInput:
         t_flange_thickness_m=0.15,
         t_web_width_m=0.30,
         t_total_depth_m=0.95,
+        precast_false_slab_depth_m=0.075,
+        in_situ_slab_depth_m=0.175,
+        false_slab_composite_participation=False,
+        in_situ_slab_composite_participation=True,
+        concrete_density_kn_m3=25.0,
     )
     return fields.apply()
