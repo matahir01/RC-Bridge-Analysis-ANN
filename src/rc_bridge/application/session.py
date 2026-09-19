@@ -25,16 +25,16 @@ from rc_bridge.application.fatigue import (
     FatigueApplicationResult,
     run_application_fatigue,
 )
-from rc_bridge.application.local_deck import (
-    LocalDeckDesignResult,
-    run_local_deck_design,
-)
 from rc_bridge.application.load_cases import (
     ApplicationGirderCombinationSummary,
     ApplicationLoadCaseFields,
     PermanentGirderLoadAudit,
     application_combination_summary,
     permanent_load_audit,
+)
+from rc_bridge.application.local_deck import (
+    LocalDeckDesignResult,
+    run_local_deck_design,
 )
 from rc_bridge.application.preferences import ApplicationPreferences
 from rc_bridge.application.project_io import load_project_document, save_project
