@@ -38,11 +38,11 @@ def configure_desktop_theme(root, ttk) -> DesktopPalette:
 
     style.configure(
         ".",
-        background=palette.canvas,
+        background=palette.surface,
         foreground=palette.ink,
         font=("Segoe UI", 10),
     )
-    style.configure("TFrame", background=palette.canvas)
+    style.configure("TFrame", background=palette.surface)
     style.configure("Surface.TFrame", background=palette.surface)
     style.configure("Sidebar.TFrame", background=palette.sidebar)
     style.configure("Header.TFrame", background=palette.surface)
@@ -62,7 +62,7 @@ def configure_desktop_theme(root, ttk) -> DesktopPalette:
     )
     style.configure(
         "PageTitle.TLabel",
-        background=palette.canvas,
+        background=palette.surface,
         foreground=palette.ink,
         font=("Segoe UI Semibold", 17),
     )
@@ -98,7 +98,7 @@ def configure_desktop_theme(root, ttk) -> DesktopPalette:
     )
     style.configure(
         "Muted.TLabel",
-        background=palette.canvas,
+        background=palette.surface,
         foreground=palette.ink_muted,
         font=("Segoe UI", 9),
     )
@@ -231,14 +231,14 @@ def configure_desktop_theme(root, ttk) -> DesktopPalette:
 
     style.configure(
         "TNotebook",
-        background=palette.canvas,
+        background=palette.surface,
         borderwidth=0,
         tabmargins=0,
     )
     # The professional shell uses its own left navigation. Keep Notebook as the
     # stable page container while hiding the legacy tab strip.
     style.layout("Workspace.TNotebook.Tab", [])
-    style.configure("Workspace.TNotebook", background=palette.canvas, borderwidth=0)
+    style.configure("Workspace.TNotebook", background=palette.surface, borderwidth=0)
 
     style.configure(
         "Horizontal.TProgressbar",
