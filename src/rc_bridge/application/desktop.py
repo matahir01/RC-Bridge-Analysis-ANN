@@ -3496,12 +3496,9 @@ def main() -> int:
 
     def new_project() -> None:
         nonlocal displayed_unit
-        session.project = application_default_project()
+        session.replace_project(application_default_project())
         session.project_path = None
-        session.preferences = ApplicationPreferences()
-        session.last_lm1_search = None
-        session.last_design_interpretation = None
-        session.last_extended_actions = None
+        session.set_preferences(ApplicationPreferences())
         displayed_unit = session.preferences.units
         populate_project(session.project)
         populate_preferences(session.preferences)
@@ -3524,10 +3521,9 @@ def main() -> int:
         except (OSError, TypeError, ValueError) as exc:
             messagebox.showerror("Open project", str(exc))
             return
-        session.project = opened.project
+        session.replace_project(opened.project)
         session.project_path = opened.project_path
-        session.preferences = opened.preferences
-        session.last_lm1_search = None
+        session.set_preferences(opened.preferences)
         displayed_unit = session.preferences.units
         populate_project(session.project)
         populate_preferences(session.preferences)
