@@ -13,7 +13,10 @@ from rc_bridge.core.models import ProjectInput
 from rc_bridge.workflow.lm1_grillage_search import (
     ProjectNativeLM1GrillageSearchResult,
 )
-from rc_bridge.workflow.project_bridge import girder_characteristic_permanent_effects
+from rc_bridge.workflow.project_bridge import (
+    girder_characteristic_permanent_effects,
+    girder_deck_tributary_width_m,
+)
 
 
 @dataclass(frozen=True)
@@ -341,6 +344,45 @@ def build_vertical_action_envelopes(
                     basis=(
                         "Characteristic pedestrian footway load as separate "
                         "EN 1991-2 traffic group gr3."
+                    ),
+                )
+            )
+
+        if (
+            actions.wind is not None
+            and abs(actions.wind.vertical_pressure_kn_m2) > 1.0e-12
+        ):
+            span_m = float(project.geometry.span_lengths_m[0])
+            tributary_width = girder_deck_tributary_width_m(
+                project,
+                girder_index=girder_index,
+            )
+            wind_udl = (
+                abs(actions.wind.vertical_pressure_kn_m2)
+                * tributary_width
+            )
+            wind_vertical = LoadEffects(
+                moment_knm=wind_udl * span_m**2 / 8.0,
+                shear_kn=wind_udl * span_m / 2.0,
+                torsion_knm=0.0,
+            )
+            situations.append(
+                VerticalActionSituation(
+                    name="vertical wind leading",
+                    group="wind",
+                    variable_effects=wind_vertical,
+                    uls_effects=(
+                        permanent.scaled(factors.uls.gamma_g_unfavourable)
+                        + wind_vertical.scaled(factors.gamma_q_nontraffic)
+                    ),
+                    characteristic_sls_effects=permanent + wind_vertical,
+                    frequent_sls_effects=permanent,
+                    quasi_permanent_sls_effects=permanent,
+                    basis=(
+                        "Optional static vertical wind resultant distributed by physical "
+                        "girder tributary width. Frequent/quasi-permanent wind contribution "
+                        "is conservatively omitted unless a project-specific combination "
+                        "basis is supplied."
                     ),
                 )
             )
