@@ -97,6 +97,17 @@ class ExtendedActionSettings:
     barrier_transverse_resistance_kn: float = 0.0
     barrier_base_moment_resistance_knm: float = 0.0
 
+    # Wind action assessment. The project/basic wind speed is deliberately an
+    # explicit input; zero means not yet specified.
+    wind_enabled: bool = True
+    wind_basic_velocity_m_s: float = 0.0
+    wind_air_density_kg_m3: float = 1.25
+    wind_exposure_factor: float = 1.0
+    wind_transverse_force_coefficient: float = 1.30
+    wind_vertical_force_coefficient: float = 0.0
+    wind_loaded_height_m: float = 0.0
+    bearing_transverse_capacity_per_bearing_kn: float = 0.0
+
     # 6. Construction-stage actions
     construction_enabled: bool = True
     construction_execution_udl_kn_m2: float = 0.0
@@ -121,6 +132,9 @@ class ExtendedActionSettings:
             self.barrier_load_height_m,
             self.barrier_vertical_factor,
             self.barrier_alpha_Q1,
+            self.wind_air_density_kg_m3,
+            self.wind_exposure_factor,
+            self.wind_transverse_force_coefficient,
         )
         if any(value <= 0.0 for value in positive):
             raise ValueError("Enabled bridge-action reference values must be positive.")
@@ -136,6 +150,10 @@ class ExtendedActionSettings:
             self.bearing_movement_capacity_mm,
             self.barrier_transverse_resistance_kn,
             self.barrier_base_moment_resistance_knm,
+            self.wind_basic_velocity_m_s,
+            self.wind_vertical_force_coefficient,
+            self.wind_loaded_height_m,
+            self.bearing_transverse_capacity_per_bearing_kn,
         )
         if any(value < 0.0 for value in nonnegative):
             raise ValueError("Bridge-action magnitudes/widths cannot be negative.")
@@ -222,6 +240,21 @@ class BarrierImpactResult:
 
 
 @dataclass(frozen=True)
+class WindActionResult:
+    basic_velocity_m_s: float
+    basic_dynamic_pressure_kn_m2: float
+    effective_pressure_kn_m2: float
+    projected_height_m: float
+    transverse_characteristic_force_kn: float
+    transverse_line_load_kn_m: float
+    vertical_characteristic_force_kn: float
+    vertical_pressure_kn_m2: float
+    overturning_reference_moment_knm: float
+    input_complete: bool
+    status: str
+
+
+@dataclass(frozen=True)
 class ConstructionStageGirderResult:
     girder_index: int
     stage: PermanentActionStage
@@ -245,6 +278,7 @@ class ExtendedActionSuite:
     gr2_frequent_lm1: Gr2FrequentLM1Result | None
     lm2: LM2ActionResult | None
     barrier_impact: BarrierImpactResult | None
+    wind: WindActionResult | None
     construction: ConstructionActionResult | None
 
     @property
@@ -254,6 +288,8 @@ class ExtendedActionSuite:
             items.append("thermal uniform expansion/contraction ranges")
         if self.pedestrian is not None and not self.pedestrian.applied:
             items.append("footway widths for pedestrian loading")
+        if self.wind is not None and not self.wind.input_complete:
+            items.append("project/basic wind speed")
         return tuple(items)
 
 
@@ -711,6 +747,68 @@ def barrier_impact_action(
     )
 
 
+def wind_action(
+    project: ProjectInput,
+    settings: ExtendedActionSettings,
+) -> WindActionResult:
+    """Calculate transparent bridge wind resultants from explicit project inputs.
+
+    This is an action generator/assessment, not an aerodynamic instability model.
+    q = 0.5*rho*v^2 is converted to kN/m2 and multiplied by the explicit exposure
+    and force coefficients. The transverse resultant feeds the bearing/support
+    path; an optional vertical coefficient exposes a deck-area vertical resultant.
+    """
+
+    velocity = settings.wind_basic_velocity_m_s
+    pressure = 0.0005 * settings.wind_air_density_kg_m3 * velocity**2
+    effective = pressure * settings.wind_exposure_factor
+    total_length = sum(float(value) for value in project.geometry.span_lengths_m)
+    deck_width = float(project.geometry.deck_width_m)
+    automatic_height = (
+        float(project.geometry.girder_depth_m)
+        + float(project.geometry.physical_deck_depth_m)
+    )
+    height = settings.wind_loaded_height_m or automatic_height
+    transverse = (
+        effective
+        * settings.wind_transverse_force_coefficient
+        * height
+        * total_length
+    )
+    vertical = (
+        effective
+        * settings.wind_vertical_force_coefficient
+        * deck_width
+        * total_length
+    )
+    vertical_pressure = (
+        vertical / (deck_width * total_length)
+        if deck_width > 0.0 and total_length > 0.0
+        else 0.0
+    )
+    return WindActionResult(
+        basic_velocity_m_s=velocity,
+        basic_dynamic_pressure_kn_m2=pressure,
+        effective_pressure_kn_m2=effective,
+        projected_height_m=height,
+        transverse_characteristic_force_kn=transverse,
+        transverse_line_load_kn_m=(
+            transverse / total_length if total_length > 0.0 else 0.0
+        ),
+        vertical_characteristic_force_kn=vertical,
+        vertical_pressure_kn_m2=vertical_pressure,
+        overturning_reference_moment_knm=transverse * height / 2.0,
+        input_complete=velocity > 0.0,
+        status=(
+            "Bridge wind action from explicit basic/project wind speed, air density, "
+            "exposure and force coefficients. The transverse resultant is intended for "
+            "the bearing/lateral-restraint path; the optional vertical coefficient gives "
+            "a deck-area resultant. Aerodynamic instability and site-specific terrain/"
+            "orography derivation remain outside this first static wind-action module."
+        ),
+    )
+
+
 def construction_action(
     project: ProjectInput,
     settings: ExtendedActionSettings,
@@ -798,7 +896,7 @@ def run_extended_actions(
     lm2_progress_callback: Callable[[int, int], None] | None = None,
     gr2_progress_callback: Callable[[int, int], None] | None = None,
 ) -> ExtendedActionSuite:
-    """Run the six additional action families without hiding unsupported physics."""
+    """Run the required additional action families plus static wind assessment."""
 
     return ExtendedActionSuite(
         braking=(
@@ -847,6 +945,11 @@ def run_extended_actions(
         barrier_impact=(
             barrier_impact_action(settings)
             if settings.barrier_impact_enabled
+            else None
+        ),
+        wind=(
+            wind_action(project, settings)
+            if settings.wind_enabled
             else None
         ),
         construction=(
