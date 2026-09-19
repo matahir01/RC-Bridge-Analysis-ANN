@@ -110,5 +110,5 @@ def test_barrier_vehicle_impact_is_explicitly_exposed_as_accidental_scope() -> N
     scope = {item.name: item for item in eurocode_variable_action_scope()}
 
     impact = scope["Vehicle impact on safety barrier"]
-    assert impact.status == "accidental / not wired"
-    assert "vertical-only" in impact.detail
+    assert impact.status.startswith("local accidental action implemented")
+    assert "local horizontal design task" in impact.detail

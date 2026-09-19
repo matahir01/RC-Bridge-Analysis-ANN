@@ -43,6 +43,7 @@ def build_application_dashboard(
     project: ProjectInput,
     *,
     has_native_lm1_analysis: bool,
+    has_extended_actions: bool = False,
 ) -> ApplicationDashboard:
     """Describe what the current project can do without weakening verification gates."""
 
@@ -81,8 +82,26 @@ def build_application_dashboard(
                 detail=(
                     "Physical girder/deck self-weight, editable surfacing/barrier/services "
                     "actions and simple-span Gk + native-LM1 Qk ULS/SLS interpretation are "
-                    "available. Wind, thermal, braking, LM2 and pedestrian actions remain "
-                    "explicitly not wired rather than silently omitted."
+                    "available. Braking, thermal, pedestrian, LM2, safety-barrier impact "
+                    "and construction-stage action modules are now exposed separately; "
+                    "wind and other out-of-scope actions remain explicit."
+                ),
+            )
+        )
+        capabilities.append(
+            ApplicationCapability(
+                name="Additional actions 1-6",
+                state=(
+                    CapabilityState.READY
+                    if has_extended_actions
+                    else CapabilityState.REQUIRES_ANALYSIS
+                ),
+                detail=(
+                    "Braking/acceleration, thermal kinematics/restraint benchmark, "
+                    "pedestrian footway loading, LM2 axle scanning, safety-barrier "
+                    "accidental action and construction-stage action separation are "
+                    "implemented. Horizontal/local physics remain explicitly bounded "
+                    "where the vertical grillage is not an appropriate solver."
                 ),
             )
         )

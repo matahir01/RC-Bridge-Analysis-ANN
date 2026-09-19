@@ -12,6 +12,10 @@ from rc_bridge.application.design_checks import (
     ApplicationDesignInterpretationSuite,
     run_application_design_interpretation,
 )
+from rc_bridge.application.extended_actions import (
+    ExtendedActionSuite,
+    run_extended_actions,
+)
 from rc_bridge.application.load_cases import (
     ApplicationGirderCombinationSummary,
     ApplicationLoadCaseFields,
@@ -70,6 +74,7 @@ class BridgeApplicationSession:
     preferences: ApplicationPreferences = field(default_factory=ApplicationPreferences)
     last_lm1_search: ProjectNativeLM1GrillageSearchResult | None = None
     last_design_interpretation: ApplicationDesignInterpretationSuite | None = None
+    last_extended_actions: ExtendedActionSuite | None = None
 
     @classmethod
     def open(cls, path: str | Path) -> BridgeApplicationSession:
@@ -97,10 +102,15 @@ class BridgeApplicationSession:
         self.project = project
         self.last_lm1_search = None
         self.last_design_interpretation = None
+        self.last_extended_actions = None
 
     def set_preferences(self, preferences: ApplicationPreferences) -> None:
         if preferences.analysis != self.preferences.analysis:
             self.last_lm1_search = None
+            self.last_design_interpretation = None
+            self.last_extended_actions = None
+        elif preferences.actions != self.preferences.actions:
+            self.last_extended_actions = None
             self.last_design_interpretation = None
         elif (
             preferences.eurocode != self.preferences.eurocode
@@ -113,6 +123,7 @@ class BridgeApplicationSession:
         return build_application_dashboard(
             self.project,
             has_native_lm1_analysis=self.last_lm1_search is not None,
+            has_extended_actions=self.last_extended_actions is not None,
         )
 
     def load_case_fields(self) -> ApplicationLoadCaseFields:
@@ -137,6 +148,21 @@ class BridgeApplicationSession:
             uls_factors=self.preferences.eurocode.uls_factors,
             sls_factors=self.preferences.eurocode.sls_factors,
         )
+
+    def run_extended_actions(
+        self,
+        *,
+        lm2_progress_callback: Callable[[int, int], None] | None = None,
+    ) -> ExtendedActionSuite:
+        result = run_extended_actions(
+            self.project,
+            self.preferences.actions,
+            grid_spacing_m=self.preferences.analysis.grid_spacing_m,
+            lm2_progress_callback=lm2_progress_callback,
+        )
+        self.last_extended_actions = result
+        self.last_design_interpretation = None
+        return result
 
     def run_design_interpretation(self) -> ApplicationDesignInterpretationSuite:
         if self.last_lm1_search is None:
