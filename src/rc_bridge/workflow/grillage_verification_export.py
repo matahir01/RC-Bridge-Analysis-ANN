@@ -243,6 +243,7 @@ def _girder_y_coordinates(project: ProjectInput) -> tuple[float, ...]:
 def _transverse_y_coordinates(
     project: ProjectInput,
     area_loads: tuple[GrillageAreaLoad, ...],
+    additional_y_lines_m: tuple[float, ...] = (),
 ) -> tuple[float, ...]:
     half_width = float(project.geometry.deck_width_m) / 2.0
     patch_boundaries = tuple(
@@ -250,9 +251,23 @@ def _transverse_y_coordinates(
         for load in area_loads
         for coordinate in (float(load.y_start_m), float(load.y_end_m))
     )
-    if any(value < -half_width - 1e-9 or value > half_width + 1e-9 for value in patch_boundaries):
-        raise ValueError("An area-load transverse boundary lies outside the physical deck width.")
-    return _merge_coordinates((-half_width, *_girder_y_coordinates(project), *patch_boundaries, half_width))
+    supplied = tuple(float(value) for value in additional_y_lines_m)
+    all_boundaries = (*patch_boundaries, *supplied)
+    if any(
+        value < -half_width - 1e-9 or value > half_width + 1e-9
+        for value in all_boundaries
+    ):
+        raise ValueError(
+            "A transverse grid/load boundary lies outside the physical deck width."
+        )
+    return _merge_coordinates(
+        (
+            -half_width,
+            *_girder_y_coordinates(project),
+            *all_boundaries,
+            half_width,
+        )
+    )
 
 
 def _span_index_at_x(project: ProjectInput, x_m: float) -> int:
@@ -280,6 +295,7 @@ def build_project_grillage_verification_model(
     load_case: GrillageVerificationLoadCase,
     longitudinal_slab_width_m: float | None = None,
     transverse_strip_width_m: float | None = None,
+    additional_transverse_y_m: tuple[float, ...] = (),
     stiffness_modifiers: GrillageStiffnessModifiers | None = None,
     automatic_section_stage: PermanentActionStage = PermanentActionStage.SUPERIMPOSED,
     deck_construction_false_slab_participates: bool = False,
@@ -332,7 +348,11 @@ def build_project_grillage_verification_model(
         load_case.area_loads,
     )
     y_girders = _girder_y_coordinates(project)
-    y_lines = _transverse_y_coordinates(project, load_case.area_loads)
+    y_lines = _transverse_y_coordinates(
+        project,
+        load_case.area_loads,
+        additional_transverse_y_m,
+    )
     y_line_count = len(y_lines)
     girder_y_indices = tuple(_coordinate_index(y_lines, value) for value in y_girders)
     longitudinal_sections: list[GrillageSectionProperties] = []
@@ -676,6 +696,11 @@ def build_project_grillage_verification_model(
             ),
             "transverse_bending_factor": f"{modifiers.transverse_bending_factor:.12g}",
             "transverse_torsion_factor": f"{modifiers.transverse_torsion_factor:.12g}",
+            "additional_transverse_grid_lines_y_m": (
+                "none"
+                if not additional_transverse_y_m
+                else ",".join(f"{value:.12g}" for value in additional_transverse_y_m)
+            ),
             "point_load_mapping": "exact x station; exact nodal or transverse-member y position",
             "area_load_mapping": "exact patch boundaries; uniform cell pressure lumped q*A/4 to each corner",
             "deck_overhang_model": "transverse cantilever strip from exterior girder to physical deck edge",
