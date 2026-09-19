@@ -34,6 +34,76 @@ class PhysicalSectionProperties:
 
 
 @dataclass(frozen=True)
+class CompositeSectionIdentity:
+    """Human-readable identity of the precast and final longitudinal section."""
+
+    precast_section: str
+    final_section: str
+    physical_total_depth_m: float
+    participating_deck_depth_m: float
+    representative_slab_width_m: float
+
+
+def composite_section_identity(
+    geometry: BridgeGeometry,
+    *,
+    slab_width_m: float | None = None,
+) -> CompositeSectionIdentity:
+    """Describe how the entered precast profile participates in the final section.
+
+    geometry.section_type intentionally remains the precast girder shape. When
+    deck concrete participates, a rectangular precast beam therefore becomes a
+    composite T-section rather than being re-labelled as a precast T-girder.
+    """
+    profile = geometry.girder_profile
+    if profile is None:
+        raise ValueError(
+            "Composite section identity requires a complete physical girder profile."
+        )
+    width = (
+        float(geometry.girder_spacing_m)
+        if slab_width_m is None
+        else float(slab_width_m)
+    )
+    if width <= 0.0:
+        raise ValueError("Representative composite slab width must be positive.")
+    participating = float(geometry.composite_flange_depth_m)
+    total_depth = float(geometry.physical_deck_depth_m + profile.total_depth_m)
+
+    if isinstance(profile, RectangularGirderProfile):
+        precast = "rectangular precast girder"
+        final = (
+            "composite T-section (rectangular precast girder + participating deck flange)"
+            if participating > 0.0 and width > float(profile.width_m)
+            else "rectangular precast girder without a wider participating deck flange"
+        )
+    elif isinstance(profile, TGirderProfile):
+        precast = "precast T-girder"
+        final = (
+            "composite flanged section (precast T-girder + participating deck flange)"
+            if participating > 0.0
+            else "precast T-girder"
+        )
+    elif isinstance(profile, IGirderProfile):
+        precast = "precast I-girder"
+        final = (
+            "composite deck-and-I-girder section"
+            if participating > 0.0
+            else "precast I-girder"
+        )
+    else:
+        raise TypeError("Unsupported physical girder profile.")
+
+    return CompositeSectionIdentity(
+        precast_section=precast,
+        final_section=final,
+        physical_total_depth_m=total_depth,
+        participating_deck_depth_m=participating,
+        representative_slab_width_m=width,
+    )
+
+
+@dataclass(frozen=True)
 class ConcreteSectionLayer:
     """One non-overlapping concrete width band in a longitudinal section."""
 
