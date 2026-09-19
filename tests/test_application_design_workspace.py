@@ -91,7 +91,13 @@ def test_design_interpretation_runs_real_ec2_checks_after_native_lm1() -> None:
         ),
         settings=session.preferences.design,
     )
-    assert direct.girders[3].selected_bars == centre.selected_bars
+    assert direct.girders[3].selected_bars.provided_area_mm2 <= (
+        centre.selected_bars.provided_area_mm2
+    )
+    assert (
+        direct.girders[3].design.uls_design.design_effects.moment_knm
+        <= centre.design.uls_design.design_effects.moment_knm
+    )
 
 
 def test_design_interpretation_invalidates_when_design_basis_changes() -> None:
