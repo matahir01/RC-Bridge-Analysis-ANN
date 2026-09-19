@@ -96,10 +96,15 @@ def test_variable_action_scope_does_not_hide_unimplemented_actions() -> None:
     scope = {item.name: item.status for item in eurocode_variable_action_scope()}
 
     assert scope["LM1 vertical road traffic"] == "implemented"
-    assert scope["Braking / acceleration"] == "not wired"
-    assert scope["Thermal action"] == "not wired"
+    assert scope["Braking / acceleration"].startswith("action implemented")
+    assert scope["Thermal action"].startswith("kinematics implemented")
+    assert scope["Pedestrian / footway live load"].startswith("implemented")
+    assert scope["LM2 local axle"].startswith("implemented")
+    assert scope["Vehicle impact on safety barrier"].startswith(
+        "local accidental action implemented"
+    )
+    assert scope["Construction-stage actions"].startswith("implemented")
     assert scope["Wind action"] == "not wired"
-    assert scope["LM2 local axle"] == "not wired"
 
 
 def test_session_combines_permanent_actions_with_native_lm1() -> None:
