@@ -700,7 +700,11 @@ def _design_one_girder(
         deflection_beta=settings.deflection_beta,
         crack_kt=settings.crack_kt,
         deflection_moment_diagram=deflection_diagram,
-        deflection_service_moment_knm=deflection_service_moment,
+        deflection_service_moment_knm=(
+            deflection_service_moment
+            if deflection_diagram is not None
+            else None
+        ),
     )
     section = LayeredGirderDesignInput(
         composite_slab_width_m=slab_width_m,
