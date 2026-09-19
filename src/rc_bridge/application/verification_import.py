@@ -335,7 +335,7 @@ def native_expected_results_by_id(
         raise ValueError("At least one verification result ID is required.")
 
     single_models = {
-        result_id: _single_result_model(model, result_id)
+        result_id: _single_result_model(model, result_id=result_id)
         for result_id in result_ids
     }
     first_id = result_ids[0]
