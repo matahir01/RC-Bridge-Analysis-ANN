@@ -1,10 +1,18 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
-from rc_bridge.application.project_io import load_project, save_project
-from rc_bridge.application.reporting import native_lm1_html_report
+from rc_bridge.application.dashboard import (
+    ApplicationDashboard,
+    build_application_dashboard,
+)
+from rc_bridge.application.preferences import ApplicationPreferences
+from rc_bridge.application.project_io import load_project_document, save_project
+from rc_bridge.application.reporting import (
+    application_html_report,
+    write_native_lm1_pdf_report,
+)
 from rc_bridge.application.verification_files import (
     WrittenVerificationPackage,
     write_governing_lm1_verification_packages,
@@ -45,18 +53,28 @@ class BridgeApplicationSession:
 
     project: ProjectInput
     project_path: Path | None = None
+    preferences: ApplicationPreferences = field(default_factory=ApplicationPreferences)
     last_lm1_search: ProjectNativeLM1GrillageSearchResult | None = None
 
     @classmethod
     def open(cls, path: str | Path) -> BridgeApplicationSession:
         source = Path(path)
-        return cls(project=load_project(source), project_path=source)
+        document = load_project_document(source)
+        return cls(
+            project=document.project,
+            project_path=source,
+            preferences=document.application_preferences,
+        )
 
     def save(self, path: str | Path | None = None) -> Path:
         destination = self.project_path if path is None else Path(path)
         if destination is None:
             raise ValueError("A project path is required for the first save.")
-        written = save_project(self.project, destination)
+        written = save_project(
+            self.project,
+            destination,
+            application_preferences=self.preferences,
+        )
         self.project_path = written
         return written
 
@@ -64,27 +82,52 @@ class BridgeApplicationSession:
         self.project = project
         self.last_lm1_search = None
 
+    def set_preferences(self, preferences: ApplicationPreferences) -> None:
+        self.preferences = preferences
+
+    def dashboard(self) -> ApplicationDashboard:
+        return build_application_dashboard(
+            self.project,
+            has_native_lm1_analysis=self.last_lm1_search is not None,
+        )
+
     def run_native_lm1(
         self,
         *,
-        grid_spacing_m: float = 1.0,
-        longitudinal_step_m: float = 0.5,
-        max_exhaustive_tandem_combinations: int = 5000,
+        grid_spacing_m: float | None = None,
+        longitudinal_step_m: float | None = None,
+        max_exhaustive_tandem_combinations: int | None = None,
     ) -> ProjectNativeLM1GrillageSearchResult:
         if self.project.geometry.girder_profile is None:
             raise ValueError(
                 "Application analysis requires a complete physical rectangular, T or I "
                 "girder profile so grillage properties can be derived transparently."
             )
+
+        settings = self.preferences.analysis
+        grid_spacing = settings.grid_spacing_m if grid_spacing_m is None else grid_spacing_m
+        traffic_step = (
+            settings.traffic_step_m
+            if longitudinal_step_m is None
+            else longitudinal_step_m
+        )
+        max_tandem = (
+            settings.max_exhaustive_tandem_combinations
+            if max_exhaustive_tandem_combinations is None
+            else max_exhaustive_tandem_combinations
+        )
+        if max_tandem <= 0:
+            raise ValueError("max_exhaustive_tandem_combinations must be positive.")
+
         stations = longitudinal_grid_stations(
             self.project,
-            maximum_spacing_m=grid_spacing_m,
+            maximum_spacing_m=grid_spacing,
         )
         result = run_project_native_lm1_grillage_search(
             self.project,
             transverse_stations_m=stations,
-            longitudinal_step_m=longitudinal_step_m,
-            max_exhaustive_tandem_combinations=max_exhaustive_tandem_combinations,
+            longitudinal_step_m=traffic_step,
+            max_exhaustive_tandem_combinations=max_tandem,
             include_spanwise_udl_patterns=True,
             name=f"{self.project.name} - application native LM1",
         )
@@ -100,11 +143,25 @@ class BridgeApplicationSession:
         destination.parent.mkdir(parents=True, exist_ok=True)
         temporary = destination.with_suffix(destination.suffix + ".tmp")
         temporary.write_text(
-            native_lm1_html_report(self.project, self.last_lm1_search),
+            application_html_report(
+                self.project,
+                self.last_lm1_search,
+                preferences=self.preferences,
+            ),
             encoding="utf-8",
         )
         temporary.replace(destination)
         return destination
+
+    def write_last_lm1_pdf_report(self, path: str | Path) -> Path:
+        if self.last_lm1_search is None:
+            raise RuntimeError("Run native LM1 analysis before generating a PDF report.")
+        return write_native_lm1_pdf_report(
+            self.project,
+            self.last_lm1_search,
+            path,
+            preferences=self.preferences,
+        )
 
     def export_last_lm1_verification(
         self,
