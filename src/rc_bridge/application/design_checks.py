@@ -106,6 +106,15 @@ class ApplicationDesignSettings:
 
 
 @dataclass(frozen=True)
+class _ConstructionStageDemand:
+    stage: PermanentActionStage
+    design_moment_knm: float
+    design_shear_kn: float
+    layers: tuple
+    section_depth_m: float
+
+
+@dataclass(frozen=True)
 class ConstructionStageDesignCheck:
     stage: PermanentActionStage
     design_moment_knm: float
@@ -282,18 +291,15 @@ def _service_effect_from_integrated_envelope(
     raise ValueError(f"Unsupported SLS combination: {choice}")
 
 
-def _construction_stage_checks(
+def _construction_stage_demands(
     project: ProjectInput,
     actions: ExtendedActionSuite | None,
     *,
     girder_index: int,
     slab_width_m: float,
-    selected_bars: LongitudinalBarArrangement,
-    selected_links: LinkArrangement,
-    settings: ApplicationDesignSettings,
     uls_factors: EurocodeFactors,
     gamma_q_nontraffic: float,
-) -> tuple[ConstructionStageDesignCheck, ...]:
+) -> tuple[_ConstructionStageDemand, ...]:
     if actions is None or actions.construction is None:
         return ()
 
@@ -308,7 +314,7 @@ def _construction_stage_checks(
     if precast_row is None or deck_row is None:
         return ()
 
-    def stage_permanent(row) -> tuple[float, float, float, float]:
+    def split_stage(row) -> tuple[float, float, float, float]:
         q_line = row.execution_udl_kn_m
         q_m = q_line * span_m**2 / 8.0
         q_v = q_line * span_m / 2.0
@@ -316,8 +322,8 @@ def _construction_stage_checks(
         g_v = max(row.characteristic_max_abs_shear_kn - q_v, 0.0)
         return g_m, g_v, q_m, q_v
 
-    precast_g_m, precast_g_v, _, _ = stage_permanent(precast_row)
-    deck_g_m, deck_g_v, deck_q_m, deck_q_v = stage_permanent(deck_row)
+    precast_g_m, precast_g_v, _, _ = split_stage(precast_row)
+    deck_g_m, deck_g_v, deck_q_m, deck_q_v = split_stage(deck_row)
 
     profile = project.geometry.girder_profile
     if profile is None:
@@ -326,8 +332,7 @@ def _construction_stage_checks(
         project.geometry.deck_construction.precast_false_slab_depth_m
     )
 
-    checks: list[ConstructionStageDesignCheck] = []
-    for stage, g_m, g_v, q_m, q_v, layers, stage_depth in (
+    cases = (
         (
             PermanentActionStage.PRECAST_GIRDER,
             precast_g_m,
@@ -353,30 +358,67 @@ def _construction_stage_checks(
                 else float(profile.total_depth_m)
             ),
         ),
-    ):
+    )
+    return tuple(
+        _ConstructionStageDemand(
+            stage=stage,
+            design_moment_knm=(
+                uls_factors.gamma_g_unfavourable * g_m
+                + gamma_q_nontraffic * q_m
+            ),
+            design_shear_kn=abs(
+                uls_factors.gamma_g_unfavourable * g_v
+                + gamma_q_nontraffic * q_v
+            ),
+            layers=layers,
+            section_depth_m=stage_depth,
+        )
+        for stage, g_m, g_v, q_m, q_v, layers, stage_depth in cases
+    )
+
+
+def _construction_stage_checks(
+    project: ProjectInput,
+    actions: ExtendedActionSuite | None,
+    *,
+    girder_index: int,
+    slab_width_m: float,
+    selected_bars: LongitudinalBarArrangement,
+    selected_links: LinkArrangement,
+    settings: ApplicationDesignSettings,
+    uls_factors: EurocodeFactors,
+    gamma_q_nontraffic: float,
+) -> tuple[ConstructionStageDesignCheck, ...]:
+    demands = _construction_stage_demands(
+        project,
+        actions,
+        girder_index=girder_index,
+        slab_width_m=slab_width_m,
+        uls_factors=uls_factors,
+        gamma_q_nontraffic=gamma_q_nontraffic,
+    )
+    if not demands:
+        return ()
+
+    checks: list[ConstructionStageDesignCheck] = []
+    for demand in demands:
         d_stage = _bar_centroid_effective_depth_m(
-            total_depth_m=stage_depth,
+            total_depth_m=demand.section_depth_m,
             arrangement=selected_bars,
             cover_mm=settings.cover_mm,
             link_diameter_mm=selected_links.link_diameter_mm,
         )
-        med = (
-            uls_factors.gamma_g_unfavourable * g_m
-            + gamma_q_nontraffic * q_m
-        )
-        ved = (
-            uls_factors.gamma_g_unfavourable * g_v
-            + gamma_q_nontraffic * q_v
-        )
+        med = demand.design_moment_knm
+        ved = demand.design_shear_kn
         required = required_tension_steel_layered(
             med_knm=max(med, 0.0),
-            layers=layers,
+            layers=demand.layers,
             effective_depth_m=d_stage,
             fck_mpa=float(project.materials.fck_mpa),
             fyk_mpa=float(project.materials.fyk_mpa),
         )
         flexure = layered_singly_reinforced_resistance(
-            layers=layers,
+            layers=demand.layers,
             effective_depth_m=d_stage,
             steel_area_mm2=selected_bars.provided_area_mm2,
             fck_mpa=float(project.materials.fck_mpa),
@@ -417,7 +459,7 @@ def _construction_stage_checks(
         )
         checks.append(
             ConstructionStageDesignCheck(
-                stage=stage,
+                stage=demand.stage,
                 design_moment_knm=med,
                 design_shear_kn=abs(ved),
                 effective_depth_m=d_stage,
@@ -506,6 +548,15 @@ def _design_one_girder(
     concrete_area_m2 = sum(layer.area_m2 for layer in layers)
     concrete = concrete_properties_ec2(float(project.materials.fck_mpa))
 
+    stage_demands = _construction_stage_demands(
+        project,
+        extended_actions,
+        girder_index=girder_index,
+        slab_width_m=slab_width_m,
+        uls_factors=uls_factors,
+        gamma_q_nontraffic=gamma_q_nontraffic,
+    )
+
     # First estimate d from the nominated cover/link cage, then iterate after
     # discrete bar/link selection.
     d_m = total_depth_m - (
@@ -525,6 +576,23 @@ def _design_one_girder(
             fck_mpa=float(project.materials.fck_mpa),
             fyk_mpa=float(project.materials.fyk_mpa),
         )
+        centroid_from_bottom_m = total_depth_m - d_m
+        for stage_demand in stage_demands:
+            stage_d = stage_demand.section_depth_m - centroid_from_bottom_m
+            if stage_d <= 0.0:
+                raise ValueError(
+                    "Selected reinforcement lies outside a construction-stage section."
+                )
+            required_flexural = max(
+                required_flexural,
+                required_tension_steel_layered(
+                    med_knm=max(stage_demand.design_moment_knm, 0.0),
+                    layers=stage_demand.layers,
+                    effective_depth_m=stage_d,
+                    fck_mpa=float(project.materials.fck_mpa),
+                    fyk_mpa=float(project.materials.fyk_mpa),
+                ),
+            )
         trial_as = max(
             required_flexural,
             minimum_required_area_mm2,
@@ -548,6 +616,22 @@ def _design_one_girder(
             if shear.shear_reinforcement is None
             else shear.shear_reinforcement.asw_per_s_mm2_per_m
         )
+        for stage_demand in stage_demands:
+            stage_d = stage_demand.section_depth_m - centroid_from_bottom_m
+            stage_shear = check_shear(
+                ved_kn=stage_demand.design_shear_kn,
+                web_width_m=web_width_m,
+                effective_depth_m=stage_d,
+                longitudinal_steel_area_mm2=trial_as,
+                fck_mpa=float(project.materials.fck_mpa),
+                fyk_mpa=float(project.materials.fyk_mpa),
+                cot_theta=settings.cot_theta,
+            )
+            if stage_shear.shear_reinforcement is not None:
+                required_asw = max(
+                    required_asw,
+                    stage_shear.shear_reinforcement.asw_per_s_mm2_per_m,
+                )
         requirements = beam_detailing_requirements(
             fctm_mpa=concrete.fctm_mpa,
             fck_mpa=float(project.materials.fck_mpa),
@@ -607,6 +691,22 @@ def _design_one_girder(
             fck_mpa=float(project.materials.fck_mpa),
             fyk_mpa=float(project.materials.fyk_mpa),
         )
+        refined_centroid_from_bottom_m = total_depth_m - refined_d
+        for stage_demand in stage_demands:
+            stage_d = (
+                stage_demand.section_depth_m
+                - refined_centroid_from_bottom_m
+            )
+            required_at_refined_d = max(
+                required_at_refined_d,
+                required_tension_steel_layered(
+                    med_knm=max(stage_demand.design_moment_knm, 0.0),
+                    layers=stage_demand.layers,
+                    effective_depth_m=stage_d,
+                    fck_mpa=float(project.materials.fck_mpa),
+                    fyk_mpa=float(project.materials.fyk_mpa),
+                ),
+            )
         selected_bars = candidate_bars
         selected_links = candidate_links
         if (
