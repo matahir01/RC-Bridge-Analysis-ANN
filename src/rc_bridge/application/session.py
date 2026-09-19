@@ -510,6 +510,7 @@ class BridgeApplicationSession:
                 local_deck_design=self.last_local_deck_design,
                 design_interpretation=self.last_design_interpretation,
                 fatigue=self.last_fatigue,
+                calculation_trace=self.calculation_trace(),
             ),
         )
         self._calculation_trace_cache = trace
@@ -551,6 +552,7 @@ class BridgeApplicationSession:
             local_deck_design=self.last_local_deck_design,
             design_interpretation=self.last_design_interpretation,
             fatigue=self.last_fatigue,
+            calculation_trace=self.calculation_trace(),
         )
 
 
