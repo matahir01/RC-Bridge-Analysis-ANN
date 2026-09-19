@@ -319,7 +319,7 @@ def main() -> int:
                     longitudinal_step_m=traffic_step,
                     max_exhaustive_tandem_combinations=max_tandem,
                 )
-            except Exception as exc:  # desktop boundary: show validated engine error
+            except (OSError, TypeError, ValueError, RuntimeError) as exc:
                 message = str(exc)
                 root.after(0, lambda: fail(message))
                 return
@@ -349,7 +349,7 @@ def main() -> int:
             return
         try:
             opened = BridgeApplicationSession.open(path)
-        except Exception as exc:
+        except (OSError, TypeError, ValueError) as exc:
             messagebox.showerror("Open project", str(exc))
             return
         session.project = opened.project
@@ -400,7 +400,7 @@ def main() -> int:
             return
         try:
             report = session.write_last_lm1_report(path)
-        except Exception as exc:
+        except (OSError, TypeError, ValueError, RuntimeError) as exc:
             messagebox.showerror("Calculation report", str(exc))
             return
         status_var.set(f"Report saved: {report.name}")
@@ -418,7 +418,7 @@ def main() -> int:
                 directory,
                 base_name="application_lm1",
             )
-        except Exception as exc:
+        except (OSError, TypeError, ValueError, RuntimeError) as exc:
             messagebox.showerror("Verification export", str(exc))
             return
         status_var.set(f"Exported {len(packages)} governing MIDAS/STAAD case packages.")
