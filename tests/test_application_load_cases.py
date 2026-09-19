@@ -102,7 +102,7 @@ def test_variable_action_scope_does_not_hide_unimplemented_actions() -> None:
         "integrated into compatible traffic groups"
     )
     assert scope["LM2 local axle"].startswith(
-        "integrated into global design"
+        "integrated into global and local deck design"
     )
     assert scope["Vehicle impact on safety barrier"].startswith(
         "accidental demand/capacity path integrated"
@@ -110,7 +110,9 @@ def test_variable_action_scope_does_not_hide_unimplemented_actions() -> None:
     assert scope["Construction-stage actions"].startswith(
         "integrated into reinforcement selection"
     )
-    assert scope["Wind action"] == "not wired"
+    assert scope["Wind action"].startswith(
+        "static action integrated into support/bearing path"
+    )
 
 
 def test_session_combines_permanent_actions_with_native_lm1() -> None:
