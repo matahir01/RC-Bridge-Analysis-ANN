@@ -8,6 +8,10 @@ from rc_bridge.application.dashboard import (
     ApplicationDashboard,
     build_application_dashboard,
 )
+from rc_bridge.application.design_checks import (
+    ApplicationDesignInterpretationSuite,
+    run_application_design_interpretation,
+)
 from rc_bridge.application.load_cases import (
     ApplicationGirderCombinationSummary,
     ApplicationLoadCaseFields,
@@ -65,6 +69,7 @@ class BridgeApplicationSession:
     project_path: Path | None = None
     preferences: ApplicationPreferences = field(default_factory=ApplicationPreferences)
     last_lm1_search: ProjectNativeLM1GrillageSearchResult | None = None
+    last_design_interpretation: ApplicationDesignInterpretationSuite | None = None
 
     @classmethod
     def open(cls, path: str | Path) -> BridgeApplicationSession:
@@ -91,10 +96,17 @@ class BridgeApplicationSession:
     def replace_project(self, project: ProjectInput) -> None:
         self.project = project
         self.last_lm1_search = None
+        self.last_design_interpretation = None
 
     def set_preferences(self, preferences: ApplicationPreferences) -> None:
         if preferences.analysis != self.preferences.analysis:
             self.last_lm1_search = None
+            self.last_design_interpretation = None
+        elif (
+            preferences.eurocode != self.preferences.eurocode
+            or preferences.design != self.preferences.design
+        ):
+            self.last_design_interpretation = None
         self.preferences = preferences
 
     def dashboard(self) -> ApplicationDashboard:
@@ -125,6 +137,24 @@ class BridgeApplicationSession:
             uls_factors=self.preferences.eurocode.uls_factors,
             sls_factors=self.preferences.eurocode.sls_factors,
         )
+
+    def run_design_interpretation(self) -> ApplicationDesignInterpretationSuite:
+        if self.last_lm1_search is None:
+            raise RuntimeError(
+                "Run native LM1 analysis before running the design interpretation."
+            )
+        basis = self.preferences.eurocode
+        result = run_application_design_interpretation(
+            self.project,
+            self.last_lm1_search,
+            uls_factors=basis.uls_factors,
+            sls_factors=basis.sls_factors,
+            crack_limit_mm=basis.crack_limit_mm,
+            deflection_limit_span_ratio=basis.deflection_limit_span_ratio,
+            settings=self.preferences.design,
+        )
+        self.last_design_interpretation = result
+        return result
 
     def run_native_lm1(
         self,
@@ -172,6 +202,7 @@ class BridgeApplicationSession:
             name=f"{self.project.name} - application native LM1",
         )
         self.last_lm1_search = result
+        self.last_design_interpretation = None
         return result
 
     def write_last_lm1_report(self, path: str | Path) -> Path:
