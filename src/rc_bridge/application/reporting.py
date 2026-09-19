@@ -11,12 +11,12 @@ from rc_bridge.application.dashboard import build_application_dashboard
 from rc_bridge.application.design_checks import ApplicationDesignInterpretationSuite
 from rc_bridge.application.extended_actions import ExtendedActionSuite
 from rc_bridge.application.fatigue import FatigueApplicationResult
-from rc_bridge.application.local_deck import LocalDeckDesignResult
 from rc_bridge.application.load_cases import (
     application_combination_summary,
     eurocode_variable_action_scope,
     permanent_load_audit,
 )
+from rc_bridge.application.local_deck import LocalDeckDesignResult
 from rc_bridge.application.preferences import ApplicationPreferences
 from rc_bridge.core.models import ProjectInput
 from rc_bridge.workflow.lm1_grillage_search import ProjectNativeLM1GrillageSearchResult
