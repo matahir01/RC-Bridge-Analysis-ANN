@@ -417,4 +417,13 @@ def eurocode_variable_action_scope() -> tuple[VariableActionScope, ...]:
             "not wired",
             "Wind loading and accompanying-action combinations are not yet connected.",
         ),
+        VariableActionScope(
+            "Vehicle impact on safety barrier",
+            "accidental / not wired",
+            (
+                "EN 1991-2 treats impact on safety barriers as a distinct vehicle action. "
+                "The current native grillage solver is vertical-only, so this horizontal/local "
+                "accidental action is not yet analysed or combined."
+            ),
+        ),
     )
