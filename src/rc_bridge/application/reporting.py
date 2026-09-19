@@ -10,6 +10,8 @@ from rc_bridge.analysis.physical_sections import (
 from rc_bridge.application.dashboard import build_application_dashboard
 from rc_bridge.application.design_checks import ApplicationDesignInterpretationSuite
 from rc_bridge.application.extended_actions import ExtendedActionSuite
+from rc_bridge.application.fatigue import FatigueApplicationResult
+from rc_bridge.application.local_deck import LocalDeckDesignResult
 from rc_bridge.application.load_cases import (
     application_combination_summary,
     eurocode_variable_action_scope,
@@ -30,7 +32,9 @@ def application_html_report(
     *,
     preferences: ApplicationPreferences | None = None,
     extended_actions: ExtendedActionSuite | None = None,
+    local_deck_design: LocalDeckDesignResult | None = None,
     design_interpretation: ApplicationDesignInterpretationSuite | None = None,
+    fatigue: FatigueApplicationResult | None = None,
 ) -> str:
     """Render the desktop calculation/reporting view without claiming validation."""
 
@@ -50,6 +54,8 @@ def application_html_report(
         has_native_lm1_analysis=True,
         has_extended_actions=extended_actions is not None,
         has_integrated_design=design_interpretation is not None,
+        has_local_deck_design=local_deck_design is not None,
+        has_fatigue=fatigue is not None,
         design_blocker_count=(
             0
             if design_interpretation is None
@@ -146,6 +152,120 @@ def application_html_report(
         for row in combination_rows_data
     )
 
+    additional_action_html = ""
+    if extended_actions is not None:
+        action_rows: list[str] = []
+        if extended_actions.wind is not None:
+            wind = extended_actions.wind
+            action_rows.append(
+                "<tr><td class=\"left\">Wind</td>"
+                "<td>Static transverse resultant</td>"
+                f"<td>{_number(wind.transverse_characteristic_force_kn)} kN</td>"
+                f"<td class=\"left\">{escape(wind.status)}</td></tr>"
+            )
+            action_rows.append(
+                "<tr><td class=\"left\">Wind</td>"
+                "<td>Effective pressure / speed</td>"
+                f"<td>{_number(wind.effective_pressure_kn_m2)} kN/m² / "
+                f"{_number(wind.basic_velocity_m_s)} m/s</td>"
+                "<td class=\"left\">"
+                + (
+                    "Project wind input complete."
+                    if wind.input_complete
+                    else "Project/basic wind speed remains an explicit input."
+                )
+                + "</td></tr>"
+            )
+        if extended_actions.braking is not None:
+            braking = extended_actions.braking
+            action_rows.append(
+                "<tr><td class=\"left\">Braking</td>"
+                "<td>Characteristic longitudinal force</td>"
+                f"<td>{_number(braking.characteristic_force_kn)} kN</td>"
+                f"<td class=\"left\">{escape(braking.status)}</td></tr>"
+            )
+        if extended_actions.thermal is not None:
+            thermal = extended_actions.thermal
+            action_rows.append(
+                "<tr><td class=\"left\">Thermal</td>"
+                "<td>Free movement + / -</td>"
+                f"<td>{_number(thermal.expansion_movement_mm)} / "
+                f"{_number(thermal.contraction_movement_mm)} mm</td>"
+                f"<td class=\"left\">{escape(thermal.status)}</td></tr>"
+            )
+        additional_action_html = (
+            "<h2>Additional actions</h2>"
+            "<table><thead><tr><th class=\"left\">Action</th>"
+            "<th>Result</th><th>Value</th><th class=\"left\">Boundary</th>"
+            "</tr></thead><tbody>"
+            + "".join(action_rows)
+            + "</tbody></table>"
+            if action_rows
+            else ""
+        )
+
+    local_deck_html = ""
+    if local_deck_design is not None:
+        deck = local_deck_design
+        local_deck_html = (
+            "<h2>Native local deck/slab design</h2>"
+            "<table><thead><tr><th>Check</th><th>Demand / provision</th>"
+            "<th>Utilization</th></tr></thead><tbody>"
+            "<tr><td>ULS transverse moments</td>"
+            f"<td>+{_number(deck.uls_positive_moment_knm_per_m)} / "
+            f"-{_number(deck.uls_negative_moment_knm_per_m)} kNm/m</td>"
+            "<td>-</td></tr>"
+            "<tr><td>Bottom transverse steel</td>"
+            f"<td>{escape(deck.bottom_transverse.arrangement.label)}; "
+            f"{_number(deck.bottom_transverse.arrangement.provided_area_mm2_per_m, 0)} "
+            "mm²/m</td>"
+            f"<td>{_number(deck.bottom_transverse.utilization)}</td></tr>"
+            "<tr><td>Top transverse steel</td>"
+            f"<td>{escape(deck.top_transverse.arrangement.label)}; "
+            f"{_number(deck.top_transverse.arrangement.provided_area_mm2_per_m, 0)} "
+            "mm²/m</td>"
+            f"<td>{_number(deck.top_transverse.utilization)}</td></tr>"
+            "<tr><td>One-way strip shear</td>"
+            f"<td>VEd={_number(deck.one_way_shear.design_shear_kn_per_m)} kN/m; "
+            f"VRdc={_number(deck.one_way_shear.concrete_resistance_kn_per_m)} kN/m</td>"
+            f"<td>{_number(deck.one_way_shear.utilization)}</td></tr>"
+            "</tbody></table>"
+            f"<p class=\"note\">{escape(deck.status)}</p>"
+        )
+
+    fatigue_html = ""
+    if fatigue is not None:
+        fatigue_rows = "".join(
+            "<tr>"
+            f"<td>{row.girder_index}</td>"
+            f"<td>{_number(row.reference_steel_stress_range_mpa)}</td>"
+            f"<td>{_number(row.fatigue.reinforcement.utilization)}</td>"
+            f"<td>{_number(row.fatigue.concrete.utilization) if row.fatigue.concrete is not None else '-'}</td>"
+            f"<td>{_number(row.shear_links.fatigue.utilization) if row.shear_links is not None else '-'}</td>"
+            "</tr>"
+            for row in fatigue.girders
+        )
+        fatigue_blockers = (
+            "<p class=\"warn\"><strong>Fatigue inputs required:</strong> "
+            + escape("; ".join(fatigue.blockers))
+            + "</p>"
+            if fatigue.blockers
+            else ""
+        )
+        fatigue_html = (
+            "<h2>Native FLM3 fatigue</h2>"
+            f"<p class=\"note\">{escape(fatigue.status)}</p>"
+            f"<p>Evaluated FLM3 cases: {len(fatigue.search.cases)}</p>"
+            + (
+                "<table><thead><tr><th>Girder</th><th>Δσs (MPa)</th>"
+                "<th>Steel util.</th><th>Concrete util.</th><th>Link util.</th>"
+                "</tr></thead><tbody>" + fatigue_rows + "</tbody></table>"
+                if fatigue_rows
+                else ""
+            )
+            + fatigue_blockers
+        )
+
     integrated_design_html = ""
     if design_interpretation is not None:
         design_rows = "".join(
@@ -173,6 +293,8 @@ def application_html_report(
                 "<tr><td class=\"left\">Bearing/restraint</td>"
                 f"<td>{_number(bearing.persistent_uls_total_longitudinal_kn)} kN total; "
                 f"{_number(bearing.persistent_uls_per_bearing_kn)} kN/bearing; "
+                f"wind transverse {_number(bearing.persistent_uls_total_transverse_kn)} kN "
+                f"({_number(bearing.persistent_uls_transverse_per_bearing_kn)} kN/bearing); "
                 f"movement {_number(bearing.required_movement_mm)} mm</td>"
                 f"<td class=\"left\">{escape(bearing.status)}</td></tr>"
             )
@@ -355,7 +477,10 @@ actions retain their actual extents in the deterministic permanent-load routines
 <tbody>{"".join(rows)}</tbody>
 </table>
 {deflection_section}
+{additional_action_html}
+{local_deck_html}
 {integrated_design_html}
+{fatigue_html}
 
 <h2>Design and verification readiness</h2>
 <table>
@@ -393,7 +518,9 @@ def write_native_lm1_pdf_report(
     *,
     preferences: ApplicationPreferences | None = None,
     extended_actions: ExtendedActionSuite | None = None,
+    local_deck_design: LocalDeckDesignResult | None = None,
     design_interpretation: ApplicationDesignInterpretationSuite | None = None,
+    fatigue: FatigueApplicationResult | None = None,
 ) -> Path:
     """Write a compact printable PDF report using the same application provenance."""
 
@@ -427,6 +554,8 @@ def write_native_lm1_pdf_report(
         has_native_lm1_analysis=True,
         has_extended_actions=extended_actions is not None,
         has_integrated_design=design_interpretation is not None,
+        has_local_deck_design=local_deck_design is not None,
+        has_fatigue=fatigue is not None,
         design_blocker_count=(
             0
             if design_interpretation is None
@@ -706,6 +835,113 @@ def write_native_lm1_pdf_report(
             )
         )
         story.extend([deflection_table, Spacer(1, 4 * mm)])
+
+    if local_deck_design is not None:
+        deck = local_deck_design
+        story.append(Paragraph("Native local deck/slab design", styles["Heading2"]))
+        deck_rows = [
+            ["Check", "Demand / provision", "Util."],
+            [
+                "ULS transverse moments",
+                (
+                    f"+{_number(deck.uls_positive_moment_knm_per_m)} / "
+                    f"-{_number(deck.uls_negative_moment_knm_per_m)} kNm/m"
+                ),
+                "-",
+            ],
+            [
+                "Bottom transverse steel",
+                (
+                    f"{deck.bottom_transverse.arrangement.label}; "
+                    f"{_number(deck.bottom_transverse.arrangement.provided_area_mm2_per_m, 0)} "
+                    "mm2/m"
+                ),
+                _number(deck.bottom_transverse.utilization),
+            ],
+            [
+                "Top transverse steel",
+                (
+                    f"{deck.top_transverse.arrangement.label}; "
+                    f"{_number(deck.top_transverse.arrangement.provided_area_mm2_per_m, 0)} "
+                    "mm2/m"
+                ),
+                _number(deck.top_transverse.utilization),
+            ],
+            [
+                "One-way strip shear",
+                (
+                    f"VEd={_number(deck.one_way_shear.design_shear_kn_per_m)} kN/m; "
+                    f"VRdc={_number(deck.one_way_shear.concrete_resistance_kn_per_m)} kN/m"
+                ),
+                _number(deck.one_way_shear.utilization),
+            ],
+        ]
+        deck_table = Table(deck_rows, colWidths=[45 * mm, 105 * mm, 25 * mm])
+        deck_table.setStyle(
+            TableStyle(
+                [
+                    ("GRID", (0, 0), (-1, -1), 0.25, colors.grey),
+                    ("BACKGROUND", (0, 0), (-1, 0), colors.whitesmoke),
+                    ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+                    ("FONTSIZE", (0, 0), (-1, -1), 7.2),
+                    ("VALIGN", (0, 0), (-1, -1), "TOP"),
+                ]
+            )
+        )
+        story.extend(
+            [
+                deck_table,
+                Paragraph(escape(deck.status), small),
+                Spacer(1, 3 * mm),
+            ]
+        )
+
+    if fatigue is not None:
+        story.append(Paragraph("Native FLM3 fatigue", styles["Heading2"]))
+        fatigue_rows_pdf = [
+            ["Girder", "Delta sigma s", "Steel util.", "Concrete util.", "Link util."]
+        ]
+        fatigue_rows_pdf.extend(
+            [
+                str(row.girder_index),
+                _number(row.reference_steel_stress_range_mpa),
+                _number(row.fatigue.reinforcement.utilization),
+                (
+                    _number(row.fatigue.concrete.utilization)
+                    if row.fatigue.concrete is not None
+                    else "-"
+                ),
+                (
+                    _number(row.shear_links.fatigue.utilization)
+                    if row.shear_links is not None
+                    else "-"
+                ),
+            ]
+            for row in fatigue.girders
+        )
+        fatigue_table = Table(fatigue_rows_pdf, repeatRows=1)
+        fatigue_table.setStyle(
+            TableStyle(
+                [
+                    ("GRID", (0, 0), (-1, -1), 0.25, colors.grey),
+                    ("BACKGROUND", (0, 0), (-1, 0), colors.whitesmoke),
+                    ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+                    ("FONTSIZE", (0, 0), (-1, -1), 7.0),
+                ]
+            )
+        )
+        story.extend([fatigue_table, Spacer(1, 2 * mm)])
+        if fatigue.blockers:
+            story.extend(
+                [
+                    Paragraph(
+                        "<b>Fatigue inputs required:</b> "
+                        + escape("; ".join(fatigue.blockers)),
+                        small,
+                    ),
+                    Spacer(1, 3 * mm),
+                ]
+            )
 
     if design_interpretation is not None:
         story.append(Paragraph("Integrated action-to-design results", styles["Heading2"]))
