@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import tempfile
 import threading
+import time
 import webbrowser
 from pathlib import Path
 
@@ -16,6 +17,7 @@ from rc_bridge.application.project_editor import (
     application_default_project,
 )
 from rc_bridge.application.session import BridgeApplicationSession
+from rc_bridge.analysis.physical_sections import composite_section_identity
 from rc_bridge.core.models import DesignCode, SectionType, SupportSystem
 
 
@@ -70,9 +72,12 @@ def main() -> int:
 
     footer = ttk.Frame(root, padding=(10, 4, 10, 8))
     footer.pack(fill=tk.X)
-    progress = ttk.Progressbar(footer, mode="indeterminate", length=180)
+    progress = ttk.Progressbar(footer, mode="determinate", length=220, maximum=100.0)
     progress.pack(side=tk.RIGHT)
+    cancel_analysis_button = ttk.Button(footer, text="Cancel analysis", state=tk.DISABLED)
+    cancel_analysis_button.pack(side=tk.RIGHT, padx=(0, 8))
     ttk.Label(footer, textvariable=status_var).pack(side=tk.LEFT)
+    analysis_cancel_event = threading.Event()
 
     def add_entry(
         parent,
@@ -107,7 +112,7 @@ def main() -> int:
     layout_frame.grid(row=0, column=0, sticky="nsew", padx=(0, 6))
     material_frame = ttk.LabelFrame(project_tab, text="Materials & deck", padding=10)
     material_frame.grid(row=0, column=1, sticky="nsew", padx=6)
-    profile_frame = ttk.LabelFrame(project_tab, text="Physical girder section", padding=10)
+    profile_frame = ttk.LabelFrame(project_tab, text="Precast girder section", padding=10)
     profile_frame.grid(row=0, column=2, sticky="nsew", padx=(6, 0))
 
     add_entry(layout_frame, row=0, label="Project name", key="name", width=28)
@@ -250,6 +255,17 @@ def main() -> int:
         label="I bottom flange thickness",
         key="i_bottom_thickness",
     )
+
+    composite_identity_var = tk.StringVar(value="")
+    ttk.Separator(profile_frame).grid(
+        row=15, column=0, columnspan=2, sticky="ew", pady=7
+    )
+    ttk.Label(
+        profile_frame,
+        textvariable=composite_identity_var,
+        wraplength=360,
+        justify=tk.LEFT,
+    ).grid(row=16, column=0, columnspan=2, sticky="w", pady=(4, 0))
 
     project_actions = ttk.Frame(project_tab, padding=(0, 12, 0, 0))
     project_actions.grid(row=1, column=0, columnspan=3, sticky="ew")
@@ -708,6 +724,16 @@ def main() -> int:
             f"minimum deck width for current girder lines = "
             f"{layout.minimum_deck_width_m:.3f} m."
         )
+        identity = composite_section_identity(project.geometry)
+        composite_identity_var.set(
+            "PRECAST: "
+            f"{identity.precast_section}\n"
+            "FINAL HARDENED SECTION: "
+            f"{identity.final_section}\n"
+            f"Overall physical depth = {identity.physical_total_depth_m:.3f} m; "
+            f"participating deck depth = {identity.participating_deck_depth_m:.3f} m. "
+            "The grillage uses edge-aware tributary deck widths by girder line."
+        )
 
     def populate_preferences(preferences: ApplicationPreferences) -> None:
         string_vars["units"].set(preferences.units.value)
@@ -853,10 +879,11 @@ def main() -> int:
         state = tk.DISABLED if busy else tk.NORMAL
         for button in analysis_buttons:
             button.configure(state=state)
-        if busy:
-            progress.start(12)
-        else:
-            progress.stop()
+        cancel_analysis_button.configure(
+            state=tk.NORMAL if busy else tk.DISABLED
+        )
+        if not busy:
+            progress["value"] = 0.0
 
     def fail(title: str, message: str) -> None:
         set_busy(False)
@@ -936,12 +963,34 @@ def main() -> int:
             )
             return
 
+        analysis_cancel_event.clear()
         set_busy(True)
-        status_var.set("Running native full-width LM1 analysis...")
+        progress["value"] = 0.0
+        started = time.perf_counter()
+        status_var.set("Preparing native LM1 grillage and traffic cases...")
+
+        def update_progress(completed: int, total: int) -> None:
+            elapsed = max(time.perf_counter() - started, 1.0e-9)
+            rate = completed / elapsed
+            remaining = max(total - completed, 0)
+            eta = remaining / rate if rate > 0.0 else 0.0
+            percent = 100.0 * completed / total
+
+            def apply_progress() -> None:
+                progress["value"] = percent
+                status_var.set(
+                    f"LM1 case {completed:,}/{total:,} — {percent:.1f}% — "
+                    f"elapsed {elapsed / 60.0:.1f} min — ETA {eta / 60.0:.1f} min"
+                )
+
+            root.after(0, apply_progress)
 
         def worker() -> None:
             try:
-                result = session.run_native_lm1()
+                result = session.run_native_lm1(
+                    progress_callback=update_progress,
+                    cancel_requested=analysis_cancel_event.is_set,
+                )
             except (OSError, TypeError, ValueError, RuntimeError) as exc:
                 message = str(exc)
                 root.after(
@@ -1104,6 +1153,11 @@ def main() -> int:
             f"Exported {len(packages)} governing MIDAS/STAAD case packages."
         )
 
+    def cancel_analysis() -> None:
+        analysis_cancel_event.set()
+        status_var.set("Cancelling native LM1 analysis after the current case...")
+
+    cancel_analysis_button.configure(command=cancel_analysis)
     apply_project_button.configure(command=apply_project)
     revert_project_button.configure(
         command=lambda: populate_project(session.project)
