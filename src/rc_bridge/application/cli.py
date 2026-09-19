@@ -93,14 +93,15 @@ def main(argv: Sequence[str] | None = None) -> int:
         pdf_report = session.write_last_lm1_pdf_report(
             args.output / "calculation_report.pdf"
         )
-        packages = session.export_last_lm1_verification(
+        verification = session.export_last_lm1_verification(
             args.output / "verification",
-            base_name="application_lm1",
+            base_name="application_lm1_governing",
         )
         print(
             f"Completed {result.evaluated_case_count} LM1 cases; "
             f"HTML: {html_report}; PDF: {pdf_report}; "
-            f"verification cases: {len(packages)}"
+            f"MIDAS: {verification.midas_mct}; STAAD: {verification.staad_std}; "
+            f"governing verification cases: {len(verification.case_ids)}"
         )
         return 0
 
