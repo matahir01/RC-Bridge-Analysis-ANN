@@ -3,6 +3,7 @@ import pytest
 from rc_bridge.analysis.physical_sections import (
     composite_concrete_layers,
     composite_girder_properties,
+    composite_section_description,
     deck_construction_girder_properties,
     girder_tributary_slab_widths_m,
     precast_girder_properties,
@@ -72,6 +73,35 @@ def test_composite_properties_are_generated_for_all_physical_profiles(
     assert result.iy_m4 > 0.0
     assert result.iz_m4 > 0.0
     assert result.torsion_constant_m4 > 0.0
+
+
+def test_rectangular_precast_becomes_explicit_composite_t_section() -> None:
+    geometry = BridgeGeometry(
+        section_type=SectionType.RECTANGULAR,
+        girder_profile=RectangularGirderProfile(width_m=0.40, depth_m=0.95),
+    )
+
+    description = composite_section_description(
+        geometry,
+        slab_width_m=1.70,
+        slab_width_basis="interior tributary width",
+    )
+    properties = composite_girder_properties(
+        geometry,
+        slab_width_m=1.70,
+        slab_width_basis="interior tributary width",
+    )
+
+    assert description.precast_section_type == "rectangular"
+    assert description.final_section_form == "T"
+    assert description.web_width_m == pytest.approx(0.40)
+    assert description.flange_width_m == pytest.approx(1.70)
+    assert description.participating_flange_depth_m == pytest.approx(0.175)
+    assert description.physical_deck_depth_m == pytest.approx(0.25)
+    assert description.overall_depth_m == pytest.approx(1.20)
+    assert description.false_slab_weight_only
+    assert "composite T-section" in properties.basis
+    assert "rectangular precast girder" in properties.basis
 
 
 def test_composite_properties_respect_expert_slab_width_override() -> None:
