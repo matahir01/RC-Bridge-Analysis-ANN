@@ -1,5 +1,3 @@
-import pytest
-
 from rc_bridge.application.design_checks import (
     ApplicationDesignSettings,
     run_application_design_interpretation,
