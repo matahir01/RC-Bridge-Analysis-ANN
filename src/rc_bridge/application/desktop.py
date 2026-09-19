@@ -359,12 +359,33 @@ def main() -> int:
         key="gamma_g_favourable",
     )
     add_entry(ec_frame, row=2, label="γQ traffic", key="gamma_q_traffic")
-    add_entry(ec_frame, row=3, label="ψ1 traffic", key="psi1_traffic")
-    add_entry(ec_frame, row=4, label="ψ2 traffic", key="psi2_traffic")
-    add_entry(ec_frame, row=5, label="Crack limit (mm)", key="crack_limit")
     add_entry(
         ec_frame,
-        row=6,
+        row=3,
+        label="γQ non-traffic / execution",
+        key="gamma_q_nontraffic",
+    )
+    add_entry(ec_frame, row=4, label="ψ1 traffic", key="psi1_traffic")
+    add_entry(ec_frame, row=5, label="ψ2 traffic", key="psi2_traffic")
+    add_entry(ec_frame, row=6, label="ψ1 LM2", key="psi1_lm2")
+    add_entry(
+        ec_frame,
+        row=7,
+        label="ψ0 thermal ULS",
+        key="psi0_thermal_uls",
+    )
+    add_entry(
+        ec_frame,
+        row=8,
+        label="ψ0 thermal SLS",
+        key="psi0_thermal_sls",
+    )
+    add_entry(ec_frame, row=9, label="ψ1 thermal", key="psi1_thermal")
+    add_entry(ec_frame, row=10, label="ψ2 thermal", key="psi2_thermal")
+    add_entry(ec_frame, row=11, label="Crack limit (mm)", key="crack_limit")
+    add_entry(
+        ec_frame,
+        row=12,
         label="Deflection limit denominator (L/...)",
         key="deflection_ratio",
     )
@@ -572,7 +593,7 @@ def main() -> int:
 
     combinations_frame = ttk.LabelFrame(
         lower_load_frame,
-        text="EN 1990 interpretation after LM1 analysis",
+        text="Baseline Gk + LM1 interpretation",
         padding=8,
     )
     combinations_frame.grid(row=0, column=1, sticky="nsew", padx=(5, 0))
@@ -617,9 +638,10 @@ def main() -> int:
         load_cases_tab,
         text=(
             "Permanent self-weight is derived automatically from the physical girder/deck. "
-            "Surfacing, barriers and services are project inputs. LM1 is the implemented "
-            "vertical road-traffic action; missing variable actions remain explicitly marked "
-            "not wired rather than being silently ignored."
+            "The table above is deliberately the baseline Gk + characteristic-LM1 view. "
+            "Run Additional actions 1–6 and then Design & checks for the governing compatible "
+            "traffic groups, construction stages, bearing/restraint demand and accidental "
+            "barrier path; they are not silently added into this baseline table."
         ),
         wraplength=1180,
         justify=tk.LEFT,
@@ -678,55 +700,73 @@ def main() -> int:
         label="Braking alpha q1",
         key="action_braking_alpha_q1",
     )
+    add_entry(
+        traffic_actions_frame,
+        row=4,
+        label="gr2 LM1 tandem factor",
+        key="action_gr2_ts_factor",
+    )
+    add_entry(
+        traffic_actions_frame,
+        row=5,
+        label="gr2 LM1 UDL factor",
+        key="action_gr2_udl_factor",
+    )
     ttk.Separator(traffic_actions_frame).grid(
-        row=4, column=0, columnspan=2, sticky="ew", pady=5
+        row=6, column=0, columnspan=2, sticky="ew", pady=5
     )
     ttk.Checkbutton(
         traffic_actions_frame,
         text="Pedestrian / footway UDL",
         variable=bvar("action_pedestrian_enabled"),
-    ).grid(row=5, column=0, columnspan=2, sticky="w")
+    ).grid(row=7, column=0, columnspan=2, sticky="w")
     add_entry(
         traffic_actions_frame,
-        row=6,
+        row=8,
         label="Pedestrian qfk (kN/m²)",
         key="action_pedestrian_q",
     )
     add_entry(
         traffic_actions_frame,
-        row=7,
+        row=9,
+        label="Reduced qfk with LM1 (kN/m²)",
+        key="action_pedestrian_reduced_q",
+    )
+    add_entry(
+        traffic_actions_frame,
+        row=10,
         label="Left usable footway width",
         key="action_left_footway",
     )
     add_entry(
         traffic_actions_frame,
-        row=8,
+        row=11,
         label="Right usable footway width",
         key="action_right_footway",
     )
     ttk.Separator(traffic_actions_frame).grid(
-        row=9, column=0, columnspan=2, sticky="ew", pady=5
+        row=12, column=0, columnspan=2, sticky="ew", pady=5
     )
     ttk.Checkbutton(
         traffic_actions_frame,
         text="LM2 isolated axle scan",
         variable=bvar("action_lm2_enabled"),
-    ).grid(row=10, column=0, columnspan=2, sticky="w")
+    ).grid(row=13, column=0, columnspan=2, sticky="w")
     add_entry(
         traffic_actions_frame,
-        row=11,
+        row=14,
         label="LM2 beta Q",
         key="action_lm2_beta",
     )
     add_entry(
         traffic_actions_frame,
-        row=12,
+        row=15,
         label="LM2 longitudinal step",
         key="action_lm2_x_step",
     )
     add_entry(
         traffic_actions_frame,
-        row=13,
+        row=16,
         label="LM2 transverse step",
         key="action_lm2_y_step",
     )
@@ -779,16 +819,31 @@ def main() -> int:
         label="Longitudinal restraint fraction",
         key="action_thermal_restraint",
     )
+    ttk.Separator(thermal_actions_frame).grid(
+        row=7, column=0, columnspan=2, sticky="ew", pady=5
+    )
+    add_entry(
+        thermal_actions_frame,
+        row=8,
+        label="Bearing longitudinal capacity / bearing (kN)",
+        key="action_bearing_force_capacity",
+    )
+    add_entry(
+        thermal_actions_frame,
+        row=9,
+        label="Bearing movement capacity (mm)",
+        key="action_bearing_movement_capacity",
+    )
     ttk.Label(
         thermal_actions_frame,
         text=(
             "15/8 °C are first-generation concrete-beam reference gradients. "
             "Uniform expansion/contraction ranges must come from the project climate/"
-            "National Annex; zero means not yet specified."
+            "National Annex; zero capacity means demand-only and remains a design blocker."
         ),
         wraplength=340,
         justify=tk.LEFT,
-    ).grid(row=7, column=0, columnspan=2, sticky="w", pady=(8, 0))
+    ).grid(row=10, column=0, columnspan=2, sticky="w", pady=(8, 0))
 
     accidental_actions_frame = ttk.LabelFrame(
         actions_input,
@@ -826,17 +881,29 @@ def main() -> int:
         label="Barrier alpha Q1",
         key="action_barrier_alpha_Q1",
     )
+    add_entry(
+        accidental_actions_frame,
+        row=5,
+        label="Barrier transverse resistance (kN)",
+        key="action_barrier_transverse_resistance",
+    )
+    add_entry(
+        accidental_actions_frame,
+        row=6,
+        label="Barrier base-moment resistance (kNm)",
+        key="action_barrier_moment_resistance",
+    )
     ttk.Separator(accidental_actions_frame).grid(
-        row=5, column=0, columnspan=2, sticky="ew", pady=5
+        row=7, column=0, columnspan=2, sticky="ew", pady=5
     )
     ttk.Checkbutton(
         accidental_actions_frame,
         text="Construction-stage actions",
         variable=bvar("action_construction_enabled"),
-    ).grid(row=6, column=0, columnspan=2, sticky="w")
+    ).grid(row=8, column=0, columnspan=2, sticky="w")
     add_entry(
         accidental_actions_frame,
-        row=7,
+        row=9,
         label="Execution UDL (kN/m²)",
         key="action_construction_udl",
     )
@@ -844,12 +911,12 @@ def main() -> int:
         accidental_actions_frame,
         text=(
             "Girder, false-slab, wet-deck and superimposed permanent actions are "
-            "automatically separated by construction stage. Execution UDL is an "
-            "explicit project input and is not invented."
+            "automatically separated by construction stage. Zero barrier resistance "
+            "means demand-only and remains a design blocker."
         ),
         wraplength=340,
         justify=tk.LEFT,
-    ).grid(row=8, column=0, columnspan=2, sticky="w", pady=(8, 0))
+    ).grid(row=10, column=0, columnspan=2, sticky="w", pady=(8, 0))
 
     action_buttons = ttk.Frame(actions_tab)
     action_buttons.grid(row=2, column=0, sticky="ne", pady=(0, 6))
@@ -984,9 +1051,10 @@ def main() -> int:
         text=(
             "Analysis-derived EC2 design interpretation. Flexure, shear, crack width, "
             "service deflection and reinforcement/detailing are calculated from the current "
-            "physical layered section and native LM1 results. Production acceptance remains "
-            "locked until Stage 7 independent verification and completion of all applicable "
-            "traffic/environmental/accidental actions."
+            "physical layered section and the governing compatible action groups. "
+            "Construction stages, bearing/restraint demand and local barrier demand are "
+            "carried with the design; unresolved capacities remain explicit blockers. "
+            "Production acceptance remains locked until Stage 7 independent verification."
         ),
         wraplength=1180,
         justify=tk.LEFT,
@@ -1102,7 +1170,10 @@ def main() -> int:
     run_design_button.grid(row=3, column=5, sticky="e", pady=3)
 
     design_status_var = tk.StringVar(
-        value="Run native LM1 analysis before the design interpretation."
+        value=(
+            "Run native LM1 and Additional actions 1–6 before the integrated "
+            "design interpretation."
+        )
     )
     ttk.Label(
         design_tab,
@@ -1132,6 +1203,9 @@ def main() -> int:
         "crack_util",
         "defl",
         "defl_util",
+        "gov_m",
+        "gov_v",
+        "construction",
         "status",
     )
     design_tree = ttk.Treeview(
@@ -1155,14 +1229,32 @@ def main() -> int:
         "crack_util": "Crack util.",
         "defl": "Defl. (mm)",
         "defl_util": "Defl. util.",
+        "gov_m": "Governing M situation",
+        "gov_v": "Governing V situation",
+        "construction": "Construction stage",
         "status": "Current checks",
     }
     for key in design_columns:
         design_tree.heading(key, text=design_headings[key])
         design_tree.column(
             key,
-            width=105 if key not in {"bars", "links", "status"} else 155,
-            anchor=tk.CENTER if key != "status" else tk.W,
+            width=(
+                105
+                if key not in {
+                    "bars",
+                    "links",
+                    "gov_m",
+                    "gov_v",
+                    "construction",
+                    "status",
+                }
+                else 185
+            ),
+            anchor=(
+                tk.CENTER
+                if key not in {"gov_m", "gov_v", "construction", "status"}
+                else tk.W
+            ),
         )
     design_x_scroll = ttk.Scrollbar(
         design_frame,
@@ -1334,8 +1426,20 @@ def main() -> int:
             ),
             gamma_g_favourable=float(string_vars["gamma_g_favourable"].get()),
             gamma_q_traffic=float(string_vars["gamma_q_traffic"].get()),
+            gamma_q_nontraffic=float(
+                string_vars["gamma_q_nontraffic"].get()
+            ),
             psi1_traffic=float(string_vars["psi1_traffic"].get()),
             psi2_traffic=float(string_vars["psi2_traffic"].get()),
+            psi1_lm2=float(string_vars["psi1_lm2"].get()),
+            psi0_thermal_uls=float(
+                string_vars["psi0_thermal_uls"].get()
+            ),
+            psi0_thermal_sls=float(
+                string_vars["psi0_thermal_sls"].get()
+            ),
+            psi1_thermal=float(string_vars["psi1_thermal"].get()),
+            psi2_thermal=float(string_vars["psi2_thermal"].get()),
             crack_limit_mm=float(string_vars["crack_limit"].get()),
             deflection_limit_span_ratio=float(
                 string_vars["deflection_ratio"].get()
@@ -1405,6 +1509,15 @@ def main() -> int:
             ),
             pedestrian_enabled=bool_vars["action_pedestrian_enabled"].get(),
             pedestrian_load_kn_m2=float(string_vars["action_pedestrian_q"].get()),
+            pedestrian_reduced_with_lm1_kn_m2=float(
+                string_vars["action_pedestrian_reduced_q"].get()
+            ),
+            gr2_lm1_tandem_factor=float(
+                string_vars["action_gr2_ts_factor"].get()
+            ),
+            gr2_lm1_udl_factor=float(
+                string_vars["action_gr2_udl_factor"].get()
+            ),
             left_footway_width_m=displayed_unit.to_metres(
                 float(string_vars["action_left_footway"].get())
             ),
@@ -1431,6 +1544,18 @@ def main() -> int:
             ),
             barrier_alpha_Q1=float(
                 string_vars["action_barrier_alpha_Q1"].get()
+            ),
+            bearing_longitudinal_capacity_per_bearing_kn=float(
+                string_vars["action_bearing_force_capacity"].get()
+            ),
+            bearing_movement_capacity_mm=float(
+                string_vars["action_bearing_movement_capacity"].get()
+            ),
+            barrier_transverse_resistance_kn=float(
+                string_vars["action_barrier_transverse_resistance"].get()
+            ),
+            barrier_base_moment_resistance_knm=float(
+                string_vars["action_barrier_moment_resistance"].get()
             ),
             construction_enabled=bool_vars["action_construction_enabled"].get(),
             construction_execution_udl_kn_m2=float(
@@ -1595,8 +1720,20 @@ def main() -> int:
             f"{basis.gamma_g_favourable:g}"
         )
         string_vars["gamma_q_traffic"].set(f"{basis.gamma_q_traffic:g}")
+        string_vars["gamma_q_nontraffic"].set(
+            f"{basis.gamma_q_nontraffic:g}"
+        )
         string_vars["psi1_traffic"].set(f"{basis.psi1_traffic:g}")
         string_vars["psi2_traffic"].set(f"{basis.psi2_traffic:g}")
+        string_vars["psi1_lm2"].set(f"{basis.psi1_lm2:g}")
+        string_vars["psi0_thermal_uls"].set(
+            f"{basis.psi0_thermal_uls:g}"
+        )
+        string_vars["psi0_thermal_sls"].set(
+            f"{basis.psi0_thermal_sls:g}"
+        )
+        string_vars["psi1_thermal"].set(f"{basis.psi1_thermal:g}")
+        string_vars["psi2_thermal"].set(f"{basis.psi2_thermal:g}")
         string_vars["crack_limit"].set(f"{basis.crack_limit_mm:g}")
         string_vars["deflection_ratio"].set(
             f"{basis.deflection_limit_span_ratio:g}"
@@ -1666,6 +1803,15 @@ def main() -> int:
         string_vars["action_pedestrian_q"].set(
             f"{actions.pedestrian_load_kn_m2:g}"
         )
+        string_vars["action_pedestrian_reduced_q"].set(
+            f"{actions.pedestrian_reduced_with_lm1_kn_m2:g}"
+        )
+        string_vars["action_gr2_ts_factor"].set(
+            f"{actions.gr2_lm1_tandem_factor:g}"
+        )
+        string_vars["action_gr2_udl_factor"].set(
+            f"{actions.gr2_lm1_udl_factor:g}"
+        )
         string_vars["action_left_footway"].set(
             f"{displayed_unit.from_metres(actions.left_footway_width_m):g}"
         )
@@ -1692,6 +1838,18 @@ def main() -> int:
         )
         string_vars["action_barrier_alpha_Q1"].set(
             f"{actions.barrier_alpha_Q1:g}"
+        )
+        string_vars["action_bearing_force_capacity"].set(
+            f"{actions.bearing_longitudinal_capacity_per_bearing_kn:g}"
+        )
+        string_vars["action_bearing_movement_capacity"].set(
+            f"{actions.bearing_movement_capacity_mm:g}"
+        )
+        string_vars["action_barrier_transverse_resistance"].set(
+            f"{actions.barrier_transverse_resistance_kn:g}"
+        )
+        string_vars["action_barrier_moment_resistance"].set(
+            f"{actions.barrier_base_moment_resistance_knm:g}"
         )
         bool_vars["action_construction_enabled"].set(actions.construction_enabled)
         string_vars["action_construction_udl"].set(
@@ -1790,7 +1948,8 @@ def main() -> int:
                 tree.delete(item)
         search_status_var.set("No native LM1 analysis has been run.")
         design_status_var.set(
-            "Run native LM1 analysis before the design interpretation."
+            "Run native LM1 and Additional actions 1–6 before the integrated "
+            "design interpretation."
         )
 
     def show_result(result) -> None:
@@ -1913,6 +2072,18 @@ def main() -> int:
                 ),
             )
 
+        if result.gr2_frequent_lm1 is not None:
+            item = result.gr2_frequent_lm1
+            add(
+                "Braking / acceleration",
+                "gr2 frequent LM1 search",
+                f"{item.search.evaluated_case_count:,} cases",
+                (
+                    f"TS factor={item.tandem_factor:g}; "
+                    f"UDL factor={item.udl_factor:g}. {item.status}"
+                ),
+            )
+
         if result.pedestrian is not None:
             item = result.pedestrian
             add(
@@ -2020,13 +2191,27 @@ def main() -> int:
         started_at = time.monotonic()
         status_var.set("Running braking, thermal, pedestrian, LM2, barrier and construction actions...")
 
+        def gr2_progress(completed: int, total: int) -> None:
+            if total <= 0:
+                return
+            root.after(
+                0,
+                lambda: (
+                    progress.configure(value=50.0 * completed / total),
+                    status_var.set(
+                        f"gr2 frequent-LM1 case {completed:,}/{total:,} — "
+                        f"{100.0 * completed / total:.1f}% of gr2 search"
+                    ),
+                ),
+            )
+
         def lm2_progress(completed: int, total: int) -> None:
             if total <= 0:
                 return
             root.after(
                 0,
                 lambda: (
-                    progress.configure(value=100.0 * completed / total),
+                    progress.configure(value=50.0 + 50.0 * completed / total),
                     status_var.set(
                         f"LM2 placement {completed:,}/{total:,} — "
                         f"{100.0 * completed / total:.1f}%"
@@ -2038,6 +2223,7 @@ def main() -> int:
             try:
                 result = session.run_extended_actions(
                     lm2_progress_callback=lm2_progress,
+                    gr2_progress_callback=gr2_progress,
                 )
             except (OSError, TypeError, ValueError, RuntimeError) as exc:
                 message = str(exc)
@@ -2100,11 +2286,53 @@ def main() -> int:
                     f"{row.design.crack.utilization:.3f}",
                     f"{row.design.deflection.interpolated_deflection_mm:.3f}",
                     f"{row.design.deflection.utilization:.3f}",
+                    row.governing_uls_moment_situation,
+                    row.governing_uls_shear_situation,
+                    (
+                        "none"
+                        if not row.construction_stage_checks
+                        else max(
+                            row.construction_stage_checks,
+                            key=lambda item: max(
+                                item.flexural_utilization,
+                                item.shear_utilization,
+                            ),
+                        ).stage.value
+                        + " "
+                        + f"util={max(max(item.flexural_utilization, item.shear_utilization) for item in row.construction_stage_checks):.3f}"
+                    ),
                     "PASS" if row.passes_current_checks else "CHECK",
                 ),
             )
-        design_status_var.set(result.status)
-        status_var.set("Design interpretation complete.")
+        summary = result.status
+        if result.action_combinations is not None:
+            bearing = result.action_combinations.bearing
+            barrier = result.action_combinations.barrier
+            extras: list[str] = []
+            if bearing is not None:
+                extras.append(
+                    "Bearing ULS longitudinal="
+                    f"{bearing.persistent_uls_total_longitudinal_kn:.1f} kN "
+                    f"({bearing.persistent_uls_per_bearing_kn:.1f} kN/bearing); "
+                    f"movement={bearing.required_movement_mm:.1f} mm"
+                )
+            if barrier is not None:
+                extras.append(
+                    "Barrier accidental demand="
+                    f"{barrier.transverse_accidental_demand_kn:.1f} kN, "
+                    f"{barrier.base_moment_accidental_demand_knm:.1f} kNm"
+                )
+            if extras:
+                summary += "\n" + " | ".join(extras)
+        if result.coverage_blockers:
+            summary += (
+                "\nDESIGN BLOCKERS: "
+                + "; ".join(result.coverage_blockers)
+            )
+            status_var.set("Design interpretation complete with unresolved blockers.")
+        else:
+            status_var.set("Integrated design interpretation complete.")
+        design_status_var.set(summary)
         refresh_dashboard()
 
     def run_design_interpretation() -> None:
@@ -2122,7 +2350,8 @@ def main() -> int:
         ):
             messagebox.showinfo(
                 "Design interpretation",
-                "Project or analysis settings changed. Run native LM1 analysis again first.",
+                "Project or analysis settings changed. Run native LM1 and then "
+                "Additional actions 1–6 again before design.",
             )
             return
         try:

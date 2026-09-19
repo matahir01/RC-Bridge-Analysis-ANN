@@ -94,6 +94,12 @@ def test_lm2_action_scans_carriageway_and_retains_contact_patch_pressure() -> No
     assert result.evaluated_case_count == 9
     assert len(result.girders) == 7
     assert len(result.governing_positions) == 7
+    assert len(result.governing_moment_positions) == 7
+    assert len(result.governing_shear_positions) == 7
+    assert len(result.governing_torsion_positions) == 7
+    assert all(item.effects.moment_knm >= 0.0 for item in result.girders)
+    assert all(item.effects.shear_kn >= 0.0 for item in result.girders)
+    assert all(item.effects.torsion_knm >= 0.0 for item in result.girders)
 
 
 def test_barrier_impact_calculates_horizontal_local_action_without_faking_3d_solve() -> None:
@@ -158,6 +164,7 @@ def test_session_runs_all_six_actions_and_retains_result() -> None:
     assert result.braking is not None
     assert result.thermal is not None
     assert result.pedestrian is not None
+    assert result.gr2_frequent_lm1 is not None
     assert result.lm2 is not None
     assert result.barrier_impact is not None
     assert result.construction is not None
@@ -169,6 +176,7 @@ def test_default_extended_actions_keep_unknown_project_inputs_visible() -> None:
     result = run_extended_actions(
         application_default_project(),
         ExtendedActionSettings(
+            braking_enabled=False,
             lm2_enabled=False,
             construction_enabled=False,
         ),

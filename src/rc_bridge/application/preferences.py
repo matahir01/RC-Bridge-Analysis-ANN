@@ -46,8 +46,14 @@ class EurocodeApplicationBasis:
     gamma_g_unfavourable: float = 1.35
     gamma_g_favourable: float = 1.00
     gamma_q_traffic: float = 1.50
+    gamma_q_nontraffic: float = 1.50
     psi1_traffic: float = 0.75
     psi2_traffic: float = 0.0
+    psi1_lm2: float = 0.75
+    psi0_thermal_uls: float = 0.0
+    psi0_thermal_sls: float = 0.60
+    psi1_thermal: float = 0.60
+    psi2_thermal: float = 0.50
     crack_limit_mm: float = 0.30
     deflection_limit_span_ratio: float = 1000.0
 
@@ -61,6 +67,17 @@ class EurocodeApplicationBasis:
             psi1_traffic=self.psi1_traffic,
             psi2_traffic=self.psi2_traffic,
         )
+        if self.gamma_q_nontraffic <= 0.0:
+            raise ValueError("gamma_q_nontraffic must be positive.")
+        for name, value in (
+            ("psi1_lm2", self.psi1_lm2),
+            ("psi0_thermal_uls", self.psi0_thermal_uls),
+            ("psi0_thermal_sls", self.psi0_thermal_sls),
+            ("psi1_thermal", self.psi1_thermal),
+            ("psi2_thermal", self.psi2_thermal),
+        ):
+            if not 0.0 <= value <= 1.0:
+                raise ValueError(f"{name} must lie between 0 and 1.")
         if self.crack_limit_mm <= 0.0:
             raise ValueError("crack_limit_mm must be positive.")
         if self.deflection_limit_span_ratio <= 0.0:

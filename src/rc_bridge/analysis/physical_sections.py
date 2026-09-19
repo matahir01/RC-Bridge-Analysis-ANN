@@ -228,6 +228,19 @@ def _properties_from_rectangles(
     )
 
 
+def precast_concrete_layers(
+    geometry: BridgeGeometry,
+) -> tuple[ConcreteSectionLayer, ...]:
+    """Return the physical precast-girder concrete layers from its own top face."""
+
+    profile = geometry.girder_profile
+    if profile is None:
+        raise ValueError(
+            "Precast concrete layers require a complete physical girder profile."
+        )
+    return _girder_layers(profile, top_m=0.0)
+
+
 def precast_girder_properties(geometry: BridgeGeometry) -> PhysicalSectionProperties:
     """Return gross elastic properties of the precast girder alone."""
     profile = geometry.girder_profile
@@ -239,6 +252,40 @@ def precast_girder_properties(geometry: BridgeGeometry) -> PhysicalSectionProper
             f"gross precast {profile.section_type.value} girder; "
             "rectangle-component Saint-Venant J approximation"
         ),
+    )
+
+
+def deck_construction_concrete_layers(
+    geometry: BridgeGeometry,
+    *,
+    slab_width_m: float,
+) -> tuple[ConcreteSectionLayer, ...]:
+    """Return concrete layers active while the in-situ deck is still wet.
+
+    The wet in-situ slab is never credited. The precast false slab is included
+    only when the project explicitly declares verified composite participation.
+    """
+
+    profile = geometry.girder_profile
+    if profile is None:
+        raise ValueError(
+            "Deck-construction layers require a complete physical girder profile."
+        )
+    width = float(slab_width_m)
+    if width <= 0.0:
+        raise ValueError("Deck-construction slab strip width must be positive.")
+    deck = geometry.deck_construction
+    false_depth = float(deck.precast_false_slab_depth_m)
+    if not deck.false_slab_composite_participation:
+        return precast_concrete_layers(geometry)
+    return (
+        ConcreteSectionLayer(
+            width_m=width,
+            top_m=0.0,
+            bottom_m=false_depth,
+            label="construction-stage composite precast false slab",
+        ),
+        *_girder_layers(profile, top_m=false_depth),
     )
 
 

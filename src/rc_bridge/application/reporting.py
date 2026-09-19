@@ -8,6 +8,8 @@ from rc_bridge.analysis.physical_sections import (
     girder_tributary_slab_widths_m,
 )
 from rc_bridge.application.dashboard import build_application_dashboard
+from rc_bridge.application.design_checks import ApplicationDesignInterpretationSuite
+from rc_bridge.application.extended_actions import ExtendedActionSuite
 from rc_bridge.application.load_cases import (
     application_combination_summary,
     eurocode_variable_action_scope,
@@ -27,6 +29,8 @@ def application_html_report(
     result: ProjectNativeLM1GrillageSearchResult,
     *,
     preferences: ApplicationPreferences | None = None,
+    extended_actions: ExtendedActionSuite | None = None,
+    design_interpretation: ApplicationDesignInterpretationSuite | None = None,
 ) -> str:
     """Render the desktop calculation/reporting view without claiming validation."""
 
@@ -44,6 +48,13 @@ def application_html_report(
     dashboard = build_application_dashboard(
         project,
         has_native_lm1_analysis=True,
+        has_extended_actions=extended_actions is not None,
+        has_integrated_design=design_interpretation is not None,
+        design_blocker_count=(
+            0
+            if design_interpretation is None
+            else len(design_interpretation.coverage_blockers)
+        ),
     )
 
     permanent_audit = permanent_load_audit(project)
@@ -135,6 +146,70 @@ def application_html_report(
         for row in combination_rows_data
     )
 
+    integrated_design_html = ""
+    if design_interpretation is not None:
+        design_rows = "".join(
+            "<tr>"
+            f"<td>{row.girder_index}</td>"
+            f"<td>{_number(row.design.uls_design.design_effects.moment_knm)}</td>"
+            f"<td>{escape(row.governing_uls_moment_situation)}</td>"
+            f"<td>{_number(row.design.uls_design.flexure.required_steel_area_mm2, 0)}</td>"
+            f"<td>{row.selected_bars.bar_count}-Y{_number(row.selected_bars.bar_diameter_mm, 0)}</td>"
+            f"<td>{_number(row.design.uls_design.flexure.utilization)}</td>"
+            f"<td>{_number(abs(row.design.uls_design.design_effects.shear_kn))}</td>"
+            f"<td>{escape(row.governing_uls_shear_situation)}</td>"
+            f"<td>{_number(row.design.shear_utilization)}</td>"
+            f"<td>{_number(row.design.crack.crack_width_mm)}</td>"
+            f"<td>{_number(row.design.deflection.interpolated_deflection_mm)}</td>"
+            f"<td>{'PASS' if row.passes_current_checks else 'CHECK'}</td>"
+            "</tr>"
+            for row in design_interpretation.girders
+        )
+        boundary_rows = []
+        combo = design_interpretation.action_combinations
+        if combo is not None and combo.bearing is not None:
+            bearing = combo.bearing
+            boundary_rows.append(
+                "<tr><td class=\"left\">Bearing/restraint</td>"
+                f"<td>{_number(bearing.persistent_uls_total_longitudinal_kn)} kN total; "
+                f"{_number(bearing.persistent_uls_per_bearing_kn)} kN/bearing; "
+                f"movement {_number(bearing.required_movement_mm)} mm</td>"
+                f"<td class=\"left\">{escape(bearing.status)}</td></tr>"
+            )
+        if combo is not None and combo.barrier is not None:
+            barrier = combo.barrier
+            boundary_rows.append(
+                "<tr><td class=\"left\">Safety-barrier accidental</td>"
+                f"<td>{_number(barrier.transverse_accidental_demand_kn)} kN; "
+                f"{_number(barrier.base_moment_accidental_demand_knm)} kNm</td>"
+                f"<td class=\"left\">{escape(barrier.status)}</td></tr>"
+            )
+        blockers = (
+            "<p class=\"warn\"><strong>Design blockers:</strong> "
+            + escape("; ".join(design_interpretation.coverage_blockers))
+            + "</p>"
+            if design_interpretation.coverage_blockers
+            else "<p class=\"note\">No unresolved coverage/input blockers remain in this design run.</p>"
+        )
+        integrated_design_html = (
+            "<h2>Integrated action-to-design results</h2>"
+            "<table><thead><tr>"
+            "<th>Girder</th><th>MEd</th><th class=\"left\">M situation</th>"
+            "<th>As,req</th><th>Selected bars</th><th>M util.</th>"
+            "<th>VEd</th><th class=\"left\">V situation</th><th>V util.</th>"
+            "<th>wk</th><th>Defl.</th><th>Status</th>"
+            "</tr></thead><tbody>" + design_rows + "</tbody></table>"
+            + (
+                "<table><thead><tr><th class=\"left\">Local/support path</th>"
+                "<th>Demand</th><th class=\"left\">Boundary</th></tr></thead><tbody>"
+                + "".join(boundary_rows)
+                + "</tbody></table>"
+                if boundary_rows
+                else ""
+            )
+            + blockers
+        )
+
     capability_rows = "".join(
         "<tr>"
         f"<td>{escape(item.name)}</td>"
@@ -216,8 +291,12 @@ th {{ background: #eaf2f8; }}
 <div>&gamma;G unfavourable</div><div>{_number(ec.gamma_g_unfavourable, 3)}</div>
 <div>&gamma;G favourable</div><div>{_number(ec.gamma_g_favourable, 3)}</div>
 <div>&gamma;Q traffic</div><div>{_number(ec.gamma_q_traffic, 3)}</div>
+<div>&gamma;Q non-traffic</div><div>{_number(ec.gamma_q_nontraffic, 3)}</div>
 <div>&psi;1 traffic</div><div>{_number(ec.psi1_traffic, 3)}</div>
 <div>&psi;2 traffic</div><div>{_number(ec.psi2_traffic, 3)}</div>
+<div>&psi;1 LM2</div><div>{_number(ec.psi1_lm2, 3)}</div>
+<div>Thermal &psi;0 ULS / SLS</div><div>{_number(ec.psi0_thermal_uls, 3)} / {_number(ec.psi0_thermal_sls, 3)}</div>
+<div>Thermal &psi;1 / &psi;2</div><div>{_number(ec.psi1_thermal, 3)} / {_number(ec.psi2_thermal, 3)}</div>
 <div>Crack-width criterion (mm)</div><div>{_number(ec.crack_limit_mm, 3)}</div>
 <div>Deflection criterion</div><div>L/{_number(ec.deflection_limit_span_ratio, 0)}</div>
 <div>Native grid spacing (m)</div><div>{_number(analysis.grid_spacing_m)}</div>
@@ -276,6 +355,7 @@ actions retain their actual extents in the deterministic permanent-load routines
 <tbody>{"".join(rows)}</tbody>
 </table>
 {deflection_section}
+{integrated_design_html}
 
 <h2>Design and verification readiness</h2>
 <table>
@@ -312,6 +392,8 @@ def write_native_lm1_pdf_report(
     path: str | Path,
     *,
     preferences: ApplicationPreferences | None = None,
+    extended_actions: ExtendedActionSuite | None = None,
+    design_interpretation: ApplicationDesignInterpretationSuite | None = None,
 ) -> Path:
     """Write a compact printable PDF report using the same application provenance."""
 
@@ -340,7 +422,17 @@ def write_native_lm1_pdf_report(
     destination.parent.mkdir(parents=True, exist_ok=True)
 
     prefs = preferences or ApplicationPreferences()
-    dashboard = build_application_dashboard(project, has_native_lm1_analysis=True)
+    dashboard = build_application_dashboard(
+        project,
+        has_native_lm1_analysis=True,
+        has_extended_actions=extended_actions is not None,
+        has_integrated_design=design_interpretation is not None,
+        design_blocker_count=(
+            0
+            if design_interpretation is None
+            else len(design_interpretation.coverage_blockers)
+        ),
+    )
     geometry = project.geometry
     composite = None
     if (
@@ -417,8 +509,9 @@ def write_native_lm1_pdf_report(
     story.append(Paragraph("Application design basis", styles["Heading2"]))
     basis_rows = [
         ["Display units", prefs.units.value],
-        ["ULS factors", f"gamma_G,unf={ec.gamma_g_unfavourable:g}; gamma_G,fav={ec.gamma_g_favourable:g}; gamma_Q={ec.gamma_q_traffic:g}"],
-        ["SLS traffic ψ", f"psi1={ec.psi1_traffic:g}; psi2={ec.psi2_traffic:g}"],
+        ["ULS factors", f"gamma_G,unf={ec.gamma_g_unfavourable:g}; gamma_G,fav={ec.gamma_g_favourable:g}; gamma_Q,traffic={ec.gamma_q_traffic:g}; gamma_Q,other={ec.gamma_q_nontraffic:g}"],
+        ["SLS traffic psi", f"psi1={ec.psi1_traffic:g}; psi2={ec.psi2_traffic:g}; psi1,LM2={ec.psi1_lm2:g}"],
+        ["Thermal psi", f"psi0 ULS/SLS={ec.psi0_thermal_uls:g}/{ec.psi0_thermal_sls:g}; psi1={ec.psi1_thermal:g}; psi2={ec.psi2_thermal:g}"],
         ["Crack / deflection criteria", f"{ec.crack_limit_mm:g} mm; L/{ec.deflection_limit_span_ratio:g}"],
         ["Native search", f"grid {prefs.analysis.grid_spacing_m:g} m; traffic step {prefs.analysis.traffic_step_m:g} m"],
     ]
@@ -613,6 +706,69 @@ def write_native_lm1_pdf_report(
             )
         )
         story.extend([deflection_table, Spacer(1, 4 * mm)])
+
+    if design_interpretation is not None:
+        story.append(Paragraph("Integrated action-to-design results", styles["Heading2"]))
+        integrated_rows = [
+            [
+                "Girder",
+                "MEd",
+                "M situation",
+                "As,req",
+                "Selected bars",
+                "M util.",
+                "VEd",
+                "V situation",
+                "V util.",
+                "wk",
+                "Defl.",
+                "Status",
+            ]
+        ]
+        integrated_rows.extend(
+            [
+                str(row.girder_index),
+                _number(row.design.uls_design.design_effects.moment_knm),
+                Paragraph(escape(row.governing_uls_moment_situation), small),
+                _number(row.design.uls_design.flexure.required_steel_area_mm2, 0),
+                (
+                    f"{row.selected_bars.bar_count}-Y"
+                    f"{_number(row.selected_bars.bar_diameter_mm, 0)}"
+                ),
+                _number(row.design.uls_design.flexure.utilization),
+                _number(abs(row.design.uls_design.design_effects.shear_kn)),
+                Paragraph(escape(row.governing_uls_shear_situation), small),
+                _number(row.design.shear_utilization),
+                _number(row.design.crack.crack_width_mm),
+                _number(row.design.deflection.interpolated_deflection_mm),
+                "PASS" if row.passes_current_checks else "CHECK",
+            ]
+            for row in design_interpretation.girders
+        )
+        integrated_table = Table(integrated_rows, repeatRows=1)
+        integrated_table.setStyle(
+            TableStyle(
+                [
+                    ("GRID", (0, 0), (-1, -1), 0.25, colors.grey),
+                    ("BACKGROUND", (0, 0), (-1, 0), colors.whitesmoke),
+                    ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+                    ("FONTSIZE", (0, 0), (-1, -1), 6.0),
+                    ("VALIGN", (0, 0), (-1, -1), "TOP"),
+                ]
+            )
+        )
+        story.extend([integrated_table, Spacer(1, 3 * mm)])
+        if design_interpretation.coverage_blockers:
+            story.extend(
+                [
+                    Paragraph(
+                        "<b>Design blockers:</b> "
+                        + escape("; ".join(design_interpretation.coverage_blockers)),
+                        small,
+                    ),
+                    Spacer(1, 3 * mm),
+                ]
+            )
 
     story.extend([PageBreak(), Paragraph("Design and verification readiness", styles["Heading2"])])
     capability_rows = [["Capability", "Status", "Engineering boundary"]]

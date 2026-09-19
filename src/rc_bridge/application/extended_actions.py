@@ -27,6 +27,10 @@ from rc_bridge.workflow.grillage_verification_export import (
     GrillageVerificationLoadCase,
     build_project_grillage_verification_model,
 )
+from rc_bridge.workflow.lm1_grillage_search import (
+    ProjectNativeLM1GrillageSearchResult,
+    run_project_native_lm1_grillage_search,
+)
 from rc_bridge.workflow.project_bridge import (
     girder_deck_tributary_width_m,
     girder_permanent_load_segments,
@@ -61,8 +65,13 @@ class ExtendedActionSettings:
     # 3. Pedestrian / footway loading
     pedestrian_enabled: bool = True
     pedestrian_load_kn_m2: float = 5.0
+    pedestrian_reduced_with_lm1_kn_m2: float = 3.0
     left_footway_width_m: float = 0.0
     right_footway_width_m: float = 0.0
+
+    # EN 1991-2 gr2 frequent LM1 component accompanying horizontal traffic.
+    gr2_lm1_tandem_factor: float = 0.75
+    gr2_lm1_udl_factor: float = 0.40
 
     # 4. LM2 local axle
     lm2_enabled: bool = True
@@ -81,6 +90,13 @@ class ExtendedActionSettings:
     barrier_vertical_factor: float = 0.75
     barrier_alpha_Q1: float = 1.0
 
+    # Simple longitudinal bearing/restraint design path. Zero capacity means
+    # demand-only reporting rather than a fabricated pass/fail check.
+    bearing_longitudinal_capacity_per_bearing_kn: float = 0.0
+    bearing_movement_capacity_mm: float = 0.0
+    barrier_transverse_resistance_kn: float = 0.0
+    barrier_base_moment_resistance_knm: float = 0.0
+
     # 6. Construction-stage actions
     construction_enabled: bool = True
     construction_execution_udl_kn_m2: float = 0.0
@@ -91,6 +107,9 @@ class ExtendedActionSettings:
             self.braking_alpha_Q1,
             self.thermal_alpha_per_c,
             self.pedestrian_load_kn_m2,
+            self.pedestrian_reduced_with_lm1_kn_m2,
+            self.gr2_lm1_tandem_factor,
+            self.gr2_lm1_udl_factor,
             self.lm2_beta_Q,
             self.lm2_axle_load_kn,
             self.lm2_wheel_track_m,
@@ -113,6 +132,10 @@ class ExtendedActionSettings:
             self.left_footway_width_m,
             self.right_footway_width_m,
             self.construction_execution_udl_kn_m2,
+            self.bearing_longitudinal_capacity_per_bearing_kn,
+            self.bearing_movement_capacity_mm,
+            self.barrier_transverse_resistance_kn,
+            self.barrier_base_moment_resistance_knm,
         )
         if any(value < 0.0 for value in nonnegative):
             raise ValueError("Bridge-action magnitudes/widths cannot be negative.")
@@ -169,6 +192,14 @@ class PedestrianActionResult:
 
 
 @dataclass(frozen=True)
+class Gr2FrequentLM1Result:
+    search: ProjectNativeLM1GrillageSearchResult
+    tandem_factor: float
+    udl_factor: float
+    status: str
+
+
+@dataclass(frozen=True)
 class LM2ActionResult:
     evaluated_case_count: int
     wheel_load_kn: float
@@ -176,6 +207,9 @@ class LM2ActionResult:
     contact_pressure_kn_m2: float
     girders: tuple[GirderActionEnvelope, ...]
     governing_positions: tuple[tuple[int, float, float], ...]
+    governing_moment_positions: tuple[tuple[int, float, float], ...]
+    governing_shear_positions: tuple[tuple[int, float, float], ...]
+    governing_torsion_positions: tuple[tuple[int, float, float], ...]
     status: str
 
 
@@ -208,6 +242,7 @@ class ExtendedActionSuite:
     braking: BrakingActionResult | None
     thermal: ThermalActionResult | None
     pedestrian: PedestrianActionResult | None
+    gr2_frequent_lm1: Gr2FrequentLM1Result | None
     lm2: LM2ActionResult | None
     barrier_impact: BarrierImpactResult | None
     construction: ConstructionActionResult | None
@@ -460,6 +495,56 @@ def _scan_positions(
     return tuple(sorted(round(value, 12) for value in values))
 
 
+def gr2_frequent_lm1_action(
+    project: ProjectInput,
+    settings: ExtendedActionSettings,
+    *,
+    grid_spacing_m: float,
+    longitudinal_step_m: float,
+    max_exhaustive_tandem_combinations: int,
+    progress_callback: Callable[[int, int], None] | None = None,
+) -> Gr2FrequentLM1Result:
+    """Run the EN 1991-2 gr2 accompanying frequent LM1 vertical component.
+
+    TS and UDL are reduced independently; this is intentionally a new native
+    search rather than scaling a characteristic LM1 envelope after the fact,
+    because the different TS/UDL factors can change the governing placement.
+    """
+
+    f_ts = settings.gr2_lm1_tandem_factor
+    f_udl = settings.gr2_lm1_udl_factor
+    factors = LM1AdjustmentFactors(
+        alpha_q1=f_udl,
+        alpha_q2=f_udl,
+        alpha_q3=f_udl,
+        alpha_q_other=f_udl,
+        alpha_q_remaining=f_udl,
+        alpha_Q1=f_ts,
+        alpha_Q2=f_ts,
+        alpha_Q3=f_ts,
+    )
+    total_length = sum(float(value) for value in project.geometry.span_lengths_m)
+    search = run_project_native_lm1_grillage_search(
+        project,
+        transverse_stations_m=_grid_stations(total_length, grid_spacing_m),
+        factors=factors,
+        longitudinal_step_m=longitudinal_step_m,
+        max_exhaustive_tandem_combinations=max_exhaustive_tandem_combinations,
+        progress_callback=progress_callback,
+        retain_all_cases=False,
+        name="EN 1991-2 gr2 frequent LM1 vertical component",
+    )
+    return Gr2FrequentLM1Result(
+        search=search,
+        tandem_factor=f_ts,
+        udl_factor=f_udl,
+        status=(
+            "Native full-width EN 1991-2 gr2 frequent LM1 vertical component; "
+            "TS and UDL are reduced separately before moving-load search."
+        ),
+    )
+
+
 def lm2_action(
     project: ProjectInput,
     settings: ExtendedActionSettings,
@@ -513,9 +598,13 @@ def lm2_action(
     if not cases:
         raise ValueError("No LM2 scan positions were generated.")
 
-    best: dict[int, GirderActionEnvelope] = {}
-    best_metric: dict[int, float] = {}
-    governing_positions: dict[int, tuple[int, float, float]] = {}
+    girder_y: dict[int, float] = {}
+    best_moment: dict[int, float] = {}
+    best_shear: dict[int, float] = {}
+    best_torsion: dict[int, float] = {}
+    moment_positions: dict[int, tuple[int, float, float]] = {}
+    shear_positions: dict[int, tuple[int, float, float]] = {}
+    torsion_positions: dict[int, tuple[int, float, float]] = {}
     prepared = None
     total_cases = len(cases)
     for completed, (case_id, x_m, y_center) in enumerate(cases, start=1):
@@ -545,36 +634,59 @@ def lm2_action(
             prepared = prepare_vertical_grillage(model)
         analysis = solve_prepared_vertical_grillage(prepared, model)
         for item in _effects_from_native_envelope(model, analysis, case_id=case_id):
-            metric = max(
-                abs(item.effects.moment_knm),
-                abs(item.effects.shear_kn),
-                abs(item.effects.torsion_knm),
-            )
-            if metric > best_metric.get(item.girder_index, -1.0):
-                best_metric[item.girder_index] = metric
-                best[item.girder_index] = item
-                governing_positions[item.girder_index] = (
-                    case_id,
-                    x_m,
-                    y_center,
-                )
+            index = item.girder_index
+            girder_y[index] = item.y_m
+            moment = abs(item.effects.moment_knm)
+            shear = abs(item.effects.shear_kn)
+            torsion = abs(item.effects.torsion_knm)
+            if moment > best_moment.get(index, -1.0):
+                best_moment[index] = moment
+                moment_positions[index] = (case_id, x_m, y_center)
+            if shear > best_shear.get(index, -1.0):
+                best_shear[index] = shear
+                shear_positions[index] = (case_id, x_m, y_center)
+            if torsion > best_torsion.get(index, -1.0):
+                best_torsion[index] = torsion
+                torsion_positions[index] = (case_id, x_m, y_center)
         if progress_callback is not None:
             progress_callback(completed, total_cases)
 
+    indices = tuple(sorted(girder_y))
+    girders = tuple(
+        GirderActionEnvelope(
+            girder_index=index,
+            y_m=girder_y[index],
+            effects=LoadEffects(
+                moment_knm=best_moment[index],
+                shear_kn=best_shear[index],
+                torsion_knm=best_torsion[index],
+            ),
+            case_id=moment_positions[index][0],
+        )
+        for index in indices
+    )
     return LM2ActionResult(
         evaluated_case_count=total_cases,
         wheel_load_kn=wheel_load,
         axle_load_kn=axle_load,
         contact_pressure_kn_m2=contact_pressure,
-        girders=tuple(best[index] for index in sorted(best)),
-        governing_positions=tuple(
-            governing_positions[index] for index in sorted(governing_positions)
+        girders=girders,
+        governing_positions=tuple(moment_positions[index] for index in indices),
+        governing_moment_positions=tuple(
+            moment_positions[index] for index in indices
+        ),
+        governing_shear_positions=tuple(
+            shear_positions[index] for index in indices
+        ),
+        governing_torsion_positions=tuple(
+            torsion_positions[index] for index in indices
         ),
         status=(
-            "EN 1991-2 LM2 global/local grillage scan using two wheel-centroid point loads. "
-            "The 0.35 m x 0.60 m contact patch is retained as an explicit local-design "
-            "pressure, but slab punching/local plate stress is not replaced by the beam "
-            "grillage response."
+            "EN 1991-2 LM2 scan with independent per-girder M/V/T envelopes. "
+            "Each response component retains its own governing axle placement; "
+            "the 0.35 m x 0.60 m contact patch remains an explicit local-design "
+            "pressure, while slab punching/local plate stress is not relabelled "
+            "from the beam-grillage response."
         ),
     )
 
@@ -681,7 +793,10 @@ def run_extended_actions(
     settings: ExtendedActionSettings,
     *,
     grid_spacing_m: float,
+    traffic_step_m: float = 0.5,
+    max_exhaustive_tandem_combinations: int = 5000,
     lm2_progress_callback: Callable[[int, int], None] | None = None,
+    gr2_progress_callback: Callable[[int, int], None] | None = None,
 ) -> ExtendedActionSuite:
     """Run the six additional action families without hiding unsupported physics."""
 
@@ -703,6 +818,20 @@ def run_extended_actions(
                 grid_spacing_m=grid_spacing_m,
             )
             if settings.pedestrian_enabled
+            else None
+        ),
+        gr2_frequent_lm1=(
+            gr2_frequent_lm1_action(
+                project,
+                settings,
+                grid_spacing_m=grid_spacing_m,
+                longitudinal_step_m=traffic_step_m,
+                max_exhaustive_tandem_combinations=(
+                    max_exhaustive_tandem_combinations
+                ),
+                progress_callback=gr2_progress_callback,
+            )
+            if settings.braking_enabled
             else None
         ),
         lm2=(
