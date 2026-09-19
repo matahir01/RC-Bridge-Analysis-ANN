@@ -25,6 +25,7 @@ from rc_bridge.application.gui_rendering import (
     draw_bar_chart,
     draw_bridge_preview,
     draw_line_chart,
+    draw_reinforcement_section,
 )
 from rc_bridge.application.gui_theme import configure_desktop_theme
 from rc_bridge.application.interface_contract import (
@@ -1925,12 +1926,19 @@ def main() -> int:
     design_selected_var = tk.StringVar(
         value="Select a girder result to inspect its reinforcement and governing checks."
     )
+    design_section_canvas = tk.Canvas(
+        design_review_frame,
+        height=185,
+        background="#FFFFFF",
+        highlightthickness=0,
+    )
+    design_section_canvas.grid(row=0, column=0, sticky="ew", padx=(0, 8))
     ttk.Label(
         design_review_frame,
         textvariable=design_selected_var,
-        wraplength=600,
+        wraplength=520,
         justify=tk.LEFT,
-    ).grid(row=0, column=0, sticky="nw", padx=(0, 8))
+    ).grid(row=1, column=0, sticky="nw", padx=(0, 8), pady=(5, 0))
     design_stage_tree = ttk.Treeview(
         design_review_frame,
         columns=("stage", "m", "v", "m_util", "v_util", "status"),
@@ -1953,7 +1961,7 @@ def main() -> int:
         text="Show selected girder calculations",
         style="Secondary.TButton",
     )
-    design_show_calculation_button.grid(row=1, column=0, sticky="w", pady=(7, 0))
+    design_show_calculation_button.grid(row=2, column=0, sticky="w", pady=(7, 0))
 
     capability_frame = ttk.LabelFrame(
         design_tab,
