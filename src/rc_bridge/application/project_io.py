@@ -65,7 +65,7 @@ def loads_project_document(text: str) -> ProjectDocument:
     except json.JSONDecodeError as exc:
         raise ValueError("Project file is not valid JSON.") from exc
     if not isinstance(payload, dict):
-        raise ValueError("Project file root must be a JSON object.")
+        raise TypeError("Project file root must be a JSON object.")
 
     document_format = payload.get("document_format")
     schema_version = payload.get("schema_version")
@@ -82,7 +82,7 @@ def loads_project_document(text: str) -> ProjectDocument:
             f"expected {PROJECT_DOCUMENT_SCHEMA_VERSION}."
         )
     if not isinstance(project_payload, dict):
-        raise ValueError("Project file does not contain a valid project object.")
+        raise TypeError("Project file does not contain a valid project object.")
 
     project = ProjectInput.model_validate(project_payload)
     document = ProjectDocument(
