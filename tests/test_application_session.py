@@ -52,11 +52,15 @@ def test_application_session_runs_reports_and_exports(tmp_path) -> None:
         max_exhaustive_tandem_combinations=20,
     )
     report = session.write_last_lm1_report(tmp_path / "report.html")
-    packages = session.export_last_lm1_verification(tmp_path / "verification")
+    verification = session.export_last_lm1_verification(
+        tmp_path / "verification"
+    )
 
     assert result.evaluated_case_count > 0
     assert report.exists()
-    assert packages
+    assert verification.midas_mct.exists()
+    assert verification.staad_std.exists()
+    assert set(verification.case_ids) == set(result.governing_case_ids)
     assert session.last_lm1_search is result
 
 
