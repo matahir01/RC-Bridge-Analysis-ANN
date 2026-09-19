@@ -327,7 +327,7 @@ def normalized_native_grillage_results_csv(
     return stream.getvalue()
 
 
-def native_expected_results_by_id(
+def nativenative_expected_results_by_id(
     model: VerificationModel,
     result_ids: tuple[int, ...],
 ) -> dict[int, tuple[str, VerificationModel, str]]:
@@ -405,7 +405,7 @@ def import_staad_anl_verification_results(
     requested = result_ids or verification_result_ids(model)
     if len(requested) != len(set(requested)):
         raise ValueError("Verification result IDs cannot contain duplicates.")
-    expected = native_expected_results_by_id(model, requested)
+    expected = nativenative_expected_results_by_id(model, requested)
     policy = tolerance or VerificationImportTolerance()
 
     imported: list[ImportedVerificationResultSet] = []
@@ -466,7 +466,7 @@ def import_midas_table_verification_results(
     requested = result_ids or verification_result_ids(model)
     if len(requested) != len(set(requested)):
         raise ValueError("Verification result IDs cannot contain duplicates.")
-    expected = _expected_results_by_id(model, requested)
+    expected = native_expected_results_by_id(model, requested)
     policy = tolerance or VerificationImportTolerance()
     name_map = midas_result_name_map(model)
 
