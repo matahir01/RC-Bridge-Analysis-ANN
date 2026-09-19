@@ -130,6 +130,7 @@ def application_html_report(
         f"<td>{_number(row.uls.shear_kn)}</td>"
         f"<td>{_number(row.sls_characteristic.moment_knm)}</td>"
         f"<td>{_number(row.sls_frequent.moment_knm)}</td>"
+        f"<td>{_number(row.sls_quasi_permanent.moment_knm)}</td>"
         "</tr>"
         for row in combination_rows_data
     )
@@ -251,7 +252,7 @@ actions retain their actual extents in the deterministic permanent-load routines
 
 <h3>EN 1990 combination interpretation</h3>
 <p class="note">{escape(combination_scope_note)}</p>
-{"<table><thead><tr><th>Girder</th><th>Gk M</th><th>LM1 Qk M</th><th>ULS M</th><th>Gk V</th><th>LM1 Qk V</th><th>ULS V</th><th>SLS char M</th><th>SLS freq M</th></tr></thead><tbody>" + combination_rows + "</tbody></table>" if combination_rows else ""}
+{"<table><thead><tr><th>Girder</th><th>Gk M</th><th>LM1 Qk M</th><th>ULS M</th><th>Gk V</th><th>LM1 Qk V</th><th>ULS V</th><th>SLS char M</th><th>SLS freq M</th><th>SLS qp M</th></tr></thead><tbody>" + combination_rows + "</tbody></table>" if combination_rows else ""}
 
 <h2>Native LM1 search</h2>
 <div class="meta">
@@ -505,6 +506,7 @@ def write_native_lm1_pdf_report(
                 "ULS V",
                 "SLS char M",
                 "SLS freq M",
+                "SLS qp M",
             ]
         ]
         combo_rows_pdf.extend(
@@ -518,6 +520,7 @@ def write_native_lm1_pdf_report(
                 _number(row.uls.shear_kn),
                 _number(row.sls_characteristic.moment_knm),
                 _number(row.sls_frequent.moment_knm),
+                _number(row.sls_quasi_permanent.moment_knm),
             ]
             for row in combination_pdf
         )
