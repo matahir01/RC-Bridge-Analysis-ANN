@@ -379,8 +379,12 @@ def eurocode_variable_action_scope() -> tuple[VariableActionScope, ...]:
         ),
         VariableActionScope(
             "LM2 local axle",
-            "not wired",
-            "No production desktop/local-deck LM2 workflow is currently connected.",
+            "implemented / verification-gated",
+            (
+                "The Additional actions workspace scans the 400 kN isolated axle "
+                "across the carriageway on the native vertical grillage and retains "
+                "the 0.35 m x 0.60 m wheel contact patch for local slab checks."
+            ),
         ),
         VariableActionScope(
             "LM3 special vehicles",
@@ -394,8 +398,12 @@ def eurocode_variable_action_scope() -> tuple[VariableActionScope, ...]:
         ),
         VariableActionScope(
             "Braking / acceleration",
-            "not wired",
-            "Longitudinal traffic action is not yet included in application combinations.",
+            "action implemented / horizontal solver pending",
+            (
+                "EN 1991-2 characteristic Qlk is calculated with explicit adjustment "
+                "factors and loaded length. Longitudinal deck/bearing/substructure "
+                "response remains outside the vertical grillage."
+            ),
         ),
         VariableActionScope(
             "Centrifugal traffic action",
@@ -404,13 +412,21 @@ def eurocode_variable_action_scope() -> tuple[VariableActionScope, ...]:
         ),
         VariableActionScope(
             "Pedestrian / footway live load",
-            "not wired",
-            "Footway variable loading is not yet connected to the global analysis.",
+            "implemented / verification-gated",
+            (
+                "User-defined usable footway strips are solved as characteristic "
+                "vertical area loads on the physical final-stage grillage."
+            ),
         ),
         VariableActionScope(
             "Thermal action",
-            "not wired",
-            "Uniform/differential temperature effects are not yet connected.",
+            "kinematics implemented / restraint model explicit",
+            (
+                "Uniform expansion/contraction movement, linear gradient curvature "
+                "and transparent restraint-force benchmarks are calculated from "
+                "project inputs. Climate/National Annex values and bearing/restraint "
+                "conditions remain explicit inputs."
+            ),
         ),
         VariableActionScope(
             "Wind action",
@@ -419,11 +435,22 @@ def eurocode_variable_action_scope() -> tuple[VariableActionScope, ...]:
         ),
         VariableActionScope(
             "Vehicle impact on safety barrier",
-            "accidental / not wired",
+            "local accidental action implemented / horizontal solver pending",
             (
-                "EN 1991-2 treats impact on safety barriers as a distinct vehicle action. "
-                "The current native grillage solver is vertical-only, so this horizontal/local "
-                "accidental action is not yet analysed or combined."
+                "The Additional actions workspace calculates the transverse accidental "
+                "force, associated barrier-base moment and accompanying vertical wheel "
+                "reference action. Restraint-class/anchorage/deck-edge verification remains "
+                "a local horizontal design task."
+            ),
+        ),
+        VariableActionScope(
+            "Construction-stage actions",
+            "implemented / verification-gated",
+            (
+                "Precast-girder, wet-deck and superimposed permanent actions are "
+                "separated by physical stage, with an explicit optional execution UDL. "
+                "The detailed construction grillage remains the route for temporary "
+                "transverse members, propping or changed supports/continuity."
             ),
         ),
     )
