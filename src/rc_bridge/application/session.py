@@ -169,6 +169,7 @@ class BridgeApplicationSession:
         self,
         *,
         lm2_progress_callback: Callable[[int, int], None] | None = None,
+        gr2_progress_callback: Callable[[int, int], None] | None = None,
     ) -> ExtendedActionSuite:
         analysis = self.preferences.analysis
         result = run_extended_actions(
@@ -180,6 +181,7 @@ class BridgeApplicationSession:
                 analysis.max_exhaustive_tandem_combinations
             ),
             lm2_progress_callback=lm2_progress_callback,
+            gr2_progress_callback=gr2_progress_callback,
         )
         self.last_extended_actions = result
         self.last_action_combinations = None
