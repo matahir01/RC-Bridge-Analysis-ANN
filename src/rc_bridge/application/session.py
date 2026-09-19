@@ -295,6 +295,8 @@ class BridgeApplicationSession:
                 self.project,
                 self.last_lm1_search,
                 preferences=self.preferences,
+                extended_actions=self.last_extended_actions,
+                design_interpretation=self.last_design_interpretation,
             ),
             encoding="utf-8",
         )
@@ -309,6 +311,8 @@ class BridgeApplicationSession:
             self.last_lm1_search,
             path,
             preferences=self.preferences,
+            extended_actions=self.last_extended_actions,
+            design_interpretation=self.last_design_interpretation,
         )
 
     def export_last_lm1_verification(
