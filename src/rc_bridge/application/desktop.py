@@ -100,6 +100,12 @@ def main() -> int:
         length=220,
     )
     progress.pack(side=tk.RIGHT)
+    full_run_button = ttk.Button(
+        footer,
+        text="Run Full Analysis & Design",
+    )
+    full_run_button.pack(side=tk.RIGHT, padx=(0, 10))
+    analysis_buttons.append(full_run_button)
     ttk.Label(footer, textvariable=status_var).pack(side=tk.LEFT)
 
     def add_entry(
@@ -655,22 +661,62 @@ def main() -> int:
     # Additional actions tab
     # ------------------------------------------------------------------
     actions_tab.columnconfigure(0, weight=1)
-    actions_tab.rowconfigure(2, weight=1)
+    actions_tab.rowconfigure(1, weight=1)
 
+    actions_header = ttk.Frame(actions_tab)
+    actions_header.grid(row=0, column=0, sticky="ew", pady=(0, 6))
+    actions_header.columnconfigure(0, weight=1)
     ttk.Label(
-        actions_tab,
+        actions_header,
         text=(
             "Required additional action families for this bridge plus static wind. "
             "Vertical actions are solved on the native grillage where the current physics "
             "supports them; longitudinal/horizontal/local actions are calculated explicitly "
             "and kept outside the vertical solver rather than being silently approximated."
         ),
-        wraplength=1180,
+        wraplength=980,
         justify=tk.LEFT,
     ).grid(row=0, column=0, sticky="ew")
+    run_actions_button = ttk.Button(
+        actions_header,
+        text="Run required actions + wind",
+    )
+    run_actions_button.grid(row=0, column=1, sticky="e", padx=(10, 0))
+    analysis_buttons.append(run_actions_button)
 
-    actions_input = ttk.Frame(actions_tab)
-    actions_input.grid(row=1, column=0, sticky="ew", pady=(8, 8))
+    actions_canvas = tk.Canvas(
+        actions_tab,
+        highlightthickness=0,
+        borderwidth=0,
+    )
+    actions_scrollbar = ttk.Scrollbar(
+        actions_tab,
+        orient=tk.VERTICAL,
+        command=actions_canvas.yview,
+    )
+    actions_canvas.configure(yscrollcommand=actions_scrollbar.set)
+    actions_canvas.grid(row=1, column=0, sticky="nsew")
+    actions_scrollbar.grid(row=1, column=1, sticky="ns")
+
+    actions_scroll_frame = ttk.Frame(actions_canvas)
+    actions_canvas_window = actions_canvas.create_window(
+        (0, 0),
+        window=actions_scroll_frame,
+        anchor="nw",
+    )
+
+    def _refresh_actions_scrollregion(_event=None) -> None:
+        actions_canvas.configure(scrollregion=actions_canvas.bbox("all"))
+
+    def _fit_actions_scroll_width(event) -> None:
+        actions_canvas.itemconfigure(actions_canvas_window, width=event.width)
+
+    actions_scroll_frame.bind("<Configure>", _refresh_actions_scrollregion)
+    actions_canvas.bind("<Configure>", _fit_actions_scroll_width)
+    actions_scroll_frame.columnconfigure(0, weight=1)
+
+    actions_input = ttk.Frame(actions_scroll_frame)
+    actions_input.grid(row=0, column=0, sticky="ew", pady=(0, 8))
     for column in range(3):
         actions_input.columnconfigure(column, weight=1)
 
@@ -1008,22 +1054,12 @@ def main() -> int:
         justify=tk.LEFT,
     ).grid(row=3, column=2, columnspan=4, sticky="w", padx=(8, 0))
 
-    action_buttons = ttk.Frame(actions_tab)
-    action_buttons.grid(row=2, column=0, sticky="ne", pady=(0, 6))
-    run_actions_button = ttk.Button(
-        action_buttons,
-        text="Run required actions + wind",
-    )
-    run_actions_button.pack(side=tk.RIGHT)
-    analysis_buttons.append(run_actions_button)
-
     actions_result_frame = ttk.LabelFrame(
-        actions_tab,
+        actions_scroll_frame,
         text="Action calculation / analysis results",
         padding=8,
     )
-    actions_result_frame.grid(row=3, column=0, sticky="nsew")
-    actions_tab.rowconfigure(3, weight=1)
+    actions_result_frame.grid(row=1, column=0, sticky="nsew")
     action_result_tree = ttk.Treeview(
         actions_result_frame,
         columns=("action", "result", "value", "scope"),
@@ -1039,6 +1075,22 @@ def main() -> int:
     action_result_tree.column("value", width=180, anchor=tk.CENTER)
     action_result_tree.column("scope", width=700, anchor=tk.W)
     action_result_tree.pack(fill=tk.BOTH, expand=True)
+
+    def _actions_mousewheel(event) -> str:
+        delta = -1 if event.delta > 0 else 1
+        actions_canvas.yview_scroll(delta, "units")
+        return "break"
+
+    def _bind_actions_mousewheel(_event) -> None:
+        actions_canvas.bind_all("<MouseWheel>", _actions_mousewheel)
+
+    def _unbind_actions_mousewheel(_event) -> None:
+        actions_canvas.unbind_all("<MouseWheel>")
+
+    actions_canvas.bind("<Enter>", _bind_actions_mousewheel)
+    actions_canvas.bind("<Leave>", _unbind_actions_mousewheel)
+    actions_scroll_frame.bind("<Enter>", _bind_actions_mousewheel)
+    actions_scroll_frame.bind("<Leave>", _unbind_actions_mousewheel)
 
     # ------------------------------------------------------------------
     # Analysis tab
@@ -2263,8 +2315,8 @@ def main() -> int:
                 tree.delete(item)
         search_status_var.set("No native LM1 analysis has been run.")
         design_status_var.set(
-            "Run native LM1 and Additional actions 1–6 before the integrated "
-            "design interpretation."
+            "Run native LM1 and required additional actions + wind before the "
+            "integrated design interpretation, or use Run Full Analysis & Design."
         )
 
     def show_result(result) -> None:
@@ -2675,8 +2727,9 @@ def main() -> int:
             return
         show_local_deck_result(result)
 
-    def show_fatigue_result(result) -> None:
-        _clear_local_results()
+    def show_fatigue_result(result, *, clear: bool = True) -> None:
+        if clear:
+            _clear_local_results()
         local_result_tree.insert(
             "",
             tk.END,
@@ -2787,6 +2840,172 @@ def main() -> int:
                 status_var.set(
                     f"FLM3 fatigue finished in {format_duration(time.monotonic() - started_at)}"
                 )
+
+            root.after(0, complete)
+
+        threading.Thread(target=worker, daemon=True).start()
+
+    def run_full_workflow() -> None:
+        try:
+            commit_forms()
+        except (TypeError, ValueError) as exc:
+            messagebox.showerror("Full analysis & design", str(exc))
+            return
+
+        if session.project.design_code is not DesignCode.EUROCODE:
+            messagebox.showinfo(
+                "Full analysis & design",
+                (
+                    "The one-click workflow currently targets the Eurocode bridge path "
+                    "(EN 1991-2 traffic + EC2 design)."
+                ),
+            )
+            return
+
+        cancel_event.clear()
+        started_at = time.monotonic()
+        set_busy(True)
+        status_var.set("Stage 1/5 — Preparing native LM1 analysis...")
+        search_status_var.set("Full workflow started: native LM1 analysis.")
+
+        def set_stage_progress(
+            *,
+            stage: str,
+            base_percent: float,
+            span_percent: float,
+            completed: int,
+            total: int,
+        ) -> None:
+            if total <= 0:
+                return
+            fraction = completed / total
+            percent = base_percent + span_percent * fraction
+            root.after(
+                0,
+                lambda: (
+                    progress.configure(value=percent),
+                    status_var.set(
+                        f"{stage} — {completed:,}/{total:,} "
+                        f"({100.0 * fraction:.1f}%)"
+                    ),
+                ),
+            )
+
+        def lm1_progress(completed: int, total: int) -> None:
+            set_stage_progress(
+                stage="Stage 1/5 — Native LM1",
+                base_percent=0.0,
+                span_percent=45.0,
+                completed=completed,
+                total=total,
+            )
+
+        def gr2_progress(completed: int, total: int) -> None:
+            set_stage_progress(
+                stage="Stage 2/5 — gr2 frequent LM1",
+                base_percent=45.0,
+                span_percent=15.0,
+                completed=completed,
+                total=total,
+            )
+
+        def lm2_progress(completed: int, total: int) -> None:
+            set_stage_progress(
+                stage="Stage 2/5 — LM2 / additional actions",
+                base_percent=60.0,
+                span_percent=15.0,
+                completed=completed,
+                total=total,
+            )
+
+        def worker() -> None:
+            try:
+                lm1 = session.run_native_lm1(
+                    progress_callback=lm1_progress,
+                    cancel_check=cancel_event.is_set,
+                )
+                root.after(
+                    0,
+                    lambda: status_var.set(
+                        "Stage 2/5 — Additional actions + wind..."
+                    ),
+                )
+                actions = session.run_extended_actions(
+                    lm2_progress_callback=lm2_progress,
+                    gr2_progress_callback=gr2_progress,
+                )
+                root.after(
+                    0,
+                    lambda: (
+                        progress.configure(value=78.0),
+                        status_var.set(
+                            "Stage 3/5 — Local deck/slab analysis and design..."
+                        ),
+                    ),
+                )
+                local_deck = session.run_local_deck_design()
+                root.after(
+                    0,
+                    lambda: (
+                        progress.configure(value=84.0),
+                        status_var.set(
+                            "Stage 4/5 — Integrated girder design & checks..."
+                        ),
+                    ),
+                )
+                design = session.run_design_interpretation()
+                root.after(
+                    0,
+                    lambda: (
+                        progress.configure(value=90.0),
+                        status_var.set("Stage 5/5 — Native FLM3 fatigue..."),
+                    ),
+                )
+                fatigue = session.run_fatigue()
+            except LM1SearchCancelled as exc:
+                message = str(exc)
+
+                def cancelled() -> None:
+                    set_busy(False)
+                    status_var.set("Full workflow cancelled during LM1 analysis.")
+                    search_status_var.set(message)
+
+                root.after(0, cancelled)
+                return
+            except (OSError, TypeError, ValueError, RuntimeError) as exc:
+                message = str(exc)
+                root.after(
+                    0,
+                    lambda: fail("Full analysis & design", message),
+                )
+                return
+
+            def complete() -> None:
+                set_busy(False)
+                show_result(lm1)
+                show_extended_action_result(actions)
+                show_local_deck_result(local_deck)
+                show_design_result(design)
+                show_fatigue_result(fatigue, clear=False)
+                progress["value"] = 100.0
+
+                blockers = list(actions.unresolved_inputs)
+                blockers.extend(design.coverage_blockers)
+                blockers.extend(fatigue.blockers)
+                unique_blockers = tuple(dict.fromkeys(blockers))
+                elapsed = format_duration(time.monotonic() - started_at)
+                if unique_blockers:
+                    status_var.set(
+                        "Full workflow complete in "
+                        f"{elapsed}; inputs/checks still required: "
+                        + "; ".join(unique_blockers)
+                    )
+                else:
+                    status_var.set(
+                        f"Full analysis & design complete in {elapsed}."
+                    )
+                notebook.select(design_tab)
+                refresh_dashboard()
 
             root.after(0, complete)
 
@@ -3329,6 +3548,7 @@ def main() -> int:
         command=lambda: populate_preferences(session.preferences)
     )
     run_button.configure(command=run_analysis)
+    full_run_button.configure(command=run_full_workflow)
     run_actions_button.configure(command=run_extended_action_suite)
     run_design_button.configure(command=run_design_interpretation)
     run_local_deck_button.configure(command=run_local_deck_workflow)
@@ -3352,6 +3572,11 @@ def main() -> int:
     menu.add_cascade(label="File", menu=file_menu)
 
     analysis_menu = tk.Menu(menu, tearoff=False)
+    analysis_menu.add_command(
+        label="Run Full Analysis & Design",
+        command=run_full_workflow,
+    )
+    analysis_menu.add_separator()
     analysis_menu.add_command(label="Run native LM1", command=run_analysis)
     menu.add_cascade(label="Analysis", menu=analysis_menu)
 
