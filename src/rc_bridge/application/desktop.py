@@ -6,6 +6,10 @@ import time
 import webbrowser
 from pathlib import Path
 
+from rc_bridge.analysis.physical_sections import (
+    composite_section_description,
+    girder_tributary_slab_widths_m,
+)
 from rc_bridge.application.preferences import (
     AnalysisApplicationSettings,
     ApplicationPreferences,
@@ -17,10 +21,6 @@ from rc_bridge.application.project_editor import (
     application_default_project,
 )
 from rc_bridge.application.session import BridgeApplicationSession
-from rc_bridge.analysis.physical_sections import (
-    composite_section_description,
-    girder_tributary_slab_widths_m,
-)
 from rc_bridge.core.models import DesignCode, SectionType, SupportSystem
 from rc_bridge.workflow.lm1_grillage_search import LM1SearchCancelled
 
@@ -905,7 +905,7 @@ def main() -> int:
             progress["value"] = 0.0
 
     def format_duration(seconds: float) -> str:
-        seconds = max(int(round(seconds)), 0)
+        seconds = max(round(seconds), 0)
         minutes, seconds = divmod(seconds, 60)
         hours, minutes = divmod(minutes, 60)
         if hours:
