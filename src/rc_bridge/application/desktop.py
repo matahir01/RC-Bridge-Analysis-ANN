@@ -3098,6 +3098,10 @@ def main() -> int:
             else f"{displayed_unit.from_metres(fields.right_services_y_m):g}"
         )
 
+    def refresh_permanent_load_chart(_event=None) -> None:
+        audit_rows = session.permanent_load_audit()
+        refresh_permanent_load_chart()
+
     def refresh_load_case_views() -> None:
         for item in permanent_audit_tree.get_children():
             permanent_audit_tree.delete(item)
@@ -3193,6 +3197,7 @@ def main() -> int:
         )
         for item in design_stage_tree.get_children():
             design_stage_tree.delete(item)
+        design_section_canvas.delete("all")
         refresh_analysis_chart()
         refresh_design_dashboard()
         refresh_local_dashboard()
@@ -3709,6 +3714,7 @@ def main() -> int:
             if not result.blockers
             else "FLM3 analysis complete; fatigue resistance inputs remain."
         )
+        refresh_local_dashboard()
         refresh_dashboard()
 
     def run_fatigue_workflow() -> None:
@@ -3918,6 +3924,104 @@ def main() -> int:
             root.after(0, complete)
 
         threading.Thread(target=worker, daemon=True).start()
+
+    def selected_design_girder_index() -> int | None:
+        selected = design_tree.selection()
+        if not selected:
+            return None
+        values = design_tree.item(selected[0], "values")
+        if not values:
+            return None
+        try:
+            return int(values[0])
+        except (TypeError, ValueError):
+            return None
+
+    def show_selected_design_result(_event=None) -> None:
+        girder_index = selected_design_girder_index()
+        result = session.last_design_interpretation
+        if girder_index is None or result is None:
+            return
+        row = next(
+            (item for item in result.girders if item.girder_index == girder_index),
+            None,
+        )
+        if row is None:
+            return
+
+        flex = row.design.uls_design.flexure
+        design_selected_var.set(
+            f"Girder {girder_index}: "
+            f"{row.selected_bars.bar_count}-Y{row.selected_bars.bar_diameter_mm:g} "
+            f"longitudinal bars; {row.selected_links.leg_count}L-Y"
+            f"{row.selected_links.link_diameter_mm:g}@{row.selected_links.spacing_mm:g} links. "
+            f"MEd={row.design.uls_design.design_effects.moment_knm:.2f} kNm, "
+            f"MRd={flex.resistance_knm:.2f} kNm, flexure util={flex.utilization:.3f}; "
+            f"shear util={row.design.shear_utilization:.3f}; "
+            f"crack util={row.design.crack.utilization:.3f}; "
+            f"deflection util={row.design.deflection.utilization:.3f}. "
+            f"Current status: {'PASS' if row.passes_current_checks else 'CHECK'}."
+        )
+        draw_reinforcement_section(
+            design_section_canvas,
+            bridge=bridge_preview_data(session.project),
+            bar_count=row.selected_bars.bar_count,
+            bar_label=(
+                f"{row.selected_bars.bar_count}-Y"
+                f"{row.selected_bars.bar_diameter_mm:g}"
+            ),
+            link_label=(
+                f"{row.selected_links.leg_count}L-Y"
+                f"{row.selected_links.link_diameter_mm:g}"
+                f"@{row.selected_links.spacing_mm:g}"
+            ),
+        )
+
+        for item in design_stage_tree.get_children():
+            design_stage_tree.delete(item)
+        for check in row.construction_stage_checks:
+            design_stage_tree.insert(
+                "",
+                tk.END,
+                values=(
+                    check.stage.value,
+                    f"{check.design_moment_knm:.2f}",
+                    f"{check.design_shear_kn:.2f}",
+                    f"{check.flexural_utilization:.3f}",
+                    f"{check.shear_utilization:.3f}",
+                    "PASS" if check.passes else "CHECK",
+                ),
+            )
+
+    def open_selected_design_calculations() -> None:
+        girder_index = selected_design_girder_index()
+        if girder_index is None:
+            messagebox.showinfo(
+                "Worked calculations",
+                "Select a girder result first.",
+            )
+            return
+        notebook.select(calculations_tab)
+        refresh_calculation_view()
+        preferred_item: str | None = None
+        block_item: str | None = None
+        target_title = f"Girder {girder_index} - longitudinal RC design"
+        for item_id, (block, step) in calculation_item_map.items():
+            if getattr(block, "title", "") != target_title:
+                continue
+            if step is None:
+                block_item = item_id
+            elif getattr(step, "label", "") == "Required longitudinal reinforcement":
+                preferred_item = item_id
+                break
+            elif preferred_item is None:
+                preferred_item = item_id
+        selected_item = preferred_item or block_item
+        if selected_item is not None:
+            calculation_tree.selection_set(selected_item)
+            calculation_tree.focus(selected_item)
+            calculation_tree.see(selected_item)
+            show_calculation_detail()
 
     def show_design_result(result) -> None:
         for item in design_tree.get_children():
