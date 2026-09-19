@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass
 from itertools import permutations, product
 from math import sqrt
@@ -8,7 +9,12 @@ from rc_bridge.analysis.grillage_effects import (
     NativeGrillageEnvelopeResult,
     native_grillage_traffic_envelope,
 )
-from rc_bridge.analysis.grillage_solver import GrillageAnalysisResult, solve_vertical_grillage
+from rc_bridge.analysis.grillage_solver import GrillageAnalysisResult
+from rc_bridge.analysis.prepared_grillage_solver import (
+    prepare_vertical_grillage,
+    solve_prepared_vertical_grillage,
+    vertical_grillage_structure_signature,
+)
 from rc_bridge.codes.eurocode.en1991_2 import (
     LM1AdjustmentFactors,
     lm1_tandem_axle_spacing_m,
@@ -30,6 +36,10 @@ from rc_bridge.workflow.lm1_grillage_verification import (
     LM1RemainingAreaVerificationPlacement,
     build_project_lm1_grillage_verification_model,
 )
+
+
+class LM1SearchCancelled(RuntimeError):
+    """Raised when a caller cancels a native LM1 search between solved cases."""
 
 
 @dataclass(frozen=True)
@@ -132,6 +142,8 @@ class ProjectNativeLM1GrillageSearchResult:
     theoretical_tandem_combinations_per_transverse_layout: int
     udl_pattern_count: int
     deflections: tuple[LM1GirderGoverningDeflection, ...] = ()
+    prepared_structure_count: int = 0
+    reused_factorization_solve_count: int = 0
 
     @property
     def evaluated_case_count(self) -> int:
@@ -624,6 +636,49 @@ def _generate_lm1_search_plan(
     )
 
 
+def _common_lm1_analysis_stations(
+    project: ProjectInput,
+    *,
+    base_stations_m: tuple[float, ...],
+    placements: tuple[LM1SearchPlacement, ...],
+) -> tuple[float, ...]:
+    """Return one longitudinal grid containing every candidate axle/load boundary."""
+
+    total_length = sum(float(value) for value in project.geometry.span_lengths_m)
+    axle_spacing = lm1_tandem_axle_spacing_m()
+    values = [float(value) for value in base_stations_m]
+    for placement in placements:
+        for lane in placement.lane_placements:
+            for region in lane.udl_regions:
+                values.extend((region.x_start_m, region.x_end_m))
+            if lane.tandem_lead_x_m is None:
+                continue
+            for axle_x in (
+                lane.tandem_lead_x_m,
+                lane.tandem_lead_x_m + axle_spacing,
+            ):
+                if -1.0e-9 <= axle_x <= total_length + 1.0e-9:
+                    values.append(min(max(float(axle_x), 0.0), total_length))
+        for remaining in placement.remaining_area_placements:
+            for region in remaining.udl_regions:
+                values.extend((region.x_start_m, region.x_end_m))
+    return _merge_coordinates(values)
+
+
+def _common_lm1_transverse_grid_lines(
+    placements: tuple[LM1SearchPlacement, ...],
+) -> tuple[float, ...]:
+    """Return all lane/remaining-area boundaries used by the complete search."""
+
+    values: list[float] = []
+    for placement in placements:
+        for lane in placement.lane_placements:
+            values.extend((lane.y_start_m, lane.y_end_m))
+        for remaining in placement.remaining_area_placements:
+            values.extend((remaining.y_start_m, remaining.y_end_m))
+    return _merge_coordinates(values)
+
+
 def generate_lm1_search_placements(
     project: ProjectInput,
     *,
@@ -656,6 +711,8 @@ def run_project_native_lm1_grillage_search(
     longitudinal_step_m: float = 0.5,
     max_exhaustive_tandem_combinations: int = 5000,
     include_spanwise_udl_patterns: bool = True,
+    progress_callback: Callable[[int, int], None] | None = None,
+    cancel_check: Callable[[], bool] | None = None,
     name: str = "EN 1991-2 LM1 native grillage automated search",
 ) -> ProjectNativeLM1GrillageSearchResult:
     """Run automated LM1 placement search and envelope M/V/T by girder.
@@ -674,21 +731,43 @@ def run_project_native_lm1_grillage_search(
     if not plan.placements:
         raise ValueError("Automated LM1 search generated no candidate placements.")
 
+    common_stations = _common_lm1_analysis_stations(
+        project,
+        base_stations_m=transverse_stations_m,
+        placements=plan.placements,
+    )
+    common_y_lines = _common_lm1_transverse_grid_lines(plan.placements)
+    prepared_by_signature: dict[tuple[object, ...], object] = {}
     cases: list[LM1SearchCaseResult] = []
-    for placement in plan.placements:
+    total_cases = len(plan.placements)
+    if progress_callback is not None:
+        progress_callback(0, total_cases)
+
+    for completed_before, placement in enumerate(plan.placements):
+        if cancel_check is not None and cancel_check():
+            raise LM1SearchCancelled(
+                f"Native LM1 analysis cancelled after {completed_before} of {total_cases} cases."
+            )
+
         case_name = f"{name} case {placement.case_id}"
         model = build_project_lm1_grillage_verification_model(
             project,
             longitudinal_sections_by_span=longitudinal_sections_by_span,
             transverse_section=transverse_section,
-            transverse_stations_m=transverse_stations_m,
+            transverse_stations_m=common_stations,
             lane_placements=placement.lane_placements,
             remaining_area_placements=placement.remaining_area_placements,
             factors=factors,
             stiffness_modifiers=stiffness_modifiers,
+            additional_transverse_y_m=common_y_lines,
             name=case_name,
         )
-        analysis = solve_vertical_grillage(model)
+        signature = vertical_grillage_structure_signature(model)
+        prepared = prepared_by_signature.get(signature)
+        if prepared is None:
+            prepared = prepare_vertical_grillage(model)
+            prepared_by_signature[signature] = prepared
+        analysis = solve_prepared_vertical_grillage(prepared, model)
         girder_envelope = native_grillage_traffic_envelope(model, analysis)
         cases.append(
             LM1SearchCaseResult(
@@ -698,6 +777,8 @@ def run_project_native_lm1_grillage_search(
                 girder_envelope=girder_envelope,
             )
         )
+        if progress_callback is not None:
+            progress_callback(len(cases), total_cases)
 
     girder_count = cases[0].girder_envelope.envelope.girder_count
     governing: list[LM1GirderGoverningEnvelope] = []
@@ -786,6 +867,10 @@ def run_project_native_lm1_grillage_search(
         ),
         udl_pattern_count=plan.udl_pattern_count,
         deflections=tuple(governing_deflections),
+        prepared_structure_count=len(prepared_by_signature),
+        reused_factorization_solve_count=(
+            len(cases) - len(prepared_by_signature)
+        ),
     )
 
 
