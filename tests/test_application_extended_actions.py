@@ -80,6 +80,7 @@ def test_pedestrian_action_solves_two_defined_footways_on_native_grillage() -> N
     assert result.loaded_area_m2 == pytest.approx(45.0)
     assert result.total_characteristic_load_kn == pytest.approx(225.0)
     assert len(result.girders) == 7
+    assert result.model is not None
     assert max(item.effects.moment_knm for item in result.girders) > 0.0
 
 
@@ -101,6 +102,15 @@ def test_lm2_action_scans_carriageway_and_retains_contact_patch_pressure() -> No
     assert len(result.governing_moment_positions) == 7
     assert len(result.governing_shear_positions) == 7
     assert len(result.governing_torsion_positions) == 7
+    assert result.governing_models
+    assert {
+        model.load_cases[0].load_case_id
+        for model in result.governing_models
+    } == {
+        *(item[0] for item in result.governing_moment_positions),
+        *(item[0] for item in result.governing_shear_positions),
+        *(item[0] for item in result.governing_torsion_positions),
+    }
     assert all(item.effects.moment_knm >= 0.0 for item in result.girders)
     assert all(item.effects.shear_kn >= 0.0 for item in result.girders)
     assert all(item.effects.torsion_knm >= 0.0 for item in result.girders)

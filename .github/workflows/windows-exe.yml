@@ -8,6 +8,7 @@ on:
     paths:
       - "src/rc_bridge/application/**"
       - "src/rc_bridge/analysis/**"
+      - "src/rc_bridge/export/**"
       - "src/rc_bridge/workflow/**"
       - "pyproject.toml"
       - ".github/workflows/windows-exe.yml"

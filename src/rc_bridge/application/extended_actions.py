@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from math import ceil
 
 from rc_bridge.analysis.grillage_effects import native_grillage_traffic_envelope
@@ -21,6 +21,7 @@ from rc_bridge.codes.eurocode.en1991_2 import (
 )
 from rc_bridge.codes.eurocode.materials import secant_elastic_modulus_mpa
 from rc_bridge.core.models import PermanentActionStage, ProjectInput, SupportSystem
+from rc_bridge.export.verification_model import VerificationModel
 from rc_bridge.workflow.grillage_verification_export import (
     GrillageAreaLoad,
     GrillagePointLoad,
@@ -207,6 +208,7 @@ class PedestrianActionResult:
     total_characteristic_load_kn: float
     girders: tuple[GirderActionEnvelope, ...]
     status: str
+    model: VerificationModel | None = None
 
 
 @dataclass(frozen=True)
@@ -229,6 +231,7 @@ class LM2ActionResult:
     governing_shear_positions: tuple[tuple[int, float, float], ...]
     governing_torsion_positions: tuple[tuple[int, float, float], ...]
     status: str
+    governing_models: tuple[VerificationModel, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -513,6 +516,7 @@ def pedestrian_action(
             "vertical grillage. Traffic-group simultaneity and combination factors remain "
             "separate from this characteristic load case."
         ),
+        model=model,
     )
 
 
@@ -642,6 +646,7 @@ def lm2_action(
     shear_positions: dict[int, tuple[int, float, float]] = {}
     torsion_positions: dict[int, tuple[int, float, float]] = {}
     prepared = None
+    case_models: dict[int, VerificationModel] = {}
     total_cases = len(cases)
     for completed, (case_id, x_m, y_center) in enumerate(cases, start=1):
         load_case = GrillageVerificationLoadCase(
@@ -666,6 +671,7 @@ def lm2_action(
             transverse_stations_m=union_x,
             load_case=load_case,
         )
+        case_models[case_id] = model
         if prepared is None:
             prepared = prepare_vertical_grillage(model)
         analysis = solve_prepared_vertical_grillage(prepared, model)
@@ -723,6 +729,28 @@ def lm2_action(
             "the 0.35 m x 0.60 m contact patch remains an explicit local-design "
             "pressure, while slab punching/local plate stress is not relabelled "
             "from the beam-grillage response."
+        ),
+        governing_models=tuple(
+            replace(
+                case_models[case_id],
+                load_cases=(
+                    replace(
+                        case_models[case_id].load_cases[0],
+                        load_case_id=case_id,
+                    ),
+                ),
+                metadata={
+                    **case_models[case_id].metadata,
+                    "lm2_case_id": str(case_id),
+                },
+            )
+            for case_id in sorted(
+                {
+                    *(item[0] for item in moment_positions.values()),
+                    *(item[0] for item in shear_positions.values()),
+                    *(item[0] for item in torsion_positions.values()),
+                }
+            )
         ),
     )
 

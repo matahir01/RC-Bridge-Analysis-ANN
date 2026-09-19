@@ -54,6 +54,52 @@ def _model(member_count: int) -> VerificationModel:
     )
 
 
+def _strided_section_model(member_count: int = 245, section_count: int = 7) -> VerificationModel:
+    nodes = tuple(
+        VerificationNode(node_id=index + 1, x_m=float(index), y_m=0.0, z_m=0.0)
+        for index in range(member_count + 1)
+    )
+    beams = tuple(
+        VerificationBeam(
+            member_id=index + 1,
+            node_i=index + 1,
+            node_j=index + 2,
+            material_id=1,
+            section_id=(index % section_count) + 1,
+        )
+        for index in range(member_count)
+    )
+    sections = tuple(
+        VerificationSection(
+            section_id=index + 1,
+            name=f"Section {index + 1}",
+            area_m2=0.5,
+            torsion_constant_m4=0.02,
+            iy_m4=0.03,
+            iz_m4=0.04,
+        )
+        for index in range(section_count)
+    )
+    return VerificationModel(
+        name="STAAD Strided Grillage Property Test",
+        nodes=nodes,
+        materials=(
+            VerificationMaterial(
+                material_id=1,
+                name="Concrete",
+                elastic_modulus_kn_m2=30_000_000.0,
+            ),
+        ),
+        sections=sections,
+        beams=beams,
+        supports=(
+            VerificationSupport(node_id=1, ux=True, uy=True, uz=True),
+            VerificationSupport(node_id=member_count + 1, uy=True, uz=True),
+        ),
+        load_cases=(VerificationLoadCase(load_case_id=1, name="verification"),),
+    )
+
+
 def test_staad_export_requests_global_member_forces_and_global_nodal_results() -> None:
     text = export_staad_std(_model(2))
 
@@ -63,12 +109,32 @@ def test_staad_export_requests_global_member_forces_and_global_nodal_results() -
     assert "PRINT MEMBER FORCES ALL" not in text
 
 
-def test_staad_export_compacts_member_ranges_for_properties_and_materials() -> None:
+def test_staad_export_chunks_member_ranges_for_properties_and_materials() -> None:
     text = export_staad_std(_model(85))
 
     assert "SET Z UP" in text
-    assert "1 TO 85 PRIS" in text
-    assert "MATERIAL Concrete MEMB 1 TO 85" in text
+    assert "1 TO 12 PRIS" in text
+    assert "73 TO 84 PRIS" in text
+    assert "85 PRIS" in text
+    assert "MATERIAL Concrete MEMB 1 TO 24" in text
+    assert "MATERIAL Concrete MEMB 73 TO 85" in text
+
+
+def test_staad_export_chunks_strided_grillage_property_assignments() -> None:
+    text = export_staad_std(_strided_section_model())
+    property_lines = [
+        line
+        for line in text.splitlines()
+        if " PRIS AX " in line
+    ]
+
+    assert len(property_lines) > 7
+    assert all(" IX " in line and " IY " in line and " IZ " in line for line in property_lines)
+    assert max(len(line) for line in property_lines) < 220
+    assert all(
+        "too long" not in line.lower()
+        for line in property_lines
+    )
 
 
 def test_large_staad_model_chunks_global_member_force_requests() -> None:
@@ -79,7 +145,7 @@ def test_large_staad_model_chunks_global_member_force_requests() -> None:
         if line.startswith("PRINT MEMBER FORCES GLOBAL LIST ")
     ]
 
-    assert len(commands) == 3
+    assert len(commands) == 4
     member_ids = [
         int(value)
         for command in commands
