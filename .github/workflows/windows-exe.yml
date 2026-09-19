@@ -24,9 +24,14 @@ jobs:
       - name: Smoke-test installed application modules
         shell: pwsh
         run: >-
-          python -c "from rc_bridge.application.project_editor import
-          application_default_project; p=application_default_project();
-          assert p.geometry.girder_profile is not None"
+          python -c "from rc_bridge.application.dashboard import build_application_dashboard;
+          from rc_bridge.application.preferences import ApplicationPreferences;
+          from rc_bridge.application.project_editor import application_default_project;
+          from rc_bridge.application.reporting import write_native_lm1_pdf_report;
+          p=application_default_project(); prefs=ApplicationPreferences();
+          assert p.geometry.girder_profile is not None;
+          assert build_application_dashboard(p, has_native_lm1_analysis=False).capabilities;
+          assert callable(write_native_lm1_pdf_report)"
 
       - name: Build standalone desktop executable
         shell: pwsh
