@@ -170,6 +170,37 @@ class VerificationLoadCase:
 
 
 @dataclass(frozen=True)
+class VerificationLoadCombinationTerm:
+    load_case_id: int
+    factor: float
+
+    def __post_init__(self) -> None:
+        if self.load_case_id <= 0:
+            raise ValueError("Load-combination case IDs must be positive.")
+        if not isinstance(self.factor, (int, float)):
+            raise TypeError("Load-combination factors must be numeric.")
+
+
+@dataclass(frozen=True)
+class VerificationLoadCombination:
+    combination_id: int
+    name: str
+    terms: tuple[VerificationLoadCombinationTerm, ...]
+    category: str = "general"
+    description: str = ""
+
+    def __post_init__(self) -> None:
+        if self.combination_id <= 0:
+            raise ValueError("combination_id must be positive.")
+        if not self.name.strip():
+            raise ValueError("Load-combination name cannot be empty.")
+        if not self.terms:
+            raise ValueError("Load combinations require at least one term.")
+        if len({item.load_case_id for item in self.terms}) != len(self.terms):
+            raise ValueError("A load case may appear only once in one load combination.")
+
+
+@dataclass(frozen=True)
 class VerificationModel:
     name: str
     nodes: tuple[VerificationNode, ...]
@@ -178,6 +209,7 @@ class VerificationModel:
     beams: tuple[VerificationBeam, ...]
     supports: tuple[VerificationSupport, ...]
     load_cases: tuple[VerificationLoadCase, ...]
+    load_combinations: tuple[VerificationLoadCombination, ...] = ()
     metadata: dict[str, str] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
@@ -190,6 +222,10 @@ class VerificationModel:
         self._require_unique("section", [item.section_id for item in self.sections])
         self._require_unique("member", [item.member_id for item in self.beams])
         self._require_unique("load case", [item.load_case_id for item in self.load_cases])
+        self._require_unique(
+            "load combination",
+            [item.combination_id for item in self.load_combinations],
+        )
 
         node_ids = {item.node_id for item in self.nodes}
         material_ids = {item.material_id for item in self.materials}
@@ -212,6 +248,18 @@ class VerificationModel:
             for load in case.nodal_loads:
                 if load.node_id not in node_ids:
                     raise ValueError("Nodal load references an unknown node.")
+        load_case_ids = {item.load_case_id for item in self.load_cases}
+        for combination in self.load_combinations:
+            unknown = [
+                term.load_case_id
+                for term in combination.terms
+                if term.load_case_id not in load_case_ids
+            ]
+            if unknown:
+                raise ValueError(
+                    "Load combination references unknown load case IDs: "
+                    + ", ".join(str(value) for value in unknown)
+                )
 
     @staticmethod
     def _require_unique(label: str, values: list[int]) -> None:
