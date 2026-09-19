@@ -281,6 +281,7 @@ def build_project_lm1_grillage_verification_model(
     remaining_area_placements: tuple[LM1RemainingAreaVerificationPlacement, ...] = (),
     factors: LM1AdjustmentFactors | None = None,
     stiffness_modifiers: GrillageStiffnessModifiers | None = None,
+    additional_transverse_y_m: tuple[float, ...] = (),
     name: str = "EN 1991-2 LM1 verification snapshot",
 ) -> VerificationModel:
     load_case = build_lm1_grillage_load_case(
@@ -296,6 +297,7 @@ def build_project_lm1_grillage_verification_model(
         transverse_section=transverse_section,
         transverse_stations_m=transverse_stations_m,
         load_case=load_case,
+        additional_transverse_y_m=additional_transverse_y_m,
         stiffness_modifiers=stiffness_modifiers,
     )
     lane_strips, tandem_positions, lane_regions = _lane_metadata(lane_placements)
