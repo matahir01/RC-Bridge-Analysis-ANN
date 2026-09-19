@@ -137,13 +137,9 @@ class BridgeApplicationSession:
             self.last_action_combinations = None
             self.last_design_interpretation = None
             self.last_fatigue = None
-        elif preferences.local_deck != self.preferences.local_deck:
-            self.last_local_deck_design = None
-            self.last_action_combinations = None
-            self.last_design_interpretation = None
-            self.last_fatigue = None
         elif (
-            preferences.eurocode != self.preferences.eurocode
+            preferences.local_deck != self.preferences.local_deck
+            or preferences.eurocode != self.preferences.eurocode
             or preferences.design != self.preferences.design
         ):
             self.last_local_deck_design = None
