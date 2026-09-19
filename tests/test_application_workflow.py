@@ -2,6 +2,7 @@ from pathlib import Path
 
 from rc_bridge.application.reporting import native_lm1_html_report
 from rc_bridge.application.verification_files import (
+    write_consolidated_governing_lm1_verification_files,
     write_governing_lm1_verification_packages,
 )
 from rc_bridge.core.models import (
@@ -71,3 +72,26 @@ def test_application_writes_exact_governing_verification_packages(tmp_path) -> N
             assert isinstance(path, Path)
             assert path.exists()
             assert path.read_text(encoding="utf-8")
+
+
+def test_application_writes_one_consolidated_midas_and_staad_file(tmp_path) -> None:
+    project = _project()
+    search = _search()
+    written = write_consolidated_governing_lm1_verification_files(
+        project,
+        search,
+        tmp_path,
+        base_name="application_bridge_governing",
+    )
+
+    assert written.midas_mct.exists()
+    assert written.staad_std.exists()
+    assert written.midas_mct.parent == tmp_path
+    assert written.staad_std.parent == tmp_path
+    assert set(written.case_ids) == set(search.governing_case_ids)
+
+    mct = written.midas_mct.read_text(encoding="utf-8")
+    std = written.staad_std.read_text(encoding="utf-8")
+    for case_id in search.governing_case_ids:
+        assert f"LM1_CASE_{case_id:04d}" in mct
+        assert f"LM1_CASE_{case_id:04d}" in std
