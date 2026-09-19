@@ -3124,7 +3124,13 @@ def main() -> int:
 
     def refresh_permanent_load_chart(_event=None) -> None:
         audit_rows = session.permanent_load_audit()
-        refresh_permanent_load_chart()
+        draw_bar_chart(
+            permanent_load_canvas,
+            labels=[f"G{row.girder_index}" for row in audit_rows],
+            values=[row.total_equivalent_kn_m for row in audit_rows],
+            title="Characteristic permanent line load by girder",
+            unit="kN/m",
+        )
 
     def refresh_load_case_views() -> None:
         for item in permanent_audit_tree.get_children():
@@ -3146,13 +3152,7 @@ def main() -> int:
                     f"{row.total_equivalent_kn_m:.3f}",
                 ),
             )
-        draw_bar_chart(
-            permanent_load_canvas,
-            labels=[f"G{row.girder_index}" for row in audit_rows],
-            values=[row.total_equivalent_kn_m for row in audit_rows],
-            title="Characteristic permanent line load by girder",
-            unit="kN/m",
-        )
+        refresh_permanent_load_chart()
 
         for item in action_scope_tree.get_children():
             action_scope_tree.delete(item)
