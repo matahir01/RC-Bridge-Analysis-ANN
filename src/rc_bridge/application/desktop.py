@@ -1261,7 +1261,7 @@ def main() -> int:
 
     design_status_var = tk.StringVar(
         value=(
-            "Run native LM1 and Additional actions 1–6 before the integrated "
+            "Run native LM1 and required additional actions before the integrated "
             "design interpretation."
         )
     )
@@ -1769,9 +1769,57 @@ def main() -> int:
             barrier_base_moment_resistance_knm=float(
                 string_vars["action_barrier_moment_resistance"].get()
             ),
+            wind_enabled=bool_vars["action_wind_enabled"].get(),
+            wind_basic_velocity_m_s=float(
+                string_vars["action_wind_velocity"].get()
+            ),
+            wind_air_density_kg_m3=float(
+                string_vars["action_wind_density"].get()
+            ),
+            wind_exposure_factor=float(
+                string_vars["action_wind_exposure"].get()
+            ),
+            wind_transverse_force_coefficient=float(
+                string_vars["action_wind_transverse_cf"].get()
+            ),
+            wind_vertical_force_coefficient=float(
+                string_vars["action_wind_vertical_cf"].get()
+            ),
+            wind_loaded_height_m=float(
+                string_vars["action_wind_height"].get()
+            ),
+            bearing_transverse_capacity_per_bearing_kn=float(
+                string_vars["action_bearing_transverse_capacity"].get()
+            ),
             construction_enabled=bool_vars["action_construction_enabled"].get(),
             construction_execution_udl_kn_m2=float(
                 string_vars["action_construction_udl"].get()
+            ),
+        )
+        local_deck = LocalDeckSettings(
+            load_dispersion_horizontal_per_vertical=float(
+                string_vars["deck_dispersion_ratio"].get()
+            ),
+            additional_dispersion_depth_m=float(
+                string_vars["deck_additional_dispersion"].get()
+            ),
+            nominal_bar_diameter_mm=float(
+                string_vars["deck_nominal_bar_diameter"].get()
+            ),
+        )
+        fatigue = FatigueApplicationSettings(
+            movement_step_m=float(string_vars["fatigue_movement_step"].get()),
+            section_step_m=float(string_vars["fatigue_section_step"].get()),
+            axle_load_factor=float(string_vars["fatigue_axle_factor"].get()),
+            lambda_s=float(string_vars["fatigue_lambda_s"].get()),
+            characteristic_fatigue_strength_mpa=float(
+                string_vars["fatigue_strength"].get()
+            ),
+            shear_link_lambda_s=float(
+                string_vars["fatigue_link_lambda_s"].get()
+            ),
+            shear_link_characteristic_fatigue_strength_mpa=float(
+                string_vars["fatigue_link_strength"].get()
             ),
         )
         return ApplicationPreferences(
@@ -1780,6 +1828,8 @@ def main() -> int:
             analysis=analysis,
             design=design,
             actions=actions,
+            local_deck=local_deck,
+            fatigue=fatigue,
         )
 
     def load_case_fields_from_form() -> ApplicationLoadCaseFields:
@@ -2063,9 +2113,61 @@ def main() -> int:
         string_vars["action_barrier_moment_resistance"].set(
             f"{actions.barrier_base_moment_resistance_knm:g}"
         )
+        bool_vars["action_wind_enabled"].set(actions.wind_enabled)
+        string_vars["action_wind_velocity"].set(
+            f"{actions.wind_basic_velocity_m_s:g}"
+        )
+        string_vars["action_wind_density"].set(
+            f"{actions.wind_air_density_kg_m3:g}"
+        )
+        string_vars["action_wind_exposure"].set(
+            f"{actions.wind_exposure_factor:g}"
+        )
+        string_vars["action_wind_transverse_cf"].set(
+            f"{actions.wind_transverse_force_coefficient:g}"
+        )
+        string_vars["action_wind_vertical_cf"].set(
+            f"{actions.wind_vertical_force_coefficient:g}"
+        )
+        string_vars["action_wind_height"].set(
+            f"{actions.wind_loaded_height_m:g}"
+        )
+        string_vars["action_bearing_transverse_capacity"].set(
+            f"{actions.bearing_transverse_capacity_per_bearing_kn:g}"
+        )
         bool_vars["action_construction_enabled"].set(actions.construction_enabled)
         string_vars["action_construction_udl"].set(
             f"{actions.construction_execution_udl_kn_m2:g}"
+        )
+        deck = preferences.local_deck
+        string_vars["deck_dispersion_ratio"].set(
+            f"{deck.load_dispersion_horizontal_per_vertical:g}"
+        )
+        string_vars["deck_additional_dispersion"].set(
+            f"{deck.additional_dispersion_depth_m:g}"
+        )
+        string_vars["deck_nominal_bar_diameter"].set(
+            f"{deck.nominal_bar_diameter_mm:g}"
+        )
+        fatigue = preferences.fatigue
+        string_vars["fatigue_movement_step"].set(
+            f"{fatigue.movement_step_m:g}"
+        )
+        string_vars["fatigue_section_step"].set(
+            f"{fatigue.section_step_m:g}"
+        )
+        string_vars["fatigue_axle_factor"].set(
+            f"{fatigue.axle_load_factor:g}"
+        )
+        string_vars["fatigue_lambda_s"].set(f"{fatigue.lambda_s:g}")
+        string_vars["fatigue_strength"].set(
+            f"{fatigue.characteristic_fatigue_strength_mpa:g}"
+        )
+        string_vars["fatigue_link_lambda_s"].set(
+            f"{fatigue.shear_link_lambda_s:g}"
+        )
+        string_vars["fatigue_link_strength"].set(
+            f"{fatigue.shear_link_characteristic_fatigue_strength_mpa:g}"
         )
 
     def populate_load_cases(project) -> None:
@@ -2155,6 +2257,7 @@ def main() -> int:
             combination_tree,
             design_tree,
             action_result_tree,
+            local_result_tree,
         ):
             for item in tree.get_children():
                 tree.delete(item)
