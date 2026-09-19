@@ -26,3 +26,6 @@ pythonpath = ["src"]
 
 [tool.ruff]
 line-length = 100
+
+[project.scripts]
+rc-bridge = "rc_bridge.application.cli:main"

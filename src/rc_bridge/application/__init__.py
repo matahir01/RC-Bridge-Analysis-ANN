@@ -6,6 +6,10 @@ from rc_bridge.application.project_io import (
     save_project,
 )
 from rc_bridge.application.reporting import native_lm1_html_report
+from rc_bridge.application.session import (
+    BridgeApplicationSession,
+    longitudinal_grid_stations,
+)
 from rc_bridge.application.verification_files import (
     WrittenVerificationPackage,
     write_governing_lm1_verification_packages,
@@ -13,10 +17,12 @@ from rc_bridge.application.verification_files import (
 )
 
 __all__ = [
+    "BridgeApplicationSession",
     "ProjectDocument",
     "WrittenVerificationPackage",
     "dumps_project_document",
     "load_project",
+    "longitudinal_grid_stations",
     "loads_project_document",
     "native_lm1_html_report",
     "save_project",
