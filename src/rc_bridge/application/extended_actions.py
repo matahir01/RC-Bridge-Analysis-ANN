@@ -273,7 +273,10 @@ def thermal_action(
     settings: ExtendedActionSettings,
 ) -> ThermalActionResult:
     total_length = sum(float(value) for value in project.geometry.span_lengths_m)
-    total_depth = float(project.geometry.structural_depth_m or 0.0)
+    total_depth = (
+        float(project.geometry.girder_depth_m)
+        + float(project.geometry.physical_deck_depth_m)
+    )
     if total_depth <= 0.0:
         raise ValueError("Thermal action requires a positive structural depth.")
     profile_area = project.geometry.girder_profile_area_m2
