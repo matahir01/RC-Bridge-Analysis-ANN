@@ -31,14 +31,6 @@ from rc_bridge.application.fatigue import (
     FatigueApplicationSettings,
     run_application_fatigue,
 )
-from rc_bridge.application.local_deck import (
-    LocalDeckDesignResult,
-    LocalDeckReinforcementResult,
-    LocalDeckSettings,
-    LocalDeckShearResult,
-    SlabBarArrangement,
-    run_local_deck_design,
-)
 from rc_bridge.application.load_cases import (
     ApplicationGirderCombinationSummary,
     ApplicationLoadCaseFields,
@@ -48,6 +40,14 @@ from rc_bridge.application.load_cases import (
     application_combination_summary,
     eurocode_variable_action_scope,
     permanent_load_audit,
+)
+from rc_bridge.application.local_deck import (
+    LocalDeckDesignResult,
+    LocalDeckReinforcementResult,
+    LocalDeckSettings,
+    LocalDeckShearResult,
+    SlabBarArrangement,
+    run_local_deck_design,
 )
 from rc_bridge.application.preferences import (
     AnalysisApplicationSettings,
