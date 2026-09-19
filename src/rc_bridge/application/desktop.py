@@ -15,6 +15,7 @@ from rc_bridge.application.extended_actions import ExtendedActionSettings
 from rc_bridge.application.fatigue import FatigueApplicationSettings
 from rc_bridge.application.gui_presenters import (
     analysis_dashboard_data,
+    analysis_girder_diagram,
     bridge_preview_data,
     deck_dashboard_data,
     design_dashboard_data,
@@ -1576,7 +1577,17 @@ def main() -> int:
         state="readonly",
         width=16,
     )
-    analysis_chart_metric.pack(side=tk.LEFT, padx=(6, 0))
+    analysis_chart_metric.pack(side=tk.LEFT, padx=(6, 12))
+    ttk.Label(analysis_chart_controls, text="Girder").pack(side=tk.LEFT)
+    analysis_chart_girder_var = tk.StringVar(value="G1")
+    analysis_chart_girder = ttk.Combobox(
+        analysis_chart_controls,
+        textvariable=analysis_chart_girder_var,
+        values=("G1",),
+        state="readonly",
+        width=9,
+    )
+    analysis_chart_girder.pack(side=tk.LEFT, padx=(6, 0))
     analysis_chart_canvas = tk.Canvas(
         analysis_chart_frame,
         height=210,
@@ -2603,37 +2614,41 @@ def main() -> int:
     def refresh_analysis_chart(_event=None) -> None:
         result = session.last_lm1_search
         if result is None:
-            draw_bar_chart(
+            draw_line_chart(
                 analysis_chart_canvas,
-                labels=(),
-                values=(),
-                title="Girder response overview",
-                unit="",
+                x_values=(),
+                series=(),
+                title="Governing longitudinal response",
+                y_unit="",
             )
             return
-        dashboard = analysis_dashboard_data(result)
         metric = analysis_chart_metric_var.get()
-        if metric == "Moment":
-            values = [item.moment_knm for item in dashboard.girders]
-            unit = "kNm"
-        elif metric == "Shear":
-            values = [item.shear_kn for item in dashboard.girders]
-            unit = "kN"
-        elif metric == "Torsion":
-            values = [item.torsion_knm for item in dashboard.girders]
-            unit = "kNm"
-        else:
-            values = [
-                0.0 if item.deflection_mm is None else item.deflection_mm
-                for item in dashboard.girders
-            ]
-            unit = "mm"
-        draw_bar_chart(
+        raw_girder = analysis_chart_girder_var.get().strip().upper()
+        try:
+            girder_index = int(raw_girder.removeprefix("G"))
+        except ValueError:
+            girder_index = 1
+        try:
+            diagram = analysis_girder_diagram(
+                result,
+                girder_index=girder_index,
+                metric=metric,
+            )
+        except (ValueError, RuntimeError):
+            draw_line_chart(
+                analysis_chart_canvas,
+                x_values=(),
+                series=(),
+                title=f"Governing {metric.lower()} diagram",
+                y_unit="",
+            )
+            return
+        draw_line_chart(
             analysis_chart_canvas,
-            labels=[f"G{item.girder_index}" for item in dashboard.girders],
-            values=values,
-            title=f"LM1 governing {metric.lower()} by girder",
-            unit=unit,
+            x_values=diagram.stations_m,
+            series=((f"G{girder_index} · case {diagram.case_id}", diagram.values),),
+            title=f"LM1 governing {diagram.metric.lower()} diagram",
+            y_unit=diagram.unit,
         )
 
     def refresh_design_dashboard(_event=None) -> None:
@@ -3195,6 +3210,10 @@ def main() -> int:
             )
 
         dashboard = analysis_dashboard_data(result)
+        girder_values = tuple(f"G{item.girder_index}" for item in dashboard.girders)
+        analysis_chart_girder.configure(values=girder_values)
+        if analysis_chart_girder_var.get() not in girder_values and girder_values:
+            analysis_chart_girder_var.set(girder_values[0])
         analysis_metric_vars["moment"].set(f"{dashboard.max_moment_knm:.2f} kNm")
         analysis_metric_vars["shear"].set(f"{dashboard.max_shear_kn:.2f} kN")
         analysis_metric_vars["torsion"].set(f"{dashboard.max_torsion_knm:.2f} kNm")
