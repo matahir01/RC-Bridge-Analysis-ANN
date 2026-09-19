@@ -63,6 +63,12 @@ def configure_desktop_theme(root, ttk) -> DesktopPalette:
         font=("Segoe UI Semibold", 17),
     )
     style.configure(
+        "PageTitle.TLabel",
+        background=palette.canvas,
+        foreground=palette.ink,
+        font=("Segoe UI Semibold", 17),
+    )
+    style.configure(
         "HeaderSubtitle.TLabel",
         background=palette.surface,
         foreground=palette.ink_muted,
@@ -172,6 +178,20 @@ def configure_desktop_theme(root, ttk) -> DesktopPalette:
         foreground=[("active", "#FFFFFF")],
     )
 
+    style.configure(
+        "TLabelframe",
+        background=palette.surface,
+        bordercolor=palette.border,
+        relief="solid",
+        borderwidth=1,
+        padding=10,
+    )
+    style.configure(
+        "TLabelframe.Label",
+        background=palette.surface,
+        foreground=palette.ink,
+        font=("Segoe UI Semibold", 10),
+    )
     style.configure(
         "Card.TLabelframe",
         background=palette.surface,
