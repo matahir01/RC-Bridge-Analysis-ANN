@@ -327,7 +327,7 @@ def normalized_native_grillage_results_csv(
     return stream.getvalue()
 
 
-def nativenative_expected_results_by_id(
+def native_expected_results_by_id(
     model: VerificationModel,
     result_ids: tuple[int, ...],
 ) -> dict[int, tuple[str, VerificationModel, str]]:
