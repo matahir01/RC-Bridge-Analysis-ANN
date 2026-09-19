@@ -496,6 +496,7 @@ def gr2_frequent_lm1_action(
     project: ProjectInput,
     settings: ExtendedActionSettings,
     *,
+    grid_spacing_m: float,
     longitudinal_step_m: float,
     max_exhaustive_tandem_combinations: int,
     progress_callback: Callable[[int, int], None] | None = None,
@@ -519,8 +520,10 @@ def gr2_frequent_lm1_action(
         alpha_Q2=f_ts,
         alpha_Q3=f_ts,
     )
+    total_length = sum(float(value) for value in project.geometry.span_lengths_m)
     search = run_project_native_lm1_grillage_search(
         project,
+        transverse_stations_m=_grid_stations(total_length, grid_spacing_m),
         factors=factors,
         longitudinal_step_m=longitudinal_step_m,
         max_exhaustive_tandem_combinations=max_exhaustive_tandem_combinations,
@@ -791,6 +794,7 @@ def run_extended_actions(
             gr2_frequent_lm1_action(
                 project,
                 settings,
+                grid_spacing_m=grid_spacing_m,
                 longitudinal_step_m=traffic_step_m,
                 max_exhaustive_tandem_combinations=(
                     max_exhaustive_tandem_combinations
