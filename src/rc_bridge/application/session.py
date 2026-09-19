@@ -21,6 +21,14 @@ from rc_bridge.application.extended_actions import (
     ExtendedActionSuite,
     run_extended_actions,
 )
+from rc_bridge.application.fatigue import (
+    FatigueApplicationResult,
+    run_application_fatigue,
+)
+from rc_bridge.application.local_deck import (
+    LocalDeckDesignResult,
+    run_local_deck_design,
+)
 from rc_bridge.application.load_cases import (
     ApplicationGirderCombinationSummary,
     ApplicationLoadCaseFields,
@@ -81,6 +89,8 @@ class BridgeApplicationSession:
     last_design_interpretation: ApplicationDesignInterpretationSuite | None = None
     last_extended_actions: ExtendedActionSuite | None = None
     last_action_combinations: IntegratedActionCombinationSuite | None = None
+    last_local_deck_design: LocalDeckDesignResult | None = None
+    last_fatigue: FatigueApplicationResult | None = None
 
     @classmethod
     def open(cls, path: str | Path) -> BridgeApplicationSession:
@@ -110,23 +120,38 @@ class BridgeApplicationSession:
         self.last_design_interpretation = None
         self.last_extended_actions = None
         self.last_action_combinations = None
+        self.last_local_deck_design = None
+        self.last_fatigue = None
 
     def set_preferences(self, preferences: ApplicationPreferences) -> None:
         if preferences.analysis != self.preferences.analysis:
             self.last_lm1_search = None
-            self.last_design_interpretation = None
             self.last_extended_actions = None
+            self.last_local_deck_design = None
             self.last_action_combinations = None
+            self.last_design_interpretation = None
+            self.last_fatigue = None
         elif preferences.actions != self.preferences.actions:
             self.last_extended_actions = None
+            self.last_local_deck_design = None
             self.last_action_combinations = None
             self.last_design_interpretation = None
+            self.last_fatigue = None
+        elif preferences.local_deck != self.preferences.local_deck:
+            self.last_local_deck_design = None
+            self.last_action_combinations = None
+            self.last_design_interpretation = None
+            self.last_fatigue = None
         elif (
             preferences.eurocode != self.preferences.eurocode
             or preferences.design != self.preferences.design
         ):
-            self.last_design_interpretation = None
+            self.last_local_deck_design = None
             self.last_action_combinations = None
+            self.last_design_interpretation = None
+            self.last_fatigue = None
+        elif preferences.fatigue != self.preferences.fatigue:
+            self.last_fatigue = None
         self.preferences = preferences
 
     def dashboard(self) -> ApplicationDashboard:
@@ -135,6 +160,8 @@ class BridgeApplicationSession:
             has_native_lm1_analysis=self.last_lm1_search is not None,
             has_extended_actions=self.last_extended_actions is not None,
             has_integrated_design=self.last_design_interpretation is not None,
+            has_local_deck_design=self.last_local_deck_design is not None,
+            has_fatigue=self.last_fatigue is not None,
             design_blocker_count=(
                 0
                 if self.last_design_interpretation is None
@@ -184,8 +211,32 @@ class BridgeApplicationSession:
             gr2_progress_callback=gr2_progress_callback,
         )
         self.last_extended_actions = result
+        self.last_local_deck_design = None
         self.last_action_combinations = None
         self.last_design_interpretation = None
+        self.last_fatigue = None
+        return result
+
+    def run_local_deck_design(self) -> LocalDeckDesignResult:
+        if self.last_extended_actions is None:
+            raise RuntimeError(
+                "Run Additional actions before local deck design so LM2 and "
+                "barrier-impact wheel actions are available."
+            )
+        basis = self.preferences.eurocode
+        result = run_local_deck_design(
+            self.project,
+            self.last_extended_actions,
+            action_settings=self.preferences.actions,
+            settings=self.preferences.local_deck,
+            cover_mm=self.preferences.design.cover_mm,
+            gamma_g=basis.gamma_g_unfavourable,
+            gamma_q_traffic=basis.gamma_q_traffic,
+        )
+        self.last_local_deck_design = result
+        self.last_action_combinations = None
+        self.last_design_interpretation = None
+        self.last_fatigue = None
         return result
 
     def run_design_interpretation(self) -> ApplicationDesignInterpretationSuite:
@@ -195,10 +246,11 @@ class BridgeApplicationSession:
             )
         if self.last_extended_actions is None:
             raise RuntimeError(
-                "Run Additional actions 1-6 before design so LM2, pedestrian, "
-                "braking, thermal, barrier and construction actions cannot be "
-                "silently omitted."
+                "Run Additional actions before design so LM2, pedestrian, braking, "
+                "thermal, wind, barrier and construction actions cannot be silently omitted."
             )
+        if self.last_local_deck_design is None:
+            self.run_local_deck_design()
         basis = self.preferences.eurocode
         factors = BridgeActionCombinationFactors(
             uls=basis.uls_factors,
@@ -215,6 +267,7 @@ class BridgeApplicationSession:
             self.last_extended_actions,
             settings=self.preferences.actions,
             factors=factors,
+            local_deck=self.last_local_deck_design,
         )
         result = run_application_design_interpretation(
             self.project,
@@ -230,6 +283,25 @@ class BridgeApplicationSession:
         )
         self.last_action_combinations = combinations
         self.last_design_interpretation = result
+        self.last_fatigue = None
+        return result
+
+    def run_fatigue(self) -> FatigueApplicationResult:
+        if self.last_design_interpretation is None:
+            raise RuntimeError(
+                "Run the integrated Design & checks workflow before FLM3 fatigue."
+            )
+        stations = longitudinal_grid_stations(
+            self.project,
+            maximum_spacing_m=self.preferences.analysis.grid_spacing_m,
+        )
+        result = run_application_fatigue(
+            self.project,
+            self.last_design_interpretation,
+            settings=self.preferences.fatigue,
+            transverse_stations_m=stations,
+        )
+        self.last_fatigue = result
         return result
 
     def run_native_lm1(
@@ -278,8 +350,10 @@ class BridgeApplicationSession:
             name=f"{self.project.name} - application native LM1",
         )
         self.last_lm1_search = result
+        self.last_local_deck_design = None
         self.last_action_combinations = None
         self.last_design_interpretation = None
+        self.last_fatigue = None
         return result
 
     def write_last_lm1_report(self, path: str | Path) -> Path:
@@ -296,7 +370,9 @@ class BridgeApplicationSession:
                 self.last_lm1_search,
                 preferences=self.preferences,
                 extended_actions=self.last_extended_actions,
+                local_deck_design=self.last_local_deck_design,
                 design_interpretation=self.last_design_interpretation,
+                fatigue=self.last_fatigue,
             ),
             encoding="utf-8",
         )
@@ -312,7 +388,9 @@ class BridgeApplicationSession:
             path,
             preferences=self.preferences,
             extended_actions=self.last_extended_actions,
+            local_deck_design=self.last_local_deck_design,
             design_interpretation=self.last_design_interpretation,
+            fatigue=self.last_fatigue,
         )
 
     def export_last_lm1_verification(
