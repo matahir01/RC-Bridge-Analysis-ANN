@@ -2715,6 +2715,7 @@ def main() -> int:
             design_tree,
             action_result_tree,
             local_result_tree,
+            calculation_tree,
         ):
             for item in tree.get_children():
                 tree.delete(item)
@@ -2722,6 +2723,12 @@ def main() -> int:
         design_status_var.set(
             "Run native LM1 and required additional actions + wind before the "
             "integrated design interpretation, or use Run Full Analysis & Design."
+        )
+        calculation_item_map.clear()
+        _set_text(
+            calculation_detail,
+            "Run analysis, then open Calculations to review the deterministic "
+            "equation/substitution/result trace.",
         )
 
     def show_result(result) -> None:
@@ -3555,7 +3562,158 @@ def main() -> int:
             on_success=completed,
         )
 
+    def refresh_overview() -> None:
+        snapshot = build_application_view_snapshot(session)
+        project_header_var.set(
+            f"{snapshot.project_name}  ·  {snapshot.project_subtitle}"
+        )
+        overview_project_var.set(
+            f"{snapshot.project_name}\n{snapshot.project_subtitle}"
+        )
+        overview_progress_var.set(
+            f"{snapshot.completed_stage_count} / {snapshot.total_stage_count}"
+        )
+
+        design_stage = next(
+            stage for stage in snapshot.stages if stage.key == "design"
+        )
+        overview_design_var.set(
+            {
+                "complete": "READY",
+                "review": "REVIEW",
+                "pending": "PENDING",
+                "ready": "READY",
+            }[design_stage.state]
+        )
+        overview_verification_var.set(snapshot.verification_summary)
+        overview_performance_var.set(snapshot.last_operation)
+        overview_performance_detail_var.set(snapshot.last_operation_detail)
+
+        for item in overview_stage_tree.get_children():
+            overview_stage_tree.delete(item)
+        overview_stage_tree.tag_configure("complete", foreground="#177245")
+        overview_stage_tree.tag_configure("review", foreground="#A06000")
+        overview_stage_tree.tag_configure("pending", foreground="#5F6F82")
+        overview_stage_tree.tag_configure("ready", foreground="#2F6FB3")
+        for stage in snapshot.stages:
+            overview_stage_tree.insert(
+                "",
+                tk.END,
+                values=(
+                    stage.state.upper(),
+                    f"{stage.title} — {stage.detail}",
+                ),
+                tags=(stage.state,),
+            )
+
+    def show_calculation_detail(_event=None) -> None:
+        selected = calculation_tree.selection()
+        if not selected:
+            return
+        item = calculation_item_map.get(selected[0])
+        if item is None:
+            return
+        block, step = item
+        if step is None:
+            detail = (
+                f"{block.title}\n\n"
+                f"Scope\n{block.scope}\n\n"
+                f"This block contains {len(block.steps)} calculation step(s). "
+                "Select an individual step to review the equation, substitution, "
+                "result and engineering reference."
+            )
+        else:
+            lines = [
+                step.label,
+                "",
+                "ENGINEERING REFERENCE",
+                step.reference or "No additional reference text recorded.",
+                "",
+                "EQUATION / METHOD",
+                step.expression,
+                "",
+                "NUMERICAL SUBSTITUTION",
+                f"= {step.substitution}",
+                "",
+                "RESULT",
+                step.result,
+            ]
+            if step.status:
+                lines.extend(("", "CHECK STATUS", step.status))
+            detail = "\n".join(lines)
+        _set_text(calculation_detail, detail)
+
+    def refresh_calculation_view() -> None:
+        calculation_item_map.clear()
+        for item in calculation_tree.get_children():
+            calculation_tree.delete(item)
+        if session.last_lm1_search is None:
+            placeholder = calculation_tree.insert(
+                "",
+                tk.END,
+                text="Run native LM1 or the full workflow first",
+                values=("PENDING",),
+            )
+            calculation_item_map[placeholder] = (
+                type(
+                    "_Placeholder",
+                    (),
+                    {
+                        "title": "Calculations are not available yet.",
+                        "scope": (
+                            "The calculation viewer is fed by the deterministic "
+                            "CalculationTrace. Run analysis before reviewing equations."
+                        ),
+                        "steps": (),
+                    },
+                )(),
+                None,
+            )
+            show_calculation_detail()
+            return
+
+        try:
+            trace = session.calculation_trace()
+        except (TypeError, ValueError, RuntimeError) as exc:
+            messagebox.showerror("Calculation review", str(exc))
+            return
+
+        first_step_id: str | None = None
+        for block_index, block in enumerate(trace.blocks, start=1):
+            block_id = calculation_tree.insert(
+                "",
+                tk.END,
+                text=f"{block_index}. {block.title}",
+                values=("",),
+                open=block_index <= 2,
+            )
+            calculation_item_map[block_id] = (block, None)
+            for step_index, step in enumerate(block.steps, start=1):
+                step_id = calculation_tree.insert(
+                    block_id,
+                    tk.END,
+                    text=f"{block_index}.{step_index}  {step.label}",
+                    values=(step.status,),
+                )
+                calculation_item_map[step_id] = (block, step)
+                if first_step_id is None:
+                    first_step_id = step_id
+        if first_step_id is not None:
+            calculation_tree.selection_set(first_step_id)
+            calculation_tree.focus(first_step_id)
+            calculation_tree.see(first_step_id)
+            show_calculation_detail()
+        status_var.set(
+            f"Calculation trace loaded: {trace.step_count} worked step(s) "
+            f"across {len(trace.blocks)} block(s)."
+        )
+
+    def open_calculation_workspace() -> None:
+        notebook.select(calculations_tab)
+        refresh_calculation_view()
+
     def refresh_dashboard() -> None:
+        refresh_overview()
         for item in capability_tree.get_children():
             capability_tree.delete(item)
         dashboard = session.dashboard()
