@@ -10,6 +10,11 @@ from rc_bridge.analysis.physical_sections import (
     composite_section_description,
     girder_tributary_slab_widths_m,
 )
+from rc_bridge.application.load_cases import (
+    ApplicationLoadCaseFields,
+    SurfacingExtent,
+    eurocode_variable_action_scope,
+)
 from rc_bridge.application.preferences import (
     AnalysisApplicationSettings,
     ApplicationPreferences,
@@ -63,6 +68,7 @@ def main() -> int:
 
     project_tab = ttk.Frame(notebook, padding=12)
     basis_tab = ttk.Frame(notebook, padding=12)
+    load_cases_tab = ttk.Frame(notebook, padding=12)
     analysis_tab = ttk.Frame(notebook, padding=12)
     design_tab = ttk.Frame(notebook, padding=12)
     verification_tab = ttk.Frame(notebook, padding=12)
@@ -70,6 +76,7 @@ def main() -> int:
 
     notebook.add(project_tab, text="Project")
     notebook.add(basis_tab, text="Design basis")
+    notebook.add(load_cases_tab, text="Load cases & combinations")
     notebook.add(analysis_tab, text="Analysis")
     notebook.add(design_tab, text="Design & checks")
     notebook.add(verification_tab, text="Verification")
@@ -368,6 +375,214 @@ def main() -> int:
     revert_basis_button.pack(side=tk.LEFT, padx=4)
 
     # ------------------------------------------------------------------
+    # Load cases & combinations tab
+    # ------------------------------------------------------------------
+    load_cases_tab.columnconfigure(0, weight=1)
+    load_cases_tab.rowconfigure(1, weight=1)
+
+    load_input_frame = ttk.LabelFrame(
+        load_cases_tab,
+        text="Permanent actions",
+        padding=10,
+    )
+    load_input_frame.grid(row=0, column=0, sticky="ew")
+    for column in range(4):
+        load_input_frame.columnconfigure(column, weight=1)
+
+    add_entry(
+        load_input_frame,
+        row=0,
+        label="Surfacing thickness",
+        key="load_surfacing_thickness",
+    )
+    add_entry(
+        load_input_frame,
+        row=1,
+        label="Surfacing density (kN/m³)",
+        key="load_surfacing_density",
+    )
+    ttk.Label(load_input_frame, text="Surfacing transverse extent").grid(
+        row=2, column=0, sticky="w", padx=(0, 8), pady=3
+    )
+    ttk.Combobox(
+        load_input_frame,
+        textvariable=svar("load_surfacing_extent"),
+        values=[item.value for item in SurfacingExtent],
+        state="readonly",
+        width=20,
+    ).grid(row=2, column=1, sticky="ew", pady=3)
+
+    add_entry(
+        load_input_frame,
+        row=0,
+        label="Left barrier (kN/m)",
+        key="load_left_barrier",
+    )
+    add_entry(
+        load_input_frame,
+        row=1,
+        label="Right barrier (kN/m)",
+        key="load_right_barrier",
+    )
+    add_entry(
+        load_input_frame,
+        row=2,
+        label="Left services (kN/m)",
+        key="load_left_services",
+    )
+    add_entry(
+        load_input_frame,
+        row=3,
+        label="Right services (kN/m)",
+        key="load_right_services",
+    )
+    add_entry(
+        load_input_frame,
+        row=4,
+        label="Left services y-position",
+        key="load_left_services_y",
+    )
+    add_entry(
+        load_input_frame,
+        row=5,
+        label="Right services y-position",
+        key="load_right_services_y",
+    )
+
+    load_button_frame = ttk.Frame(load_input_frame)
+    load_button_frame.grid(row=6, column=0, columnspan=4, sticky="e", pady=(8, 0))
+    apply_load_cases_button = ttk.Button(
+        load_button_frame,
+        text="Apply load cases",
+    )
+    apply_load_cases_button.pack(side=tk.LEFT, padx=4)
+    revert_load_cases_button = ttk.Button(
+        load_button_frame,
+        text="Revert",
+    )
+    revert_load_cases_button.pack(side=tk.LEFT, padx=4)
+
+    load_views = ttk.Panedwindow(load_cases_tab, orient=tk.VERTICAL)
+    load_views.grid(row=1, column=0, sticky="nsew", pady=(10, 0))
+
+    audit_frame = ttk.LabelFrame(
+        load_views,
+        text="Automatic permanent-load audit — equivalent full-length line loads",
+        padding=8,
+    )
+    audit_columns = (
+        "girder",
+        "girder_sw",
+        "false_slab",
+        "in_situ",
+        "surfacing",
+        "barriers",
+        "services",
+        "other",
+        "total",
+    )
+    permanent_audit_tree = ttk.Treeview(
+        audit_frame,
+        columns=audit_columns,
+        show="headings",
+        height=8,
+    )
+    audit_headings = {
+        "girder": "Girder",
+        "girder_sw": "Girder SW",
+        "false_slab": "75 mm slab",
+        "in_situ": "In-situ slab",
+        "surfacing": "Surfacing",
+        "barriers": "Barriers",
+        "services": "Services",
+        "other": "Other",
+        "total": "Total Gk",
+    }
+    for key in audit_columns:
+        permanent_audit_tree.heading(key, text=audit_headings[key])
+        permanent_audit_tree.column(key, width=105, anchor=tk.CENTER)
+    permanent_audit_tree.pack(fill=tk.BOTH, expand=True)
+    load_views.add(audit_frame, weight=1)
+
+    lower_load_frame = ttk.Frame(load_views)
+    lower_load_frame.columnconfigure(0, weight=1)
+    lower_load_frame.columnconfigure(1, weight=1)
+    lower_load_frame.rowconfigure(0, weight=1)
+
+    scope_frame = ttk.LabelFrame(
+        lower_load_frame,
+        text="Variable-action scope",
+        padding=8,
+    )
+    scope_frame.grid(row=0, column=0, sticky="nsew", padx=(0, 5))
+    action_scope_tree = ttk.Treeview(
+        scope_frame,
+        columns=("action", "status", "detail"),
+        show="headings",
+        height=8,
+    )
+    action_scope_tree.heading("action", text="Action")
+    action_scope_tree.heading("status", text="Status")
+    action_scope_tree.heading("detail", text="Current application treatment")
+    action_scope_tree.column("action", width=190, anchor=tk.W)
+    action_scope_tree.column("status", width=120, anchor=tk.CENTER)
+    action_scope_tree.column("detail", width=400, anchor=tk.W)
+    action_scope_tree.pack(fill=tk.BOTH, expand=True)
+
+    combinations_frame = ttk.LabelFrame(
+        lower_load_frame,
+        text="EN 1990 interpretation after LM1 analysis",
+        padding=8,
+    )
+    combinations_frame.grid(row=0, column=1, sticky="nsew", padx=(5, 0))
+    combination_columns = (
+        "girder",
+        "g_m",
+        "q_m",
+        "uls_m",
+        "g_v",
+        "q_v",
+        "uls_v",
+        "sls_char_m",
+        "sls_freq_m",
+    )
+    combination_tree = ttk.Treeview(
+        combinations_frame,
+        columns=combination_columns,
+        show="headings",
+        height=8,
+    )
+    combination_headings = {
+        "girder": "Girder",
+        "g_m": "Gk M",
+        "q_m": "LM1 Qk M",
+        "uls_m": "ULS M",
+        "g_v": "Gk V",
+        "q_v": "LM1 Qk V",
+        "uls_v": "ULS V",
+        "sls_char_m": "SLS char M",
+        "sls_freq_m": "SLS freq M",
+    }
+    for key in combination_columns:
+        combination_tree.heading(key, text=combination_headings[key])
+        combination_tree.column(key, width=95, anchor=tk.CENTER)
+    combination_tree.pack(fill=tk.BOTH, expand=True)
+
+    load_views.add(lower_load_frame, weight=1)
+
+    ttk.Label(
+        load_cases_tab,
+        text=(
+            "Permanent self-weight is derived automatically from the physical girder/deck. "
+            "Surfacing, barriers and services are project inputs. LM1 is the implemented "
+            "vertical road-traffic action; missing variable actions remain explicitly marked "
+            "not wired rather than being silently ignored."
+        ),
+        wraplength=1180,
+        justify=tk.LEFT,
+    ).grid(row=2, column=0, sticky="ew", pady=(8, 0))
+
+    # ------------------------------------------------------------------
     # Analysis tab
     # ------------------------------------------------------------------
     analysis_header = ttk.Frame(analysis_tab)
@@ -650,6 +865,33 @@ def main() -> int:
             analysis=analysis,
         )
 
+    def load_case_fields_from_form() -> ApplicationLoadCaseFields:
+        def nonnegative_float(key: str) -> float:
+            value = float(string_vars[key].get() or 0.0)
+            if value < 0.0:
+                raise ValueError(f"{key} cannot be negative.")
+            return value
+
+        def optional_position_m(key: str) -> float | None:
+            value = string_vars[key].get().strip()
+            return None if not value else displayed_unit.to_metres(float(value))
+
+        return ApplicationLoadCaseFields(
+            surfacing_thickness_m=displayed_unit.to_metres(
+                nonnegative_float("load_surfacing_thickness")
+            ),
+            surfacing_density_kn_m3=nonnegative_float("load_surfacing_density"),
+            surfacing_extent=SurfacingExtent(
+                string_vars["load_surfacing_extent"].get()
+            ),
+            left_barrier_kn_m=nonnegative_float("load_left_barrier"),
+            right_barrier_kn_m=nonnegative_float("load_right_barrier"),
+            left_services_kn_m=nonnegative_float("load_left_services"),
+            right_services_kn_m=nonnegative_float("load_right_services"),
+            left_services_y_m=optional_position_m("load_left_services_y"),
+            right_services_y_m=optional_position_m("load_right_services_y"),
+        )
+
     def set_optional_length(key: str, value_m: float | None) -> None:
         if value_m is None:
             string_vars[key].set("")
@@ -789,8 +1031,86 @@ def main() -> int:
             str(preferences.analysis.max_exhaustive_tandem_combinations)
         )
 
+    def populate_load_cases(project) -> None:
+        fields = ApplicationLoadCaseFields.from_project(project)
+        string_vars["load_surfacing_thickness"].set(
+            f"{displayed_unit.from_metres(fields.surfacing_thickness_m):g}"
+        )
+        string_vars["load_surfacing_density"].set(
+            f"{fields.surfacing_density_kn_m3:g}"
+        )
+        string_vars["load_surfacing_extent"].set(fields.surfacing_extent.value)
+        string_vars["load_left_barrier"].set(f"{fields.left_barrier_kn_m:g}")
+        string_vars["load_right_barrier"].set(f"{fields.right_barrier_kn_m:g}")
+        string_vars["load_left_services"].set(f"{fields.left_services_kn_m:g}")
+        string_vars["load_right_services"].set(f"{fields.right_services_kn_m:g}")
+        string_vars["load_left_services_y"].set(
+            ""
+            if fields.left_services_y_m is None
+            else f"{displayed_unit.from_metres(fields.left_services_y_m):g}"
+        )
+        string_vars["load_right_services_y"].set(
+            ""
+            if fields.right_services_y_m is None
+            else f"{displayed_unit.from_metres(fields.right_services_y_m):g}"
+        )
+
+    def refresh_load_case_views() -> None:
+        for item in permanent_audit_tree.get_children():
+            permanent_audit_tree.delete(item)
+        for row in session.permanent_load_audit():
+            permanent_audit_tree.insert(
+                "",
+                tk.END,
+                values=(
+                    row.girder_index,
+                    f"{row.girder_self_weight_kn_m:.3f}",
+                    f"{row.false_slab_kn_m:.3f}",
+                    f"{row.in_situ_slab_kn_m:.3f}",
+                    f"{row.surfacing_kn_m:.3f}",
+                    f"{row.barriers_kn_m:.3f}",
+                    f"{row.services_kn_m:.3f}",
+                    f"{row.other_kn_m:.3f}",
+                    f"{row.total_equivalent_kn_m:.3f}",
+                ),
+            )
+
+        for item in action_scope_tree.get_children():
+            action_scope_tree.delete(item)
+        for action in eurocode_variable_action_scope():
+            action_scope_tree.insert(
+                "",
+                tk.END,
+                values=(action.name, action.status, action.detail),
+            )
+
+        for item in combination_tree.get_children():
+            combination_tree.delete(item)
+        if session.last_lm1_search is None:
+            return
+        try:
+            combinations = session.combination_summary()
+        except (TypeError, ValueError, RuntimeError):
+            return
+        for row in combinations:
+            combination_tree.insert(
+                "",
+                tk.END,
+                values=(
+                    row.girder_index,
+                    f"{row.permanent_characteristic.moment_knm:.2f}",
+                    f"{row.traffic_characteristic.moment_knm:.2f}",
+                    f"{row.uls.moment_knm:.2f}",
+                    f"{row.permanent_characteristic.shear_kn:.2f}",
+                    f"{row.traffic_characteristic.shear_kn:.2f}",
+                    f"{row.uls.shear_kn:.2f}",
+                    f"{row.sls_characteristic.moment_knm:.2f}",
+                    f"{row.sls_frequent.moment_knm:.2f}",
+                ),
+            )
+
     def clear_results() -> None:
-        for tree in (effect_tree, deflection_tree, package_tree):
+        for tree in (effect_tree, deflection_tree, package_tree, combination_tree):
             for item in tree.get_children():
                 tree.delete(item)
         search_status_var.set("No native LM1 analysis has been run.")
@@ -849,6 +1169,7 @@ def main() -> int:
         )
         progress["value"] = 100.0
         status_var.set("Native LM1 analysis complete.")
+        refresh_load_case_views()
         refresh_dashboard()
 
     def refresh_dashboard() -> None:
@@ -955,7 +1276,7 @@ def main() -> int:
 
     def commit_forms() -> None:
         nonlocal displayed_unit
-        project = project_from_form()
+        project = load_case_fields_from_form().apply(project_from_form())
         preferences = preferences_from_form()
         project_changed = project != session.project
         settings_changed = preferences.analysis != session.preferences.analysis
@@ -981,13 +1302,31 @@ def main() -> int:
             session.replace_project(project)
             clear_results()
         populate_project(session.project)
+        populate_load_cases(session.project)
+        refresh_load_case_views()
         refresh_dashboard()
         status_var.set("Project definition applied.")
+
+    def apply_load_cases() -> None:
+        try:
+            project = project_from_form()
+            updated = load_case_fields_from_form().apply(project)
+        except (TypeError, ValueError) as exc:
+            messagebox.showerror("Load cases", str(exc))
+            return
+        if updated != session.project:
+            session.replace_project(updated)
+            clear_results()
+        populate_project(session.project)
+        populate_load_cases(session.project)
+        refresh_load_case_views()
+        refresh_dashboard()
+        status_var.set("Permanent load cases applied.")
 
     def apply_basis() -> None:
         nonlocal displayed_unit
         try:
-            project = project_from_form()
+            project = load_case_fields_from_form().apply(project_from_form())
             preferences = preferences_from_form()
         except (TypeError, ValueError) as exc:
             messagebox.showerror("Design basis", str(exc))
@@ -1002,6 +1341,8 @@ def main() -> int:
         displayed_unit = preferences.units
         populate_project(session.project)
         populate_preferences(session.preferences)
+        populate_load_cases(session.project)
+        refresh_load_case_views()
         if project_changed or settings_changed:
             clear_results()
         refresh_dashboard()
@@ -1090,7 +1431,9 @@ def main() -> int:
         displayed_unit = session.preferences.units
         populate_project(session.project)
         populate_preferences(session.preferences)
+        populate_load_cases(session.project)
         clear_results()
+        refresh_load_case_views()
         refresh_dashboard()
         status_var.set("New project")
 
@@ -1114,7 +1457,9 @@ def main() -> int:
         displayed_unit = session.preferences.units
         populate_project(session.project)
         populate_preferences(session.preferences)
+        populate_load_cases(session.project)
         clear_results()
+        refresh_load_case_views()
         refresh_dashboard()
         status_var.set(f"Opened {Path(path).name}")
 
@@ -1229,6 +1574,13 @@ def main() -> int:
         )
 
     apply_project_button.configure(command=apply_project)
+    apply_load_cases_button.configure(command=apply_load_cases)
+    revert_load_cases_button.configure(
+        command=lambda: (
+            populate_load_cases(session.project),
+            refresh_load_case_views(),
+        )
+    )
     revert_project_button.configure(
         command=lambda: populate_project(session.project)
     )
@@ -1275,7 +1627,9 @@ def main() -> int:
 
     populate_project(session.project)
     populate_preferences(session.preferences)
+    populate_load_cases(session.project)
     clear_results()
+    refresh_load_case_views()
     refresh_dashboard()
     root.mainloop()
     return 0
