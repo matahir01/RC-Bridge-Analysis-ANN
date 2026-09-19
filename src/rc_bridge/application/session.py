@@ -130,6 +130,11 @@ class BridgeApplicationSession:
         init=False,
         repr=False,
     )
+    _last_lm1_run_key: tuple[float, float, int] | None = field(
+        default=None,
+        init=False,
+        repr=False,
+    )
 
     def _record_performance(self, record: ApplicationPerformanceRecord) -> None:
         self.performance_history.append(record)
@@ -176,11 +181,14 @@ class BridgeApplicationSession:
         self.last_local_deck_design = None
         self.last_fatigue = None
         self.last_verification_import = None
+        self._last_lm1_run_key = None
+        self.performance_history.clear()
         self._invalidate_derived_caches()
 
     def set_preferences(self, preferences: ApplicationPreferences) -> None:
         if preferences.analysis != self.preferences.analysis:
             self.last_lm1_search = None
+            self._last_lm1_run_key = None
             self.last_extended_actions = None
             self.last_local_deck_design = None
             self.last_action_combinations = None
@@ -433,17 +441,6 @@ class BridgeApplicationSession:
         progress_callback: Callable[[int, int], None] | None = None,
         cancel_check: Callable[[], bool] | None = None,
     ) -> ProjectNativeLM1GrillageSearchResult:
-        use_session_defaults = (
-            grid_spacing_m is None
-            and longitudinal_step_m is None
-            and max_exhaustive_tandem_combinations is None
-        )
-        if use_session_defaults and self.last_lm1_search is not None:
-            self._record_performance(
-                cache_hit_record("native_lm1", detail="unchanged project/settings")
-            )
-            return self.last_lm1_search
-
         if self.project.geometry.girder_profile is None:
             raise ValueError(
                 "Application analysis requires a complete physical rectangular, T or I "
@@ -465,6 +462,13 @@ class BridgeApplicationSession:
         if max_tandem <= 0:
             raise ValueError("max_exhaustive_tandem_combinations must be positive.")
 
+        run_key = (float(grid_spacing), float(traffic_step), int(max_tandem))
+        if self.last_lm1_search is not None and self._last_lm1_run_key == run_key:
+            self._record_performance(
+                cache_hit_record("native_lm1", detail="unchanged project/settings")
+            )
+            return self.last_lm1_search
+
         stations = longitudinal_grid_stations(
             self.project,
             maximum_spacing_m=grid_spacing,
@@ -485,6 +489,7 @@ class BridgeApplicationSession:
         )
         self._record_performance(record)
         self.last_lm1_search = result
+        self._last_lm1_run_key = run_key
         self.last_local_deck_design = None
         self.last_action_combinations = None
         self.last_design_interpretation = None
