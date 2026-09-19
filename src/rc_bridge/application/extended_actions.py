@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from math import ceil
 
 from rc_bridge.analysis.grillage_effects import native_grillage_traffic_envelope
@@ -731,7 +731,19 @@ def lm2_action(
             "from the beam-grillage response."
         ),
         governing_models=tuple(
-            case_models[case_id]
+            replace(
+                case_models[case_id],
+                load_cases=(
+                    replace(
+                        case_models[case_id].load_cases[0],
+                        load_case_id=case_id,
+                    ),
+                ),
+                metadata={
+                    **case_models[case_id].metadata,
+                    "lm2_case_id": str(case_id),
+                },
+            )
             for case_id in sorted(
                 {
                     *(item[0] for item in moment_positions.values()),
