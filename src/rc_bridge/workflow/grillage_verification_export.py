@@ -243,6 +243,7 @@ def _girder_y_coordinates(project: ProjectInput) -> tuple[float, ...]:
 def _transverse_y_coordinates(
     project: ProjectInput,
     area_loads: tuple[GrillageAreaLoad, ...],
+    supplemental_y_stations_m: tuple[float, ...] = (),
 ) -> tuple[float, ...]:
     half_width = float(project.geometry.deck_width_m) / 2.0
     patch_boundaries = tuple(
@@ -250,9 +251,17 @@ def _transverse_y_coordinates(
         for load in area_loads
         for coordinate in (float(load.y_start_m), float(load.y_end_m))
     )
-    if any(value < -half_width - 1e-9 or value > half_width + 1e-9 for value in patch_boundaries):
-        raise ValueError("An area-load transverse boundary lies outside the physical deck width.")
-    return _merge_coordinates((-half_width, *_girder_y_coordinates(project), *patch_boundaries, half_width))
+    supplied = tuple(float(value) for value in supplemental_y_stations_m)
+    if any(
+        value < -half_width - 1e-9 or value > half_width + 1e-9
+        for value in (*patch_boundaries, *supplied)
+    ):
+        raise ValueError(
+            "An area-load or supplemental transverse boundary lies outside the physical deck width."
+        )
+    return _merge_coordinates(
+        (-half_width, *_girder_y_coordinates(project), *patch_boundaries, *supplied, half_width)
+    )
 
 
 def _span_index_at_x(project: ProjectInput, x_m: float) -> int:
@@ -278,6 +287,7 @@ def build_project_grillage_verification_model(
     transverse_section: GrillageSectionProperties | None = None,
     transverse_stations_m: tuple[float, ...],
     load_case: GrillageVerificationLoadCase,
+    supplemental_y_stations_m: tuple[float, ...] = (),
     longitudinal_slab_width_m: float | None = None,
     transverse_strip_width_m: float | None = None,
     stiffness_modifiers: GrillageStiffnessModifiers | None = None,
@@ -332,7 +342,11 @@ def build_project_grillage_verification_model(
         load_case.area_loads,
     )
     y_girders = _girder_y_coordinates(project)
-    y_lines = _transverse_y_coordinates(project, load_case.area_loads)
+    y_lines = _transverse_y_coordinates(
+        project,
+        load_case.area_loads,
+        supplemental_y_stations_m=supplemental_y_stations_m,
+    )
     y_line_count = len(y_lines)
     girder_y_indices = tuple(_coordinate_index(y_lines, value) for value in y_girders)
     longitudinal_sections: list[GrillageSectionProperties] = []
