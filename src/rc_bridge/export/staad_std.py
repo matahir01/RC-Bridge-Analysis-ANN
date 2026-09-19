@@ -14,6 +14,32 @@ def _safe_name(value: str) -> str:
     return text[:32]
 
 
+def _staad_id_list(values: list[int]) -> str:
+    """Compress sorted positive STAAD entity IDs into compact TO ranges."""
+    if not values:
+        return ""
+    ordered = sorted(set(values))
+    tokens: list[str] = []
+    start = previous = ordered[0]
+    for value in ordered[1:]:
+        if value == previous + 1:
+            previous = value
+            continue
+        if start == previous:
+            tokens.append(str(start))
+        elif previous == start + 1:
+            tokens.extend((str(start), str(previous)))
+        else:
+            tokens.extend((str(start), "TO", str(previous)))
+        start = previous = value
+    if start == previous:
+        tokens.append(str(start))
+    elif previous == start + 1:
+        tokens.extend((str(start), str(previous)))
+    else:
+        tokens.extend((str(start), "TO", str(previous)))
+    return " ".join(tokens)
+
 def _support_command(support: VerificationSupport) -> str:
     restrained = (support.ux, support.uy, support.uz, support.rx, support.ry, support.rz)
     if all(restrained):
@@ -55,8 +81,11 @@ def export_staad_std(model: VerificationModel) -> str:
     external stiffness aligned with the deterministic solver and avoids automatic
     shear-deformation assumptions unless explicit AY/AZ values are supplied.
 
-    Post-analysis member-end forces are requested in the global coordinate system
-    so the verification return path is not forced to infer STAAD member local axes.
+    The verification model uses global Z as vertical, matching the native grillage
+    convention; SET Z UP is therefore emitted before geometry so STAAD displays the
+    bridge deck in its horizontal X-Y plane. Post-analysis member-end forces are
+    requested in the global coordinate system so the verification return path is not
+    forced to infer STAAD member local axes.
     """
     model.validate_load_positions()
     lines: list[str] = [
@@ -64,6 +93,7 @@ def export_staad_std(model: VerificationModel) -> str:
         "START JOB INFORMATION",
         "ENGINEER NAME RC_BRIDGE_ANALYSIS_ANN",
         "END JOB INFORMATION",
+        "SET Z UP",
         "UNIT METER KNS",
         "JOINT COORDINATES",
     ]
@@ -78,7 +108,7 @@ def export_staad_std(model: VerificationModel) -> str:
     lines.append("MEMBER PROPERTY")
     for section in model.sections:
         member_ids = [
-            str(beam.member_id) for beam in model.beams if beam.section_id == section.section_id
+            beam.member_id for beam in model.beams if beam.section_id == section.section_id
         ]
         if not member_ids:
             continue
@@ -92,7 +122,7 @@ def export_staad_std(model: VerificationModel) -> str:
             properties.append(f"AY {section.shear_area_y_m2:.12g}")
         if section.shear_area_z_m2 is not None:
             properties.append(f"AZ {section.shear_area_z_m2:.12g}")
-        lines.append(f"{' '.join(member_ids)} PRIS {' '.join(properties)}")
+        lines.append(f"{_staad_id_list(member_ids)} PRIS {' '.join(properties)}")
 
     lines.append("DEFINE MATERIAL START")
     for material in model.materials:
@@ -111,10 +141,12 @@ def export_staad_std(model: VerificationModel) -> str:
     lines.append("CONSTANTS")
     for material in model.materials:
         member_ids = [
-            str(beam.member_id) for beam in model.beams if beam.material_id == material.material_id
+            beam.member_id for beam in model.beams if beam.material_id == material.material_id
         ]
         if member_ids:
-            lines.append(f"MATERIAL {_safe_name(material.name)} {' '.join(member_ids)}")
+            lines.append(
+                f"MATERIAL {_safe_name(material.name)} MEMB {_staad_id_list(member_ids)}"
+            )
 
     if model.supports:
         lines.append("SUPPORTS")
