@@ -2,6 +2,13 @@ name: windows-exe
 
 on:
   workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - "src/rc_bridge/application/**"
+      - "pyproject.toml"
+      - ".github/workflows/windows-exe.yml"
 
 jobs:
   build:
@@ -14,6 +21,13 @@ jobs:
       - name: Install package and builder
         shell: pwsh
         run: pip install -e ".[packaging]"
+      - name: Smoke-test installed application modules
+        shell: pwsh
+        run: >-
+          python -c "from rc_bridge.application.project_editor import
+          application_default_project; p=application_default_project();
+          assert p.geometry.girder_profile is not None"
+
       - name: Build standalone desktop executable
         shell: pwsh
         run: >-
