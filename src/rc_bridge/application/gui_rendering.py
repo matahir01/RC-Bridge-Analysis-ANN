@@ -394,3 +394,87 @@ def draw_line_chart(
     canvas.create_text(left, top - 10, text=y_unit, anchor="w", fill=muted, font=("Segoe UI", 8))
     canvas.create_text(right, bottom + 18, text=f"{x_max:g}", anchor="e", fill=muted, font=("Segoe UI", 8))
     canvas.create_text(left, bottom + 18, text=f"{x_min:g}", anchor="w", fill=muted, font=("Segoe UI", 8))
+
+
+def draw_reinforcement_section(
+    canvas,
+    *,
+    bridge: BridgePreviewData,
+    bar_count: int,
+    bar_label: str,
+    link_label: str,
+) -> None:
+    """Draw a schematic selected-girder reinforcement section for design review."""
+
+    canvas.delete("all")
+    width, height = _canvas_size(canvas, fallback_width=360, fallback_height=180)
+    ink = "#172033"
+    muted = "#5F6F82"
+    primary = "#163B65"
+    concrete = "#D9E2EC"
+    steel = "#A73434"
+
+    outline = bridge.girder_outline_m
+    if not outline:
+        return
+    min_x = min(x for x, _ in outline)
+    max_x = max(x for x, _ in outline)
+    max_z = max(z for _, z in outline)
+    section_width = max(max_x - min_x, 0.05)
+    scale = min((width - 70) / section_width, (height - 55) / max(max_z, 0.05))
+    centre_x = width / 2.0
+    top_y = 25.0
+    points: list[float] = []
+    for x_m, z_m in outline:
+        points.extend((centre_x + x_m * scale, top_y + z_m * scale))
+    canvas.create_polygon(*points, fill=concrete, outline=primary, width=2)
+
+    # Schematic closed link just inside the available envelope.
+    left = centre_x + min_x * scale + 10
+    right = centre_x + max_x * scale - 10
+    bottom = top_y + max_z * scale - 10
+    link_top = top_y + 10
+    if right > left and bottom > link_top:
+        canvas.create_rectangle(
+            left,
+            link_top,
+            right,
+            bottom,
+            outline=steel,
+            width=2,
+        )
+
+    bars_to_draw = min(max(int(bar_count), 2), 12)
+    if bars_to_draw == 1:
+        xs = [0.5 * (left + right)]
+    else:
+        xs = [
+            left + 8 + index * max((right - left - 16) / (bars_to_draw - 1), 0.0)
+            for index in range(bars_to_draw)
+        ]
+    for x in xs:
+        canvas.create_oval(
+            x - 4,
+            bottom - 8,
+            x + 4,
+            bottom,
+            fill=steel,
+            outline=steel,
+        )
+
+    canvas.create_text(
+        12,
+        height - 14,
+        text=f"Schematic cage · {bar_label} · {link_label}",
+        anchor="w",
+        fill=muted,
+        font=("Segoe UI", 8),
+    )
+    canvas.create_text(
+        12,
+        12,
+        text="SELECTED GIRDER REINFORCEMENT",
+        anchor="w",
+        fill=ink,
+        font=("Segoe UI Semibold", 9),
+    )
