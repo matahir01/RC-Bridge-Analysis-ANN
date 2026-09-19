@@ -22,6 +22,7 @@ from rc_bridge.codes.eurocode.combinations import (
 from rc_bridge.codes.eurocode.materials import concrete_properties_ec2
 from rc_bridge.core.models import DesignCode, ProjectInput, SupportSystem
 from rc_bridge.design.eurocode_deflection import SimpleSpanMomentDiagram
+from rc_bridge.design.eurocode_demand import check_shear
 from rc_bridge.design.eurocode_detailing import (
     LinkArrangement,
     LongitudinalBarArrangement,
@@ -29,7 +30,6 @@ from rc_bridge.design.eurocode_detailing import (
     select_longitudinal_bar_arrangement,
     select_vertical_link_arrangement,
 )
-from rc_bridge.design.eurocode_demand import check_shear
 from rc_bridge.design.eurocode_layered_section import required_tension_steel_layered
 from rc_bridge.workflow.eurocode_girder import EurocodeServiceabilityInput
 from rc_bridge.workflow.eurocode_layered_girder import (
