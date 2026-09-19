@@ -4,6 +4,10 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from rc_bridge.application.calculation_trace import (
+    CalculationTrace,
+    build_application_calculation_trace,
+)
 from rc_bridge.application.action_combinations import (
     BridgeActionCombinationFactors,
     IntegratedActionCombinationSuite,
@@ -35,6 +39,11 @@ from rc_bridge.application.load_cases import (
 from rc_bridge.application.local_deck import (
     LocalDeckDesignResult,
     run_local_deck_design,
+)
+from rc_bridge.application.performance import (
+    ApplicationPerformanceRecord,
+    cache_hit_record,
+    timed_call,
 )
 from rc_bridge.application.preferences import ApplicationPreferences
 from rc_bridge.application.project_io import load_project_document, save_project
@@ -105,6 +114,36 @@ class BridgeApplicationSession:
     last_local_deck_design: LocalDeckDesignResult | None = None
     last_fatigue: FatigueApplicationResult | None = None
     last_verification_import: ApplicationVerificationImportReport | None = None
+    performance_history: list[ApplicationPerformanceRecord] = field(default_factory=list)
+    _permanent_load_audit_cache: tuple[PermanentGirderLoadAudit, ...] | None = field(
+        default=None,
+        init=False,
+        repr=False,
+    )
+    _combination_summary_cache: tuple[ApplicationGirderCombinationSummary, ...] | None = field(
+        default=None,
+        init=False,
+        repr=False,
+    )
+    _calculation_trace_cache: CalculationTrace | None = field(
+        default=None,
+        init=False,
+        repr=False,
+    )
+
+    def _record_performance(self, record: ApplicationPerformanceRecord) -> None:
+        self.performance_history.append(record)
+        if len(self.performance_history) > 100:
+            del self.performance_history[:-100]
+
+    @property
+    def last_performance_record(self) -> ApplicationPerformanceRecord | None:
+        return self.performance_history[-1] if self.performance_history else None
+
+    def _invalidate_derived_caches(self) -> None:
+        self._permanent_load_audit_cache = None
+        self._combination_summary_cache = None
+        self._calculation_trace_cache = None
 
     @classmethod
     def open(cls, path: str | Path) -> BridgeApplicationSession:
@@ -137,6 +176,7 @@ class BridgeApplicationSession:
         self.last_local_deck_design = None
         self.last_fatigue = None
         self.last_verification_import = None
+        self._invalidate_derived_caches()
 
     def set_preferences(self, preferences: ApplicationPreferences) -> None:
         if preferences.analysis != self.preferences.analysis:
@@ -167,6 +207,9 @@ class BridgeApplicationSession:
         elif preferences.fatigue != self.preferences.fatigue:
             self.last_fatigue = None
             self.last_verification_import = None
+        if preferences != self.preferences:
+            self._combination_summary_cache = None
+            self._calculation_trace_cache = None
         self.preferences = preferences
 
     def dashboard(self) -> ApplicationDashboard:
@@ -193,19 +236,41 @@ class BridgeApplicationSession:
             self.replace_project(updated)
 
     def permanent_load_audit(self) -> tuple[PermanentGirderLoadAudit, ...]:
-        return permanent_load_audit(self.project)
+        if self._permanent_load_audit_cache is not None:
+            self._record_performance(
+                cache_hit_record("permanent_load_audit", detail="session cache")
+            )
+            return self._permanent_load_audit_cache
+        result, record = timed_call(
+            "permanent_load_audit",
+            lambda: permanent_load_audit(self.project),
+        )
+        self._permanent_load_audit_cache = result
+        self._record_performance(record)
+        return result
 
     def combination_summary(self) -> tuple[ApplicationGirderCombinationSummary, ...]:
         if self.last_lm1_search is None:
             raise RuntimeError(
                 "Run native LM1 analysis before generating load combinations."
             )
-        return application_combination_summary(
-            self.project,
-            self.last_lm1_search,
-            uls_factors=self.preferences.eurocode.uls_factors,
-            sls_factors=self.preferences.eurocode.sls_factors,
+        if self._combination_summary_cache is not None:
+            self._record_performance(
+                cache_hit_record("combination_summary", detail="session cache")
+            )
+            return self._combination_summary_cache
+        result, record = timed_call(
+            "combination_summary",
+            lambda: application_combination_summary(
+                self.project,
+                self.last_lm1_search,
+                uls_factors=self.preferences.eurocode.uls_factors,
+                sls_factors=self.preferences.eurocode.sls_factors,
+            ),
         )
+        self._combination_summary_cache = result
+        self._record_performance(record)
+        return result
 
     def run_extended_actions(
         self,
@@ -213,48 +278,73 @@ class BridgeApplicationSession:
         lm2_progress_callback: Callable[[int, int], None] | None = None,
         gr2_progress_callback: Callable[[int, int], None] | None = None,
     ) -> ExtendedActionSuite:
+        if self.last_extended_actions is not None:
+            self._record_performance(
+                cache_hit_record("extended_actions", detail="unchanged project/settings")
+            )
+            return self.last_extended_actions
         analysis = self.preferences.analysis
-        result = run_extended_actions(
-            self.project,
-            self.preferences.actions,
-            grid_spacing_m=analysis.grid_spacing_m,
-            traffic_step_m=analysis.traffic_step_m,
-            max_exhaustive_tandem_combinations=(
-                analysis.max_exhaustive_tandem_combinations
+        result, record = timed_call(
+            "extended_actions",
+            lambda: run_extended_actions(
+                self.project,
+                self.preferences.actions,
+                grid_spacing_m=analysis.grid_spacing_m,
+                traffic_step_m=analysis.traffic_step_m,
+                max_exhaustive_tandem_combinations=(
+                    analysis.max_exhaustive_tandem_combinations
+                ),
+                lm2_progress_callback=lm2_progress_callback,
+                gr2_progress_callback=gr2_progress_callback,
             ),
-            lm2_progress_callback=lm2_progress_callback,
-            gr2_progress_callback=gr2_progress_callback,
         )
+        self._record_performance(record)
         self.last_extended_actions = result
         self.last_local_deck_design = None
         self.last_action_combinations = None
         self.last_design_interpretation = None
         self.last_fatigue = None
+        self._calculation_trace_cache = None
         return result
 
     def run_local_deck_design(self) -> LocalDeckDesignResult:
+        if self.last_local_deck_design is not None:
+            self._record_performance(
+                cache_hit_record("local_deck_design", detail="unchanged project/settings")
+            )
+            return self.last_local_deck_design
         if self.last_extended_actions is None:
             raise RuntimeError(
                 "Run Additional actions before local deck design so LM2 and "
                 "barrier-impact wheel actions are available."
             )
         basis = self.preferences.eurocode
-        result = run_local_deck_design(
-            self.project,
-            self.last_extended_actions,
-            action_settings=self.preferences.actions,
-            settings=self.preferences.local_deck,
-            cover_mm=self.preferences.design.cover_mm,
-            gamma_g=basis.gamma_g_unfavourable,
-            gamma_q_traffic=basis.gamma_q_traffic,
+        result, record = timed_call(
+            "local_deck_design",
+            lambda: run_local_deck_design(
+                self.project,
+                self.last_extended_actions,
+                action_settings=self.preferences.actions,
+                settings=self.preferences.local_deck,
+                cover_mm=self.preferences.design.cover_mm,
+                gamma_g=basis.gamma_g_unfavourable,
+                gamma_q_traffic=basis.gamma_q_traffic,
+            ),
         )
+        self._record_performance(record)
         self.last_local_deck_design = result
         self.last_action_combinations = None
         self.last_design_interpretation = None
         self.last_fatigue = None
+        self._calculation_trace_cache = None
         return result
 
     def run_design_interpretation(self) -> ApplicationDesignInterpretationSuite:
+        if self.last_design_interpretation is not None:
+            self._record_performance(
+                cache_hit_record("design_interpretation", detail="unchanged project/settings")
+            )
+            return self.last_design_interpretation
         if self.last_lm1_search is None:
             raise RuntimeError(
                 "Run native LM1 analysis before running the design interpretation."
@@ -284,24 +374,34 @@ class BridgeApplicationSession:
             factors=factors,
             local_deck=self.last_local_deck_design,
         )
-        result = run_application_design_interpretation(
-            self.project,
-            self.last_lm1_search,
-            uls_factors=basis.uls_factors,
-            sls_factors=basis.sls_factors,
-            crack_limit_mm=basis.crack_limit_mm,
-            deflection_limit_span_ratio=basis.deflection_limit_span_ratio,
-            settings=self.preferences.design,
-            action_combinations=combinations,
-            extended_actions=self.last_extended_actions,
-            gamma_q_nontraffic=basis.gamma_q_nontraffic,
+        result, record = timed_call(
+            "design_interpretation",
+            lambda: run_application_design_interpretation(
+                self.project,
+                self.last_lm1_search,
+                uls_factors=basis.uls_factors,
+                sls_factors=basis.sls_factors,
+                crack_limit_mm=basis.crack_limit_mm,
+                deflection_limit_span_ratio=basis.deflection_limit_span_ratio,
+                settings=self.preferences.design,
+                action_combinations=combinations,
+                extended_actions=self.last_extended_actions,
+                gamma_q_nontraffic=basis.gamma_q_nontraffic,
+            ),
         )
+        self._record_performance(record)
         self.last_action_combinations = combinations
         self.last_design_interpretation = result
         self.last_fatigue = None
+        self._calculation_trace_cache = None
         return result
 
     def run_fatigue(self) -> FatigueApplicationResult:
+        if self.last_fatigue is not None:
+            self._record_performance(
+                cache_hit_record("fatigue", detail="unchanged project/settings")
+            )
+            return self.last_fatigue
         if self.last_design_interpretation is None:
             raise RuntimeError(
                 "Run the integrated Design & checks workflow before FLM3 fatigue."
@@ -310,13 +410,18 @@ class BridgeApplicationSession:
             self.project,
             maximum_spacing_m=self.preferences.analysis.grid_spacing_m,
         )
-        result = run_application_fatigue(
-            self.project,
-            self.last_design_interpretation,
-            settings=self.preferences.fatigue,
-            transverse_stations_m=stations,
+        result, record = timed_call(
+            "fatigue",
+            lambda: run_application_fatigue(
+                self.project,
+                self.last_design_interpretation,
+                settings=self.preferences.fatigue,
+                transverse_stations_m=stations,
+            ),
         )
+        self._record_performance(record)
         self.last_fatigue = result
+        self._calculation_trace_cache = None
         return result
 
     def run_native_lm1(
@@ -328,6 +433,17 @@ class BridgeApplicationSession:
         progress_callback: Callable[[int, int], None] | None = None,
         cancel_check: Callable[[], bool] | None = None,
     ) -> ProjectNativeLM1GrillageSearchResult:
+        use_session_defaults = (
+            grid_spacing_m is None
+            and longitudinal_step_m is None
+            and max_exhaustive_tandem_combinations is None
+        )
+        if use_session_defaults and self.last_lm1_search is not None:
+            self._record_performance(
+                cache_hit_record("native_lm1", detail="unchanged project/settings")
+            )
+            return self.last_lm1_search
+
         if self.project.geometry.girder_profile is None:
             raise ValueError(
                 "Application analysis requires a complete physical rectangular, T or I "
@@ -353,23 +469,52 @@ class BridgeApplicationSession:
             self.project,
             maximum_spacing_m=grid_spacing,
         )
-        result = run_project_native_lm1_grillage_search(
-            self.project,
-            transverse_stations_m=stations,
-            longitudinal_step_m=traffic_step,
-            max_exhaustive_tandem_combinations=max_tandem,
-            include_spanwise_udl_patterns=True,
-            progress_callback=progress_callback,
-            cancel_check=cancel_check,
-            retain_all_cases=False,
-            name=f"{self.project.name} - application native LM1",
+        result, record = timed_call(
+            "native_lm1",
+            lambda: run_project_native_lm1_grillage_search(
+                self.project,
+                transverse_stations_m=stations,
+                longitudinal_step_m=traffic_step,
+                max_exhaustive_tandem_combinations=max_tandem,
+                include_spanwise_udl_patterns=True,
+                progress_callback=progress_callback,
+                cancel_check=cancel_check,
+                retain_all_cases=False,
+                name=f"{self.project.name} - application native LM1",
+            ),
         )
+        self._record_performance(record)
         self.last_lm1_search = result
         self.last_local_deck_design = None
         self.last_action_combinations = None
         self.last_design_interpretation = None
         self.last_fatigue = None
+        self._combination_summary_cache = None
+        self._calculation_trace_cache = None
         return result
+
+    def calculation_trace(self) -> CalculationTrace:
+        if self.last_lm1_search is None:
+            raise RuntimeError("Run native LM1 analysis before building calculation traces.")
+        if self._calculation_trace_cache is not None:
+            self._record_performance(
+                cache_hit_record("calculation_trace", detail="session cache")
+            )
+            return self._calculation_trace_cache
+        trace, record = timed_call(
+            "calculation_trace",
+            lambda: build_application_calculation_trace(
+                self.project,
+                self.last_lm1_search,
+                preferences=self.preferences,
+                local_deck_design=self.last_local_deck_design,
+                design_interpretation=self.last_design_interpretation,
+                fatigue=self.last_fatigue,
+            ),
+        )
+        self._calculation_trace_cache = trace
+        self._record_performance(record)
+        return trace
 
     def write_last_lm1_report(self, path: str | Path) -> Path:
         if self.last_lm1_search is None:
