@@ -49,9 +49,6 @@ from rc_bridge.workflow.lm1_grillage_search import (
     ProjectNativeLM1GrillageSearchResult,
     build_consolidated_governing_lm1_verification_model,
 )
-from rc_bridge.workflow.lm1_grillage_verification import (
-    build_project_lm1_grillage_verification_model,
-)
 from rc_bridge.workflow.project_bridge import girder_permanent_load_segments
 
 
@@ -1206,6 +1203,8 @@ def write_application_verification_campaign(
     directory: str | Path,
     *,
     extended_actions: ExtendedActionSuite | None = None,
+    action_settings: ExtendedActionSettings | None = None,
+    combination_factors: BridgeActionCombinationFactors | None = None,
     action_combinations: IntegratedActionCombinationSuite | None = None,
     local_deck: LocalDeckDesignResult | None = None,
     fatigue: FatigueApplicationResult | None = None,
@@ -1249,6 +1248,29 @@ def write_application_verification_campaign(
             base_name=f"{stem}_permanent_reference",
         )
     )
+
+    if (
+        extended_actions is not None
+        and action_settings is not None
+        and combination_factors is not None
+    ):
+        final_service = build_unified_final_service_verification_model(
+            project,
+            lm1,
+            extended_actions,
+            action_settings=action_settings,
+            combination_factors=combination_factors,
+            grid_spacing_m=grid_spacing_m,
+        )
+        written.append(
+            _write_model(
+                final_service,
+                root / "final_service_verification",
+                family="unified final service",
+                label="Stage 5 completed bridge with load cases and combinations",
+                base_name=f"{stem}_final_service",
+            )
+        )
 
     if extended_actions is not None:
         if extended_actions.gr2_frequent_lm1 is not None:
@@ -1372,7 +1394,8 @@ def write_application_verification_campaign(
                 "pedestrian footway grillage when applicable",
                 "LM2 governing M/V/T axle placements",
                 "vertical wind grillage when a non-zero vertical coefficient is supplied",
-                "simple-span construction-stage longitudinal girder models",
+                "construction-stage models with completed final-stage physical deck grillage",
+                "unified Stage-5 completed bridge with static service load cases and ULS/SLS combinations",
                 "FLM3 governing minimum/maximum moment/shear range cases",
             ],
             "scalar_or_kinematic_verification_records": [
