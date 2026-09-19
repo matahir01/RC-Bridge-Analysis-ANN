@@ -268,7 +268,8 @@ def _design_one_girder(
 
     selected_bars: LongitudinalBarArrangement | None = None
     selected_links: LinkArrangement | None = None
-    for _ in range(4):
+    minimum_required_area_mm2 = 0.0
+    for _ in range(12):
         required_flexural = required_tension_steel_layered(
             med_knm=max(uls.effects.moment_knm, 0.0),
             layers=layers,
@@ -276,7 +277,15 @@ def _design_one_girder(
             fck_mpa=float(project.materials.fck_mpa),
             fyk_mpa=float(project.materials.fyk_mpa),
         )
-        trial_as = max(required_flexural, 1.0)
+        trial_as = max(
+            required_flexural,
+            minimum_required_area_mm2,
+            (
+                1.0
+                if selected_bars is None
+                else selected_bars.provided_area_mm2
+            ),
+        )
         shear = check_shear(
             ved_kn=abs(uls.effects.shear_kn),
             web_width_m=web_width_m,
@@ -302,17 +311,29 @@ def _design_one_girder(
             provided_longitudinal_steel_mm2=trial_as,
             design_required_asw_per_s_mm2_per_m=required_asw,
         )
-        selected_bars = select_longitudinal_bar_arrangement(
-            required_area_mm2=max(
-                required_flexural,
-                requirements.longitudinal.minimum_tension_steel_mm2,
-            ),
+        governing_longitudinal = max(
+            required_flexural,
+            requirements.longitudinal.minimum_tension_steel_mm2,
+            minimum_required_area_mm2,
+        )
+        candidate_bars = select_longitudinal_bar_arrangement(
+            required_area_mm2=governing_longitudinal,
             web_width_mm=bottom_width_m * 1000.0,
             cover_mm=settings.cover_mm,
             link_diameter_mm=settings.nominal_link_diameter_mm,
             aggregate_size_mm=settings.aggregate_size_mm,
         )
-        selected_links = select_vertical_link_arrangement(
+        # Prevent a discrete bar/d-depth two-cycle: once an arrangement proves
+        # insufficient at its own refined effective depth, only move upward in
+        # provided area on subsequent iterations.
+        if (
+            selected_bars is not None
+            and candidate_bars.provided_area_mm2
+            < selected_bars.provided_area_mm2 - 1.0e-9
+        ):
+            candidate_bars = selected_bars
+
+        candidate_links = select_vertical_link_arrangement(
             required_asw_per_s_mm2_per_m=(
                 requirements.shear.governing_required_asw_per_s_mm2_per_m
             ),
@@ -327,14 +348,38 @@ def _design_one_girder(
         )
         refined_d = _bar_centroid_effective_depth_m(
             total_depth_m=total_depth_m,
-            arrangement=selected_bars,
+            arrangement=candidate_bars,
             cover_mm=settings.cover_mm,
-            link_diameter_mm=selected_links.link_diameter_mm,
+            link_diameter_mm=candidate_links.link_diameter_mm,
         )
+        required_at_refined_d = required_tension_steel_layered(
+            med_knm=max(uls.effects.moment_knm, 0.0),
+            layers=layers,
+            effective_depth_m=refined_d,
+            fck_mpa=float(project.materials.fck_mpa),
+            fyk_mpa=float(project.materials.fyk_mpa),
+        )
+        selected_bars = candidate_bars
+        selected_links = candidate_links
+        if (
+            selected_bars.provided_area_mm2 + 1.0e-9
+            < required_at_refined_d
+        ):
+            minimum_required_area_mm2 = max(
+                minimum_required_area_mm2,
+                selected_bars.provided_area_mm2 + 1.0e-6,
+                required_at_refined_d,
+            )
+            d_m = refined_d
+            continue
         if abs(refined_d - d_m) <= 1.0e-6:
             d_m = refined_d
             break
         d_m = refined_d
+    else:
+        raise RuntimeError(
+            "Discrete longitudinal reinforcement selection did not converge."
+        )
 
     if selected_bars is None or selected_links is None:
         raise RuntimeError("Unable to select reinforcement for the design interpretation.")
