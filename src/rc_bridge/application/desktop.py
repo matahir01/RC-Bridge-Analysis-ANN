@@ -13,6 +13,12 @@ from rc_bridge.analysis.physical_sections import (
 from rc_bridge.application.design_checks import ApplicationDesignSettings
 from rc_bridge.application.extended_actions import ExtendedActionSettings
 from rc_bridge.application.fatigue import FatigueApplicationSettings
+from rc_bridge.application.gui_theme import configure_desktop_theme
+from rc_bridge.application.interface_contract import (
+    APPLICATION_INTERFACE_VERSION,
+    build_application_view_snapshot,
+    validate_application_interface,
+)
 from rc_bridge.application.load_cases import (
     ApplicationLoadCaseFields,
     SurfacingExtent,
@@ -45,16 +51,20 @@ def main() -> int:
         ) from exc
 
     root = tk.Tk()
-    root.title("RC Bridge Analysis & Design")
-    root.geometry("1360x860")
-    root.minsize(1120, 720)
+    root.title("RC Bridge Studio")
+    root.geometry("1480x900")
+    root.minsize(1180, 740)
+    configure_desktop_theme(root, ttk)
 
     session = BridgeApplicationSession(application_default_project())
+    validate_application_interface(session)
     displayed_unit = session.preferences.units
     string_vars: dict[str, tk.StringVar] = {}
     bool_vars: dict[str, tk.BooleanVar] = {}
     status_var = tk.StringVar(value="Ready")
     length_unit_var = tk.StringVar(value=displayed_unit.length_label)
+    workspace_title_var = tk.StringVar(value="Overview")
+    project_header_var = tk.StringVar(value="")
     analysis_buttons: list[ttk.Button] = []
     cancel_event = threading.Event()
 
@@ -68,9 +78,66 @@ def main() -> int:
         bool_vars[name] = item
         return item
 
-    notebook = ttk.Notebook(root)
-    notebook.pack(fill=tk.BOTH, expand=True, padx=10, pady=(10, 4))
+    header = ttk.Frame(root, style="Header.TFrame", padding=(18, 11))
+    header.pack(fill=tk.X)
+    header_text = ttk.Frame(header, style="Header.TFrame")
+    header_text.pack(side=tk.LEFT, fill=tk.X, expand=True)
+    ttk.Label(
+        header_text,
+        textvariable=workspace_title_var,
+        style="HeaderTitle.TLabel",
+    ).pack(anchor="w")
+    ttk.Label(
+        header_text,
+        textvariable=project_header_var,
+        style="HeaderSubtitle.TLabel",
+    ).pack(anchor="w", pady=(2, 0))
 
+    header_actions = ttk.Frame(header, style="Header.TFrame")
+    header_actions.pack(side=tk.RIGHT)
+    header_open_button = ttk.Button(
+        header_actions,
+        text="Open",
+        style="Secondary.TButton",
+    )
+    header_open_button.pack(side=tk.LEFT, padx=4)
+    header_save_button = ttk.Button(
+        header_actions,
+        text="Save",
+        style="Secondary.TButton",
+    )
+    header_save_button.pack(side=tk.LEFT, padx=4)
+    header_run_button = ttk.Button(
+        header_actions,
+        text="Run full analysis",
+        style="Primary.TButton",
+    )
+    header_run_button.pack(side=tk.LEFT, padx=(8, 0))
+    analysis_buttons.append(header_run_button)
+
+    body = ttk.Frame(root)
+    body.pack(fill=tk.BOTH, expand=True)
+
+    sidebar = ttk.Frame(body, style="Sidebar.TFrame", width=220, padding=(12, 14))
+    sidebar.pack(side=tk.LEFT, fill=tk.Y)
+    sidebar.pack_propagate(False)
+    ttk.Label(
+        sidebar,
+        text="RC BRIDGE STUDIO",
+        style="SidebarBrand.TLabel",
+    ).pack(anchor="w", padx=4)
+    ttk.Label(
+        sidebar,
+        text=f"ENGINE / APP API v{APPLICATION_INTERFACE_VERSION}",
+        style="SidebarCaption.TLabel",
+    ).pack(anchor="w", padx=4, pady=(2, 18))
+
+    content = ttk.Frame(body, padding=(12, 10, 12, 6))
+    content.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+    notebook = ttk.Notebook(content, style="Workspace.TNotebook")
+    notebook.pack(fill=tk.BOTH, expand=True)
+
+    overview_tab = ttk.Frame(notebook, padding=12)
     project_tab = ttk.Frame(notebook, padding=12)
     basis_tab = ttk.Frame(notebook, padding=12)
     load_cases_tab = ttk.Frame(notebook, padding=12)
@@ -78,21 +145,75 @@ def main() -> int:
     analysis_tab = ttk.Frame(notebook, padding=12)
     design_tab = ttk.Frame(notebook, padding=12)
     local_tab = ttk.Frame(notebook, padding=12)
+    calculations_tab = ttk.Frame(notebook, padding=12)
     verification_tab = ttk.Frame(notebook, padding=12)
     research_tab = ttk.Frame(notebook, padding=12)
 
-    notebook.add(project_tab, text="Project")
-    notebook.add(basis_tab, text="Design basis")
-    notebook.add(load_cases_tab, text="Load cases & combinations")
-    notebook.add(actions_tab, text="Additional actions")
-    notebook.add(analysis_tab, text="Analysis")
-    notebook.add(design_tab, text="Design & checks")
-    notebook.add(local_tab, text="Deck & fatigue")
-    notebook.add(verification_tab, text="Verification")
-    notebook.add(research_tab, text="Research")
+    workspace_pages = (
+        ("overview", "Overview", overview_tab, "WORKSPACE"),
+        ("project", "Project", project_tab, "SETUP"),
+        ("basis", "Design basis", basis_tab, "SETUP"),
+        ("loads", "Loads & combinations", load_cases_tab, "SETUP"),
+        ("actions", "Additional actions", actions_tab, "ANALYSIS"),
+        ("analysis", "Traffic analysis", analysis_tab, "ANALYSIS"),
+        ("design", "Design & checks", design_tab, "DESIGN"),
+        ("deck", "Deck & fatigue", local_tab, "DESIGN"),
+        ("calculations", "Calculations", calculations_tab, "REVIEW"),
+        ("verification", "Verification", verification_tab, "REVIEW"),
+        ("research", "Research", research_tab, "RESEARCH"),
+    )
+    for _, title, frame, _ in workspace_pages:
+        notebook.add(frame, text=title)
 
-    footer = ttk.Frame(root, padding=(10, 4, 10, 8))
+    nav_buttons: dict[str, ttk.Button] = {}
+    page_titles = {str(frame): title for _, title, frame, _ in workspace_pages}
+    page_keys = {str(frame): key for key, _, frame, _ in workspace_pages}
+    current_section: str | None = None
+    for key, title, frame, section in workspace_pages:
+        if section != current_section:
+            ttk.Label(
+                sidebar,
+                text=section,
+                style="SidebarSection.TLabel",
+            ).pack(anchor="w", padx=6, pady=((8 if current_section else 0), 4))
+            current_section = section
+        button = ttk.Button(
+            sidebar,
+            text=title,
+            style="Nav.TButton",
+            command=lambda target=frame: notebook.select(target),
+        )
+        button.pack(fill=tk.X, pady=1)
+        nav_buttons[key] = button
+
+    ttk.Label(
+        sidebar,
+        text=(
+            "Deterministic bridge analysis,\n"
+            "design, verification & research"
+        ),
+        style="SidebarCaption.TLabel",
+        justify=tk.LEFT,
+    ).pack(side=tk.BOTTOM, anchor="w", padx=6, pady=(16, 2))
+
+    def sync_workspace_navigation(_event=None) -> None:
+        selected = notebook.select()
+        workspace_title_var.set(page_titles.get(selected, "RC Bridge Studio"))
+        active_key = page_keys.get(selected)
+        for key, button in nav_buttons.items():
+            button.configure(
+                style="NavActive.TButton" if key == active_key else "Nav.TButton"
+            )
+
+    notebook.bind("<<NotebookTabChanged>>", sync_workspace_navigation)
+
+    footer = ttk.Frame(root, style="Status.TFrame", padding=(14, 7, 14, 8))
     footer.pack(fill=tk.X)
+    ttk.Label(
+        footer,
+        textvariable=status_var,
+        style="SurfaceMuted.TLabel",
+    ).pack(side=tk.LEFT)
     progress = ttk.Progressbar(
         footer,
         mode="determinate",
@@ -103,10 +224,13 @@ def main() -> int:
     full_run_button = ttk.Button(
         footer,
         text="Run Full Analysis & Design",
+        style="Primary.TButton",
     )
     full_run_button.pack(side=tk.RIGHT, padx=(0, 10))
     analysis_buttons.append(full_run_button)
-    ttk.Label(footer, textvariable=status_var).pack(side=tk.LEFT)
+
+    notebook.select(overview_tab)
+    sync_workspace_navigation()
 
     def add_entry(
         parent,
