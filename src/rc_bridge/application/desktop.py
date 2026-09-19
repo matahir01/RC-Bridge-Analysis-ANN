@@ -85,7 +85,7 @@ def main() -> int:
     ttk.Label(
         header_text,
         textvariable=workspace_title_var,
-        style="HeaderTitle.TLabel",
+        style="PageTitle.TLabel",
     ).pack(anchor="w")
     ttk.Label(
         header_text,
@@ -456,7 +456,7 @@ def main() -> int:
     ttk.Label(
         calculation_heading,
         text="Worked calculation review",
-        style="HeaderTitle.TLabel",
+        style="PageTitle.TLabel",
     ).pack(side=tk.LEFT)
     calculation_refresh_button = ttk.Button(
         calculation_heading,
