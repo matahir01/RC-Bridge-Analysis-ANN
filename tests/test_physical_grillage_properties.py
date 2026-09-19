@@ -2,6 +2,7 @@ import pytest
 
 from rc_bridge.analysis.physical_sections import (
     composite_concrete_layers,
+    composite_section_identity,
     composite_girder_properties,
     deck_construction_girder_properties,
     girder_tributary_slab_widths_m,
@@ -400,3 +401,25 @@ def test_false_slab_construction_stiffness_requires_explicit_project_and_stage_o
     assert result.area_m2 == pytest.approx(precast.area_m2 + 1.70 * 0.075)
     assert result.area_m2 < final.area_m2
     assert "wet in-situ concrete excluded" in result.basis
+
+
+def test_rectangular_precast_girder_is_identified_as_final_composite_t_section() -> None:
+    geometry = BridgeGeometry(
+        girder_spacing_m=1.70,
+        section_type=SectionType.RECTANGULAR,
+        girder_profile=RectangularGirderProfile(width_m=0.40, depth_m=0.95),
+        deck_construction=DeckConstruction(
+            precast_false_slab_depth_m=0.075,
+            in_situ_slab_depth_m=0.175,
+            false_slab_composite_participation=False,
+            in_situ_slab_composite_participation=True,
+        ),
+    )
+
+    identity = composite_section_identity(geometry)
+
+    assert identity.precast_section == "rectangular precast girder"
+    assert identity.final_section.startswith("composite T-section")
+    assert identity.physical_total_depth_m == pytest.approx(1.20)
+    assert identity.participating_deck_depth_m == pytest.approx(0.175)
+    assert identity.representative_slab_width_m == pytest.approx(1.70)
