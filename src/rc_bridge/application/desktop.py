@@ -85,7 +85,7 @@ def main() -> int:
     ttk.Label(
         header_text,
         textvariable=workspace_title_var,
-        style="PageTitle.TLabel",
+        style="HeaderTitle.TLabel",
     ).pack(anchor="w")
     ttk.Label(
         header_text,
@@ -297,7 +297,7 @@ def main() -> int:
     ttk.Label(
         overview_heading,
         text="Project control centre",
-        style="HeaderTitle.TLabel",
+        style="PageTitle.TLabel",
     ).pack(anchor="w")
     ttk.Label(
         overview_heading,
