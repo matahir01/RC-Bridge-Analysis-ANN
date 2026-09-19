@@ -27,6 +27,10 @@ def _session(*, capacities: bool = True) -> BridgeApplicationSession:
         bearing_movement_capacity_mm=(100.0 if capacities else 0.0),
         barrier_transverse_resistance_kn=(150.0 if capacities else 0.0),
         barrier_base_moment_resistance_knm=(100.0 if capacities else 0.0),
+        wind_basic_velocity_m_s=40.0,
+        bearing_transverse_capacity_per_bearing_kn=(
+            100.0 if capacities else 0.0
+        ),
     )
     return BridgeApplicationSession(
         application_default_project(),
@@ -102,6 +106,8 @@ def test_bearing_path_combines_braking_and_thermal_with_explicit_capacities() ->
     assert suite.bearing.persistent_uls_per_bearing_kn > 0.0
     assert suite.bearing.required_movement_mm > 0.0
     assert suite.bearing.force_utilization is not None
+    assert suite.bearing.transverse_utilization is not None
+    assert suite.bearing.persistent_uls_total_transverse_kn > 0.0
     assert suite.bearing.movement_utilization is not None
 
 
@@ -129,5 +135,6 @@ def test_unspecified_bearing_and_barrier_resistances_remain_design_blockers() ->
     assert not suite.complete_for_available_models
     assert "bearing longitudinal resistance not specified" in suite.blockers
     assert "bearing movement capacity not specified" in suite.blockers
+    assert "bearing transverse wind resistance not specified" in suite.blockers
     assert "safety-barrier transverse resistance not specified" in suite.blockers
     assert "safety-barrier base-moment resistance not specified" in suite.blockers
