@@ -2467,6 +2467,33 @@ def main() -> int:
                 "Local barrier anchorage/deck-edge demand; horizontal solver not invented.",
             )
 
+        if result.wind is not None:
+            item = result.wind
+            add(
+                "Wind",
+                "Static transverse resultant",
+                f"{item.transverse_characteristic_force_kn:.1f} kN",
+                item.status,
+            )
+            add(
+                "Wind",
+                "Effective pressure",
+                f"{item.effective_pressure_kn_m2:.3f} kN/m²",
+                (
+                    "Input incomplete: enter project/basic wind speed."
+                    if not item.input_complete
+                    else f"v={item.basic_velocity_m_s:.2f} m/s; projected height "
+                    f"{item.projected_height_m:.3f} m"
+                ),
+            )
+            if abs(item.vertical_characteristic_force_kn) > 1.0e-9:
+                add(
+                    "Wind",
+                    "Vertical resultant",
+                    f"{item.vertical_characteristic_force_kn:.1f} kN",
+                    "Optional vertical coefficient input; review sign/direction for the project.",
+                )
+
         if result.construction is not None:
             for stage in ("precast_girder", "deck_construction", "superimposed"):
                 rows = [
@@ -2488,9 +2515,9 @@ def main() -> int:
 
         unresolved = result.unresolved_inputs
         status_var.set(
-            "Actions 1–6 complete."
+            "Required actions + wind complete."
             if not unresolved
-            else "Actions 1–6 calculated; project inputs remain: "
+            else "Actions + wind calculated; project inputs remain: "
             + ", ".join(unresolved)
         )
         refresh_dashboard()
@@ -2504,7 +2531,9 @@ def main() -> int:
 
         run_actions_button.configure(state=tk.DISABLED)
         started_at = time.monotonic()
-        status_var.set("Running braking, thermal, pedestrian, LM2, barrier and construction actions...")
+        status_var.set(
+            "Running braking, thermal, pedestrian, LM2, barrier, construction and wind actions..."
+        )
 
         def gr2_progress(completed: int, total: int) -> None:
             if total <= 0:
@@ -2557,13 +2586,192 @@ def main() -> int:
                 show_extended_action_result(result)
                 elapsed = time.monotonic() - started_at
                 status_var.set(
-                    f"Actions 1–6 complete in {format_duration(elapsed)}"
+                    f"Actions + wind complete in {format_duration(elapsed)}"
                     + (
                         ""
                         if not result.unresolved_inputs
                         else "; inputs still required: "
                         + ", ".join(result.unresolved_inputs)
                     )
+                )
+
+            root.after(0, complete)
+
+        threading.Thread(target=worker, daemon=True).start()
+
+    def _clear_local_results() -> None:
+        for item in local_result_tree.get_children():
+            local_result_tree.delete(item)
+
+    def show_local_deck_result(result) -> None:
+        _clear_local_results()
+        local_result_tree.insert(
+            "",
+            tk.END,
+            values=(
+                "Local deck",
+                "ULS positive / negative transverse moment",
+                (
+                    f"+{result.uls_positive_moment_knm_per_m:.2f} / "
+                    f"-{result.uls_negative_moment_knm_per_m:.2f} kNm/m"
+                ),
+                result.status,
+            ),
+        )
+        local_result_tree.insert(
+            "",
+            tk.END,
+            values=(
+                "Local deck",
+                "Barrier accidental + / - moment",
+                (
+                    f"+{result.accidental_positive_moment_knm_per_m:.2f} / "
+                    f"-{result.accidental_negative_moment_knm_per_m:.2f} kNm/m"
+                ),
+                "Gk + accidental accompanying vertical wheel local strip response.",
+            ),
+        )
+        for reinforcement in (
+            result.bottom_transverse,
+            result.top_transverse,
+        ):
+            local_result_tree.insert(
+                "",
+                tk.END,
+                values=(
+                    "Local deck reinforcement",
+                    reinforcement.face,
+                    (
+                        f"{reinforcement.arrangement.label}; "
+                        f"As={reinforcement.arrangement.provided_area_mm2_per_m:.0f} mm²/m; "
+                        f"util={reinforcement.utilization:.3f}"
+                    ),
+                    reinforcement.status,
+                ),
+            )
+        status_var.set("Local deck/slab design complete.")
+        refresh_dashboard()
+
+    def run_local_deck_workflow() -> None:
+        try:
+            commit_forms()
+            result = session.run_local_deck_design()
+        except (TypeError, ValueError, RuntimeError) as exc:
+            messagebox.showerror("Local deck design", str(exc))
+            return
+        show_local_deck_result(result)
+
+    def show_fatigue_result(result) -> None:
+        _clear_local_results()
+        local_result_tree.insert(
+            "",
+            tk.END,
+            values=(
+                "FLM3",
+                "Native search",
+                (
+                    f"{len(result.search.cases):,} cases; "
+                    f"{len(result.search.vehicle_centres_y_m)} transverse vehicle line(s)"
+                ),
+                result.status,
+            ),
+        )
+        for row in result.girders:
+            steel = row.fatigue.reinforcement
+            local_result_tree.insert(
+                "",
+                tk.END,
+                values=(
+                    f"Girder {row.girder_index}",
+                    "Longitudinal reinforcement fatigue",
+                    (
+                        f"Δσ={row.reference_steel_stress_range_mpa:.2f} MPa; "
+                        f"util={steel.utilization:.3f}"
+                    ),
+                    "PASS" if steel.passes else "CHECK",
+                ),
+            )
+            if row.fatigue.concrete is not None:
+                concrete = row.fatigue.concrete
+                local_result_tree.insert(
+                    "",
+                    tk.END,
+                    values=(
+                        f"Girder {row.girder_index}",
+                        "Concrete compression fatigue",
+                        f"util={concrete.utilization:.3f}",
+                        "PASS" if concrete.passes else "CHECK",
+                    ),
+                )
+            if row.shear_links is not None:
+                links = row.shear_links.fatigue
+                local_result_tree.insert(
+                    "",
+                    tk.END,
+                    values=(
+                        f"Girder {row.girder_index}",
+                        "Vertical-link fatigue",
+                        (
+                            f"Δσ={row.shear_links.reference_link_stress_range_mpa:.2f} MPa; "
+                            f"util={links.utilization:.3f}"
+                        ),
+                        "PASS" if links.passes else "CHECK",
+                    ),
+                )
+        if result.blockers:
+            local_result_tree.insert(
+                "",
+                tk.END,
+                values=(
+                    "FLM3",
+                    "Inputs required",
+                    "; ".join(result.blockers),
+                    "Fatigue traffic analysis is complete; resistance acceptance waits for these explicit detail inputs.",
+                ),
+            )
+        status_var.set(
+            "FLM3 fatigue complete."
+            if not result.blockers
+            else "FLM3 analysis complete; fatigue resistance inputs remain."
+        )
+        refresh_dashboard()
+
+    def run_fatigue_workflow() -> None:
+        try:
+            commit_forms()
+        except (TypeError, ValueError) as exc:
+            messagebox.showerror("FLM3 fatigue", str(exc))
+            return
+        if session.last_design_interpretation is None:
+            messagebox.showinfo(
+                "FLM3 fatigue",
+                "Run the integrated Design & checks workflow first so the selected "
+                "reinforcement cage is available.",
+            )
+            return
+        run_fatigue_button.configure(state=tk.DISABLED)
+        status_var.set("Running native FLM3 fatigue...")
+        started_at = time.monotonic()
+
+        def worker() -> None:
+            try:
+                result = session.run_fatigue()
+            except (OSError, TypeError, ValueError, RuntimeError) as exc:
+                message = str(exc)
+
+                def failed() -> None:
+                    run_fatigue_button.configure(state=tk.NORMAL)
+                    status_var.set("FLM3 fatigue failed.")
+                    messagebox.showerror("FLM3 fatigue", message)
+
+                root.after(0, failed)
+                return
+
+            def complete() -> None:
+                run_fatigue_button.configure(state=tk.NORMAL)
+                show_fatigue_result(result)
+                status_var.set(
+                    f"FLM3 fatigue finished in {format_duration(time.monotonic() - started_at)}"
                 )
 
             root.after(0, complete)
@@ -2629,13 +2837,23 @@ def main() -> int:
                     "Bearing ULS longitudinal="
                     f"{bearing.persistent_uls_total_longitudinal_kn:.1f} kN "
                     f"({bearing.persistent_uls_per_bearing_kn:.1f} kN/bearing); "
-                    f"movement={bearing.required_movement_mm:.1f} mm"
+                    f"movement={bearing.required_movement_mm:.1f} mm; "
+                    f"wind transverse={bearing.persistent_uls_total_transverse_kn:.1f} kN "
+                    f"({bearing.persistent_uls_transverse_per_bearing_kn:.1f} kN/bearing)"
                 )
             if barrier is not None:
                 extras.append(
                     "Barrier accidental demand="
                     f"{barrier.transverse_accidental_demand_kn:.1f} kN, "
                     f"{barrier.base_moment_accidental_demand_knm:.1f} kNm"
+                )
+            local_deck = result.action_combinations.local_deck
+            if local_deck is not None:
+                extras.append(
+                    "Local deck="
+                    f"{local_deck.bottom_transverse.arrangement.label} bottom / "
+                    f"{local_deck.top_transverse.arrangement.label} top; "
+                    f"max util={max(local_deck.bottom_transverse.utilization, local_deck.top_transverse.utilization):.3f}"
                 )
             if extras:
                 summary += "\n" + " | ".join(extras)
@@ -2666,7 +2884,7 @@ def main() -> int:
             messagebox.showinfo(
                 "Design interpretation",
                 "Project or analysis settings changed. Run native LM1 and then "
-                "Additional actions 1–6 again before design.",
+                "required additional actions + wind again before design.",
             )
             return
         try:
@@ -3099,6 +3317,8 @@ def main() -> int:
     run_button.configure(command=run_analysis)
     run_actions_button.configure(command=run_extended_action_suite)
     run_design_button.configure(command=run_design_interpretation)
+    run_local_deck_button.configure(command=run_local_deck_workflow)
+    run_fatigue_button.configure(command=run_fatigue_workflow)
     cancel_button.configure(command=cancel_analysis)
     refresh_dashboard_button.configure(command=refresh_dashboard)
     html_button.configure(command=save_html_report)
@@ -3125,6 +3345,14 @@ def main() -> int:
     design_menu.add_command(
         label="Run design interpretation",
         command=run_design_interpretation,
+    )
+    design_menu.add_command(
+        label="Run local deck design",
+        command=run_local_deck_workflow,
+    )
+    design_menu.add_command(
+        label="Run FLM3 fatigue",
+        command=run_fatigue_workflow,
     )
     menu.add_cascade(label="Design", menu=design_menu)
 
