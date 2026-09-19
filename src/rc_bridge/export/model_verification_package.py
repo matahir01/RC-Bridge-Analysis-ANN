@@ -7,7 +7,7 @@ import re
 from dataclasses import dataclass
 from io import StringIO
 
-from rc_bridge.export.midas_mct import export_midas_mct
+from rc_bridge.export.midas_mct import export_midas_mct, midas_result_name_map
 from rc_bridge.export.staad_std import export_staad_std
 from rc_bridge.export.verification_model import VerificationModel
 
@@ -292,6 +292,7 @@ def build_model_verification_export_package(
     model.validate_load_positions()
     midas = export_midas_mct(model)
     staad = export_staad_std(model)
+    midas_names = midas_result_name_map(model)
     loads = _exported_loads_csv(model)
     requests = _result_requests_csv(model)
     external_template = _external_results_template_csv(model)
@@ -321,6 +322,44 @@ def build_model_verification_export_package(
             }
             for combination in model.load_combinations
         ],
+        "external_result_identity": {
+            "staad": [
+                {
+                    "result_id": case.load_case_id,
+                    "kind": "load_case",
+                    "name": case.name,
+                }
+                for case in model.load_cases
+            ]
+            + [
+                {
+                    "result_id": combination.combination_id,
+                    "kind": "combination",
+                    "name": combination.name,
+                }
+                for combination in model.load_combinations
+            ],
+            "midas": [
+                {
+                    "result_id": case.load_case_id,
+                    "kind": "load_case",
+                    "export_name": midas_names[("case", case.load_case_id)],
+                    "source_name": case.name,
+                }
+                for case in model.load_cases
+            ]
+            + [
+                {
+                    "result_id": combination.combination_id,
+                    "kind": "combination",
+                    "export_name": midas_names[
+                        ("combination", combination.combination_id)
+                    ],
+                    "source_name": combination.name,
+                }
+                for combination in model.load_combinations
+            ],
+        },
         "metadata": model.metadata,
         "files": {
             "midas_mct": {"sha256": _sha256(midas), "extension": ".mct"},
