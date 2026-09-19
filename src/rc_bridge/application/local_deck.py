@@ -11,6 +11,7 @@ from rc_bridge.core.models import PermanentLineActionCategory, ProjectInput
 from rc_bridge.design.eurocode_demand import required_tension_steel_rectangular
 from rc_bridge.design.eurocode_detailing import minimum_tension_reinforcement_mm2
 from rc_bridge.design.eurocode_flexure import rectangular_singly_reinforced_resistance
+from rc_bridge.design.eurocode_shear import concrete_shear_resistance
 
 
 @dataclass(frozen=True)
@@ -72,9 +73,11 @@ class SlabBarArrangement:
 class LocalDeckResponse:
     stations_y_m: tuple[float, ...]
     moments_knm_per_m: tuple[float, ...]
+    shears_kn_per_m: tuple[float, ...]
     maximum_positive_knm_per_m: float
     maximum_negative_knm_per_m: float
     maximum_abs_knm_per_m: float
+    maximum_abs_shear_kn_per_m: float
 
 
 @dataclass(frozen=True)
@@ -85,7 +88,20 @@ class LocalDeckReinforcementResult:
     minimum_area_mm2_per_m: float
     governing_area_mm2_per_m: float
     arrangement: SlabBarArrangement
+    effective_depth_m: float
     resistance_knm_per_m: float
+    utilization: float
+    status: str
+
+    @property
+    def passes(self) -> bool:
+        return self.utilization <= 1.0 + 1.0e-9
+
+
+@dataclass(frozen=True)
+class LocalDeckShearResult:
+    design_shear_kn_per_m: float
+    concrete_resistance_kn_per_m: float
     utilization: float
     status: str
 
@@ -108,11 +124,16 @@ class LocalDeckDesignResult:
     accidental_negative_moment_knm_per_m: float
     bottom_transverse: LocalDeckReinforcementResult
     top_transverse: LocalDeckReinforcementResult
+    one_way_shear: LocalDeckShearResult
     status: str
 
     @property
     def passes(self) -> bool:
-        return self.bottom_transverse.passes and self.top_transverse.passes
+        return (
+            self.bottom_transverse.passes
+            and self.top_transverse.passes
+            and self.one_way_shear.passes
+        )
 
 
 @dataclass(frozen=True)
@@ -317,6 +338,7 @@ def _solve_continuous_strip(
 def _response(solution: _BeamSolution) -> LocalDeckResponse:
     positions: list[float] = []
     moments: list[float] = []
+    shears: list[float] = []
     for element, end in zip(
         solution.elements,
         solution.element_end_forces,
@@ -336,17 +358,21 @@ def _response(solution: _BeamSolution) -> LocalDeckResponse:
                 + v_left * x
                 - 0.5 * element.udl_kn_m * x**2
             )
+            shears.append(v_left - element.udl_kn_m * x)
     last = solution.elements[-1]
     positions.append(solution.coordinates_m[-1])
     moments.append(-float(solution.element_end_forces[-1][3]))
+    shears.append(-float(solution.element_end_forces[-1][2]))
     maximum_positive = max(max(moments), 0.0)
     maximum_negative = min(min(moments), 0.0)
     return LocalDeckResponse(
         stations_y_m=tuple(positions),
         moments_knm_per_m=tuple(moments),
+        shears_kn_per_m=tuple(shears),
         maximum_positive_knm_per_m=maximum_positive,
         maximum_negative_knm_per_m=maximum_negative,
         maximum_abs_knm_per_m=max(abs(value) for value in moments),
+        maximum_abs_shear_kn_per_m=max(abs(value) for value in shears),
     )
 
 
@@ -390,7 +416,11 @@ def _reinforcement_design(
     settings: LocalDeckSettings,
     cover_mm: float,
 ) -> LocalDeckReinforcementResult:
-    depth = float(project.geometry.physical_deck_depth_m)
+    depth = float(project.geometry.composite_flange_depth_m)
+    if depth <= 0.0:
+        raise ValueError(
+            "Local deck design requires at least one structurally participating deck layer."
+        )
     diameter = settings.nominal_bar_diameter_mm
     effective_depth = depth - (cover_mm + diameter / 2.0) / 1000.0
     if effective_depth <= 0.0:
@@ -411,6 +441,30 @@ def _reinforcement_design(
     )
     governing = max(required, minimum)
     arrangement = _select_slab_bars(governing, settings)
+    for _ in range(3):
+        effective_depth = depth - (
+            cover_mm + arrangement.bar_diameter_mm / 2.0
+        ) / 1000.0
+        if effective_depth <= 0.0:
+            raise ValueError("Selected slab bar leaves no positive effective depth.")
+        required = required_tension_steel_rectangular(
+            med_knm=max(design_moment_knm_per_m, 0.0),
+            width_m=1.0,
+            effective_depth_m=effective_depth,
+            fck_mpa=float(project.materials.fck_mpa),
+            fyk_mpa=float(project.materials.fyk_mpa),
+        )
+        minimum, _ = minimum_tension_reinforcement_mm2(
+            fctm_mpa=concrete.fctm_mpa,
+            fyk_mpa=float(project.materials.fyk_mpa),
+            tension_zone_width_m=1.0,
+            effective_depth_m=effective_depth,
+        )
+        governing = max(required, minimum)
+        refined = _select_slab_bars(governing, settings)
+        if refined == arrangement:
+            break
+        arrangement = refined
     resistance = rectangular_singly_reinforced_resistance(
         width_m=1.0,
         effective_depth_m=effective_depth,
@@ -430,6 +484,7 @@ def _reinforcement_design(
         minimum_area_mm2_per_m=minimum,
         governing_area_mm2_per_m=governing,
         arrangement=arrangement,
+        effective_depth_m=effective_depth,
         resistance_knm_per_m=resistance.resistance_knm,
         utilization=utilization,
         status=(
@@ -512,7 +567,7 @@ def _combine_responses(
     *,
     gamma_g: float,
     gamma_q: float,
-) -> tuple[float, float]:
+) -> tuple[float, float, float]:
     if permanent.stations_y_m != variable.stations_y_m:
         raise ValueError("Local deck responses must share an identical master mesh.")
     combined = tuple(
@@ -523,7 +578,19 @@ def _combine_responses(
             strict=True,
         )
     )
-    return max(max(combined), 0.0), abs(min(min(combined), 0.0))
+    combined_shear = tuple(
+        gamma_g * g + gamma_q * q
+        for g, q in zip(
+            permanent.shears_kn_per_m,
+            variable.shears_kn_per_m,
+            strict=True,
+        )
+    )
+    return (
+        max(max(combined), 0.0),
+        abs(min(min(combined), 0.0)),
+        max(abs(value) for value in combined_shear),
+    )
 
 
 def run_local_deck_design(
@@ -589,7 +656,11 @@ def run_local_deck_design(
         else secant_elastic_modulus_mpa(float(project.materials.fck_mpa))
     )
     e_kn_m2 = e_mpa * 1000.0
-    slab_depth = float(project.geometry.physical_deck_depth_m)
+    slab_depth = float(project.geometry.composite_flange_depth_m)
+    if slab_depth <= 0.0:
+        raise ValueError(
+            "Local deck strip requires a structurally participating deck layer."
+        )
     inertia_per_m = slab_depth**3 / 12.0
 
     permanent_solution = _solve_continuous_strip(
@@ -609,6 +680,7 @@ def run_local_deck_design(
     best_metric = -1.0
     uls_positive = 0.0
     uls_negative = 0.0
+    uls_shear = 0.0
     case_count = 0
     for axle_centre in sorted(set(centres)):
         patches = []
@@ -634,7 +706,7 @@ def run_local_deck_design(
             best_metric = metric
             lm2_best = response
             lm2_best_centre = axle_centre
-        positive, negative = _combine_responses(
+        positive, negative, shear = _combine_responses(
             permanent,
             response,
             gamma_g=gamma_g,
@@ -642,14 +714,16 @@ def run_local_deck_design(
         )
         uls_positive = max(uls_positive, positive)
         uls_negative = max(uls_negative, negative)
+        uls_shear = max(uls_shear, shear)
 
     barrier_results: list[LocalDeckResponse] = []
     accidental_positive = 0.0
     accidental_negative = 0.0
+    accidental_shear = 0.0
     if actions_result.barrier_impact is not None:
         barrier_wheel = actions_result.barrier_impact.accompanying_vertical_wheel_load_kn
         barrier_pressure = barrier_wheel / (patch_x * patch_y)
-        for side, centre in zip(("left", "right"), barrier_centres, strict=True):
+        for side, _centre in zip(("left", "right"), barrier_centres, strict=True):
             y_start = (
                 -half_deck
                 if side == "left"
@@ -674,7 +748,7 @@ def run_local_deck_design(
             barrier_results.append(response)
             # Accidental local design: Gk + Ad, with the accidental vertical wheel
             # retained at its characteristic reference value.
-            positive, negative = _combine_responses(
+            positive, negative, shear = _combine_responses(
                 permanent,
                 response,
                 gamma_g=1.0,
@@ -682,6 +756,7 @@ def run_local_deck_design(
             )
             accidental_positive = max(accidental_positive, positive)
             accidental_negative = max(accidental_negative, negative)
+            accidental_shear = max(accidental_shear, shear)
 
     design_positive = max(uls_positive, accidental_positive)
     design_negative = max(uls_negative, accidental_negative)
@@ -699,6 +774,37 @@ def run_local_deck_design(
         settings=settings,
         cover_mm=cover_mm,
     )
+    design_shear = max(uls_shear, accidental_shear)
+    controlling_area = min(
+        bottom.arrangement.provided_area_mm2_per_m,
+        top.arrangement.provided_area_mm2_per_m,
+    )
+    controlling_depth = min(
+        bottom.effective_depth_m,
+        top.effective_depth_m,
+    )
+    shear_resistance = concrete_shear_resistance(
+        web_width_m=1.0,
+        effective_depth_m=controlling_depth,
+        longitudinal_steel_area_mm2=controlling_area,
+        fck_mpa=float(project.materials.fck_mpa),
+    )
+    shear_utilization = (
+        design_shear / shear_resistance.vrdc_kn
+        if shear_resistance.vrdc_kn > 0.0
+        else float("inf")
+    )
+    one_way_shear = LocalDeckShearResult(
+        design_shear_kn_per_m=design_shear,
+        concrete_resistance_kn_per_m=shear_resistance.vrdc_kn,
+        utilization=shear_utilization,
+        status=(
+            "EC2 one-way local slab shear check on a one-metre transverse strip "
+            "using the lesser provided transverse reinforcement ratio. Punching around "
+            "a concentrated support/load is not substituted for this strip-shear check."
+        ),
+    )
+
     return LocalDeckDesignResult(
         permanent=permanent,
         lm2_governing=lm2_best,
@@ -712,11 +818,14 @@ def run_local_deck_design(
         accidental_negative_moment_knm_per_m=accidental_negative,
         bottom_transverse=bottom,
         top_transverse=top,
+        one_way_shear=one_way_shear,
         status=(
             "Native continuous transverse deck-slab strip over the actual girder lines, "
             "including edge cantilevers, permanent pressure/line actions, dispersed LM2 "
-            "wheel patches and the barrier-impact accompanying vertical wheel. This closes "
-            "the current longitudinal-girder bridge local deck flexure blocker; a two-way "
+            "wheel patches and the barrier-impact accompanying vertical wheel, including "
+            "one-way strip shear. Nonparticipating false-slab concrete remains weight-only "
+            "in resistance/stiffness. This closes the current longitudinal-girder bridge "
+            "local deck flexure/shear blocker; a two-way "
             "plate FE model remains an optional higher-fidelity verification, not a hidden "
             "substitute for this documented strip assumption."
         ),
