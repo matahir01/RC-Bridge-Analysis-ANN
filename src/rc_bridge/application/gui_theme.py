@@ -31,10 +31,8 @@ def configure_desktop_theme(root, ttk) -> DesktopPalette:
 
     palette = PALETTE
     style = ttk.Style(root)
-    try:
+    if "clam" in style.theme_names():
         style.theme_use("clam")
-    except Exception:
-        pass
 
     root.configure(background=palette.canvas)
 
