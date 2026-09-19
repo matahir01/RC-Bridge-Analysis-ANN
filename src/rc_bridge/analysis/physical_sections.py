@@ -34,6 +34,40 @@ class PhysicalSectionProperties:
 
 
 @dataclass(frozen=True)
+class CompositeSectionDescription:
+    """Human-readable structural interpretation of the final composite girder.
+
+    The physical precast profile remains unchanged for construction-stage checks.
+    This description identifies the final composite form created when participating
+    deck concrete acts with that precast profile.
+    """
+
+    precast_section_type: str
+    final_section_form: str
+    flange_width_m: float
+    participating_flange_depth_m: float
+    web_width_m: float
+    precast_depth_m: float
+    physical_deck_depth_m: float
+    overall_depth_m: float
+    slab_width_basis: str
+    false_slab_weight_only: bool
+
+    def __post_init__(self) -> None:
+        if min(
+            self.flange_width_m,
+            self.participating_flange_depth_m,
+            self.web_width_m,
+            self.precast_depth_m,
+            self.physical_deck_depth_m,
+            self.overall_depth_m,
+        ) <= 0.0:
+            raise ValueError("Composite section dimensions must be positive.")
+        if not self.final_section_form.strip() or not self.slab_width_basis.strip():
+            raise ValueError("Composite section description text cannot be empty.")
+
+
+@dataclass(frozen=True)
 class ConcreteSectionLayer:
     """One non-overlapping concrete width band in a longitudinal section."""
 
@@ -309,6 +343,67 @@ def composite_concrete_layers(
     return tuple(layers)
 
 
+def composite_section_description(
+    geometry: BridgeGeometry,
+    *,
+    slab_width_m: float | None = None,
+    slab_width_basis: str | None = None,
+) -> CompositeSectionDescription:
+    """Describe the final composite section without changing the precast profile.
+
+    A rectangular precast girder with a participating deck flange is classified
+    as a composite T-section. Construction-stage analysis continues to use the
+    original rectangular precast section until the deck is structurally active.
+    """
+    profile = geometry.girder_profile
+    if profile is None:
+        raise ValueError(
+            "Composite section description requires a complete physical girder profile."
+        )
+    width = (
+        float(geometry.deck_width_m) / int(geometry.girder_count)
+        if slab_width_m is None
+        else float(slab_width_m)
+    )
+    if width <= 0.0:
+        raise ValueError("Composite flange width must be positive.")
+    flange_depth = float(geometry.composite_flange_depth_m)
+    if flange_depth <= 0.0:
+        raise ValueError("Composite section description requires participating deck concrete.")
+
+    if isinstance(profile, RectangularGirderProfile):
+        final_form = "T"
+        web_width = float(profile.width_m)
+    elif isinstance(profile, TGirderProfile):
+        final_form = "deck-flanged T"
+        web_width = float(profile.web_width_m)
+    elif isinstance(profile, IGirderProfile):
+        final_form = "deck-flanged I"
+        web_width = float(profile.web_width_m)
+    else:
+        raise TypeError("Unsupported physical girder profile.")
+
+    source = (
+        "mean deck width/girder"
+        if slab_width_m is None
+        else slab_width_basis or "expert slab-width override"
+    )
+    return CompositeSectionDescription(
+        precast_section_type=profile.section_type.value,
+        final_section_form=final_form,
+        flange_width_m=width,
+        participating_flange_depth_m=flange_depth,
+        web_width_m=web_width,
+        precast_depth_m=float(profile.total_depth_m),
+        physical_deck_depth_m=float(geometry.physical_deck_depth_m),
+        overall_depth_m=float(geometry.physical_deck_depth_m + profile.total_depth_m),
+        slab_width_basis=source,
+        false_slab_weight_only=(
+            not geometry.deck_construction.false_slab_composite_participation
+        ),
+    )
+
+
 def composite_girder_properties(
     geometry: BridgeGeometry,
     *,
@@ -339,17 +434,18 @@ def composite_girder_properties(
         )
         for layer in layers
     )
-    source = (
-        "mean deck width/girder"
-        if slab_width_m is None
-        else slab_width_basis or "expert slab-width override"
+    description = composite_section_description(
+        geometry,
+        slab_width_m=width,
+        slab_width_basis=slab_width_basis,
     )
     return _properties_from_rectangles(
         rectangles,
         basis=(
-            f"gross composite {profile.section_type.value} girder; {source}; "
-            "participating deck layers positioned by physical construction order; "
-            "rectangle-component Saint-Venant J approximation"
+            f"gross composite {description.final_section_form}-section formed from "
+            f"{description.precast_section_type} precast girder + participating deck flange; "
+            f"{description.slab_width_basis}; participating deck layers positioned by "
+            "physical construction order; rectangle-component Saint-Venant J approximation"
         ),
     )
 
