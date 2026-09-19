@@ -72,11 +72,13 @@ def test_staad_export_contains_complete_analysis_skeleton() -> None:
     text = export_staad_std(model)
 
     assert "STAAD SPACE" in text
+    assert "SET Z UP" in text
     assert "UNIT METER KNS" in text
     assert "JOINT COORDINATES" in text
     assert "MEMBER INCIDENCES" in text
     assert "MEMBER PROPERTY" in text
     assert "DEFINE MATERIAL START" in text
+    assert "MATERIAL VerificationConcrete MEMB 1 2" in text
     assert "SUPPORTS" in text
     assert "1 FIXED BUT FY MX MY MZ" not in text
     assert "1 FIXED BUT MY MZ" in text
