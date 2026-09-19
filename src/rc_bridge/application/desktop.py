@@ -2179,15 +2179,7 @@ def main() -> int:
     # ------------------------------------------------------------------
     # Verification tab
     # ------------------------------------------------------------------
-    verification_text = tk.Text(
-        verification_tab,
-        height=9,
-        wrap="word",
-        state=tk.DISABLED,
-    )
-    verification_text.pack(fill=tk.X)
-
-    verification_buttons = ttk.Frame(verification_tab, padding=(0, 12, 0, 0))
+    verification_buttons = ttk.Frame(verification_tab, padding=(0, 0, 0, 6))
     verification_buttons.pack(fill=tk.X)
     html_button = ttk.Button(verification_buttons, text="Save HTML report")
     html_button.pack(side=tk.LEFT, padx=(0, 6))
@@ -2197,23 +2189,24 @@ def main() -> int:
     print_button.pack(side=tk.LEFT, padx=6)
     export_button = ttk.Button(
         verification_buttons,
-        text="Export full MIDAS / STAAD campaign",
+        text="Export MIDAS / STAAD campaign",
+        style="Primary.TButton",
     )
-    export_button.pack(side=tk.LEFT, padx=6)
+    export_button.pack(side=tk.LEFT, padx=(12, 6))
 
     verification_import_buttons = ttk.Frame(
         verification_tab,
-        padding=(0, 8, 0, 0),
+        padding=(0, 0, 0, 8),
     )
     verification_import_buttons.pack(fill=tk.X)
     import_staad_button = ttk.Button(
         verification_import_buttons,
-        text="Import STAAD .ANL results",
+        text="Import STAAD .ANL",
     )
     import_staad_button.pack(side=tk.LEFT, padx=(0, 6))
     import_midas_button = ttk.Button(
         verification_import_buttons,
-        text="Import MIDAS result tables",
+        text="Import MIDAS tables",
     )
     import_midas_button.pack(side=tk.LEFT, padx=6)
     save_verification_evidence_button = ttk.Button(
@@ -2233,8 +2226,17 @@ def main() -> int:
         )
     )
 
-    verification_dashboard_frame = ttk.Frame(verification_tab)
-    verification_dashboard_frame.pack(fill=tk.X, pady=(10, 0))
+    verification_views = ttk.Notebook(verification_tab)
+    verification_views.pack(fill=tk.BOTH, expand=True)
+    verification_results_page = ttk.Frame(verification_views, padding=8)
+    verification_models_page = ttk.Frame(verification_views, padding=8)
+    verification_scope_page = ttk.Frame(verification_views, padding=8)
+    verification_views.add(verification_results_page, text="External comparison")
+    verification_views.add(verification_models_page, text="Exported cases")
+    verification_views.add(verification_scope_page, text="Acceptance scope")
+
+    verification_dashboard_frame = ttk.Frame(verification_results_page)
+    verification_dashboard_frame.pack(fill=tk.X, pady=(0, 6))
     verification_status_metric_var = tk.StringVar(value="NOT IMPORTED")
     verification_coverage_metric_var = tk.StringVar(value="—")
     verification_error_metric_var = tk.StringVar(value="—")
@@ -2261,42 +2263,55 @@ def main() -> int:
         ttk.Label(card, textvariable=variable, style="CardTitle.TLabel").pack(anchor="w")
 
     verification_error_canvas = tk.Canvas(
-        verification_tab,
-        height=180,
+        verification_results_page,
+        height=165,
         background="#FFFFFF",
         highlightthickness=0,
     )
-    verification_error_canvas.pack(fill=tk.X, pady=(8, 0))
-
-    package_tree = ttk.Treeview(
-        verification_tab,
-        columns=("case", "purpose"),
-        show="headings",
-        height=10,
-    )
-    package_tree.heading("case", text="Governing case")
-    package_tree.heading("purpose", text="Verification purpose")
-    package_tree.column("case", width=150, anchor=tk.CENTER)
-    package_tree.column("purpose", width=850, anchor=tk.W)
-    package_tree.pack(fill=tk.BOTH, expand=True, pady=(12, 0))
+    verification_error_canvas.pack(fill=tk.X, pady=(4, 8))
 
     verification_result_tree = ttk.Treeview(
-        verification_tab,
+        verification_results_page,
         columns=("result", "kind", "status", "max_error", "source"),
         show="headings",
-        height=8,
+        height=9,
     )
     verification_result_tree.heading("result", text="Imported result")
     verification_result_tree.heading("kind", text="Type")
     verification_result_tree.heading("status", text="Comparison")
     verification_result_tree.heading("max_error", text="Max rel. error")
     verification_result_tree.heading("source", text="Source")
-    verification_result_tree.column("result", width=360, anchor=tk.W)
+    verification_result_tree.column("result", width=390, anchor=tk.W)
     verification_result_tree.column("kind", width=120, anchor=tk.CENTER)
     verification_result_tree.column("status", width=120, anchor=tk.CENTER)
     verification_result_tree.column("max_error", width=130, anchor=tk.CENTER)
     verification_result_tree.column("source", width=160, anchor=tk.W)
-    verification_result_tree.pack(fill=tk.BOTH, expand=True, pady=(8, 0))
+    verification_result_tree.pack(fill=tk.BOTH, expand=True)
+
+    package_tree = ttk.Treeview(
+        verification_models_page,
+        columns=("case", "purpose"),
+        show="headings",
+        height=14,
+    )
+    package_tree.heading("case", text="Governing case")
+    package_tree.heading("purpose", text="Verification purpose")
+    package_tree.column("case", width=150, anchor=tk.CENTER)
+    package_tree.column("purpose", width=900, anchor=tk.W)
+    package_tree.pack(fill=tk.BOTH, expand=True)
+
+    verification_text = tk.Text(
+        verification_scope_page,
+        wrap="word",
+        state=tk.DISABLED,
+        relief="flat",
+        padx=16,
+        pady=14,
+        background="#FFFFFF",
+        foreground="#172033",
+        font=("Segoe UI", 10),
+    )
+    verification_text.pack(fill=tk.BOTH, expand=True)
 
     # ------------------------------------------------------------------
     # Research tab
