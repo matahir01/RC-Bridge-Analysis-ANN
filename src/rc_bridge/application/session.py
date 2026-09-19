@@ -83,6 +83,8 @@ class BridgeApplicationSession:
         self.last_lm1_search = None
 
     def set_preferences(self, preferences: ApplicationPreferences) -> None:
+        if preferences.analysis != self.preferences.analysis:
+            self.last_lm1_search = None
         self.preferences = preferences
 
     def dashboard(self) -> ApplicationDashboard:
