@@ -72,6 +72,22 @@ def build_application_dashboard(
     if eurocode:
         capabilities.append(
             ApplicationCapability(
+                name="Permanent actions and EN 1990 combination interpretation",
+                state=(
+                    CapabilityState.READY
+                    if has_native_lm1_analysis
+                    else CapabilityState.REQUIRES_ANALYSIS
+                ),
+                detail=(
+                    "Physical girder/deck self-weight, editable surfacing/barrier/services "
+                    "actions and simple-span Gk + native-LM1 Qk ULS/SLS interpretation are "
+                    "available. Wind, thermal, braking, LM2 and pedestrian actions remain "
+                    "explicitly not wired rather than silently omitted."
+                ),
+            )
+        )
+        capabilities.append(
+            ApplicationCapability(
                 name="Native EN 1991-2 LM1 full-width traffic analysis",
                 state=(
                     CapabilityState.READY
