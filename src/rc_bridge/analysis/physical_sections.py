@@ -228,6 +228,19 @@ def _properties_from_rectangles(
     )
 
 
+def precast_concrete_layers(
+    geometry: BridgeGeometry,
+) -> tuple[ConcreteSectionLayer, ...]:
+    """Return the physical precast-girder concrete layers from its own top face."""
+
+    profile = geometry.girder_profile
+    if profile is None:
+        raise ValueError(
+            "Precast concrete layers require a complete physical girder profile."
+        )
+    return _girder_layers(profile, top_m=0.0)
+
+
 def precast_girder_properties(geometry: BridgeGeometry) -> PhysicalSectionProperties:
     """Return gross elastic properties of the precast girder alone."""
     profile = geometry.girder_profile
