@@ -134,6 +134,12 @@ class BridgeApplicationSession:
             self.project,
             has_native_lm1_analysis=self.last_lm1_search is not None,
             has_extended_actions=self.last_extended_actions is not None,
+            has_integrated_design=self.last_design_interpretation is not None,
+            design_blocker_count=(
+                0
+                if self.last_design_interpretation is None
+                else len(self.last_design_interpretation.coverage_blockers)
+            ),
         )
 
     def load_case_fields(self) -> ApplicationLoadCaseFields:
