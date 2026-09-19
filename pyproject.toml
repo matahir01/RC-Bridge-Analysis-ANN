@@ -19,6 +19,9 @@ dev = [
   "pytest>=8.3",
   "ruff>=0.6",
 ]
+packaging = [
+  "pyinstaller>=6.10",
+]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
@@ -29,3 +32,4 @@ line-length = 100
 
 [project.scripts]
 rc-bridge = "rc_bridge.application.cli:main"
+rc-bridge-desktop = "rc_bridge.application.desktop:main"
