@@ -160,6 +160,10 @@ class ApplicationPreferences:
             raise TypeError("application_preferences.local_deck must be an object.")
         if not isinstance(fatigue_payload, dict):
             raise TypeError("application_preferences.fatigue must be an object.")
+        local_deck_data = dict(local_deck_payload)
+        for key in ("available_bar_diameters_mm", "available_spacings_mm"):
+            if key in local_deck_data:
+                local_deck_data[key] = tuple(local_deck_data[key])
         design_data = dict(design_payload)
         design_data["crack_combination"] = SLSCombinationChoice(
             design_data.get(
@@ -179,6 +183,6 @@ class ApplicationPreferences:
             analysis=AnalysisApplicationSettings(**analysis_payload),
             design=ApplicationDesignSettings(**design_data),
             actions=ExtendedActionSettings(**actions_payload),
-            local_deck=LocalDeckSettings(**local_deck_payload),
+            local_deck=LocalDeckSettings(**local_deck_data),
             fatigue=FatigueApplicationSettings(**fatigue_payload),
         )
