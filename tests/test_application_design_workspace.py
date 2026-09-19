@@ -78,7 +78,11 @@ def test_design_interpretation_runs_real_ec2_checks_after_native_lm1() -> None:
     assert result.action_combinations is not None
     assert session.last_action_combinations is result.action_combinations
     assert centre.construction_stage_checks
+    assert all(item.passes for item in centre.construction_stage_checks)
     assert centre.governing_uls_moment_situation
+    assert "LM2 local deck/slab plate resistance check" in " ".join(
+        result.coverage_blockers
+    )
 
     direct = run_application_design_interpretation(
         session.project,
