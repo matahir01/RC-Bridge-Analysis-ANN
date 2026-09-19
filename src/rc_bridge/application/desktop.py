@@ -115,6 +115,30 @@ def main() -> int:
             pady=3,
         )
 
+    def add_entry_at(
+        parent,
+        *,
+        row: int,
+        label: str,
+        key: str,
+        label_column: int,
+        entry_column: int,
+        width: int = 20,
+    ) -> None:
+        ttk.Label(parent, text=label).grid(
+            row=row,
+            column=label_column,
+            sticky="w",
+            padx=(8 if label_column else 0, 8),
+            pady=3,
+        )
+        ttk.Entry(parent, textvariable=svar(key), width=width).grid(
+            row=row,
+            column=entry_column,
+            sticky="ew",
+            pady=3,
+        )
+
     # ------------------------------------------------------------------
     # Project tab
     # ------------------------------------------------------------------
@@ -412,41 +436,53 @@ def main() -> int:
         width=20,
     ).grid(row=2, column=1, sticky="ew", pady=3)
 
-    add_entry(
+    add_entry_at(
         load_input_frame,
         row=0,
         label="Left barrier (kN/m)",
         key="load_left_barrier",
+        label_column=2,
+        entry_column=3,
     )
-    add_entry(
+    add_entry_at(
         load_input_frame,
         row=1,
         label="Right barrier (kN/m)",
         key="load_right_barrier",
+        label_column=2,
+        entry_column=3,
     )
-    add_entry(
+    add_entry_at(
         load_input_frame,
         row=2,
         label="Left services (kN/m)",
         key="load_left_services",
+        label_column=2,
+        entry_column=3,
     )
-    add_entry(
+    add_entry_at(
         load_input_frame,
         row=3,
         label="Right services (kN/m)",
         key="load_right_services",
+        label_column=2,
+        entry_column=3,
     )
-    add_entry(
+    add_entry_at(
         load_input_frame,
         row=4,
         label="Left services y-position",
         key="load_left_services_y",
+        label_column=2,
+        entry_column=3,
     )
-    add_entry(
+    add_entry_at(
         load_input_frame,
         row=5,
         label="Right services y-position",
         key="load_right_services_y",
+        label_column=2,
+        entry_column=3,
     )
 
     load_button_frame = ttk.Frame(load_input_frame)
