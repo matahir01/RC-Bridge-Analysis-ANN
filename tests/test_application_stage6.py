@@ -1,5 +1,7 @@
 import json
 
+import pytest
+
 from rc_bridge.application.dashboard import CapabilityState, build_application_dashboard
 from rc_bridge.application.preferences import (
     AnalysisApplicationSettings,
@@ -95,7 +97,7 @@ def test_expanded_project_editor_round_trips_deck_and_material_inputs() -> None:
         }
     ).apply(project)
 
-    assert edited.geometry.deck_structural_depth_m == 0.260
+    assert edited.geometry.deck_structural_depth_m == pytest.approx(0.260)
     assert edited.geometry.deck_construction.false_slab_composite_participation
     assert edited.materials.concrete_density_kn_m3 == 24.5
     assert edited.materials.elastic_modulus_mpa == 34000.0
