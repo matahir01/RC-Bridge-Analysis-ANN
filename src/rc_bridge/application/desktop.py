@@ -13,6 +13,18 @@ from rc_bridge.analysis.physical_sections import (
 from rc_bridge.application.design_checks import ApplicationDesignSettings
 from rc_bridge.application.extended_actions import ExtendedActionSettings
 from rc_bridge.application.fatigue import FatigueApplicationSettings
+from rc_bridge.application.gui_presenters import (
+    analysis_dashboard_data,
+    bridge_preview_data,
+    deck_dashboard_data,
+    design_dashboard_data,
+    verification_dashboard_data,
+)
+from rc_bridge.application.gui_rendering import (
+    draw_bar_chart,
+    draw_bridge_preview,
+    draw_line_chart,
+)
 from rc_bridge.application.gui_theme import configure_desktop_theme
 from rc_bridge.application.interface_contract import (
     APPLICATION_INTERFACE_VERSION,
