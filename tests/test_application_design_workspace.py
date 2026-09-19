@@ -80,8 +80,9 @@ def test_design_interpretation_runs_real_ec2_checks_after_native_lm1() -> None:
     assert centre.construction_stage_checks
     assert all(item.passes for item in centre.construction_stage_checks)
     assert centre.governing_uls_moment_situation
-    assert "LM2 local deck/slab plate resistance check" in " ".join(
-        result.coverage_blockers
+    assert session.last_local_deck_design is not None
+    assert "native local deck/slab design has not been run" not in (
+        " ".join(result.coverage_blockers)
     )
 
     direct = run_application_design_interpretation(
@@ -127,4 +128,4 @@ def test_barrier_vehicle_impact_is_explicitly_exposed_as_accidental_scope() -> N
 
     impact = scope["Vehicle impact on safety barrier"]
     assert impact.status == "accidental demand/capacity path integrated"
-    assert "explicit blocker" in impact.detail
+    assert "native transverse deck-strip design" in impact.detail
