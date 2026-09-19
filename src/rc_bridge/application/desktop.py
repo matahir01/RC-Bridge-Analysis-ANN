@@ -1425,8 +1425,20 @@ def main() -> int:
             ),
             gamma_g_favourable=float(string_vars["gamma_g_favourable"].get()),
             gamma_q_traffic=float(string_vars["gamma_q_traffic"].get()),
+            gamma_q_nontraffic=float(
+                string_vars["gamma_q_nontraffic"].get()
+            ),
             psi1_traffic=float(string_vars["psi1_traffic"].get()),
             psi2_traffic=float(string_vars["psi2_traffic"].get()),
+            psi1_lm2=float(string_vars["psi1_lm2"].get()),
+            psi0_thermal_uls=float(
+                string_vars["psi0_thermal_uls"].get()
+            ),
+            psi0_thermal_sls=float(
+                string_vars["psi0_thermal_sls"].get()
+            ),
+            psi1_thermal=float(string_vars["psi1_thermal"].get()),
+            psi2_thermal=float(string_vars["psi2_thermal"].get()),
             crack_limit_mm=float(string_vars["crack_limit"].get()),
             deflection_limit_span_ratio=float(
                 string_vars["deflection_ratio"].get()
@@ -1496,6 +1508,15 @@ def main() -> int:
             ),
             pedestrian_enabled=bool_vars["action_pedestrian_enabled"].get(),
             pedestrian_load_kn_m2=float(string_vars["action_pedestrian_q"].get()),
+            pedestrian_reduced_with_lm1_kn_m2=float(
+                string_vars["action_pedestrian_reduced_q"].get()
+            ),
+            gr2_lm1_tandem_factor=float(
+                string_vars["action_gr2_ts_factor"].get()
+            ),
+            gr2_lm1_udl_factor=float(
+                string_vars["action_gr2_udl_factor"].get()
+            ),
             left_footway_width_m=displayed_unit.to_metres(
                 float(string_vars["action_left_footway"].get())
             ),
@@ -1522,6 +1543,18 @@ def main() -> int:
             ),
             barrier_alpha_Q1=float(
                 string_vars["action_barrier_alpha_Q1"].get()
+            ),
+            bearing_longitudinal_capacity_per_bearing_kn=float(
+                string_vars["action_bearing_force_capacity"].get()
+            ),
+            bearing_movement_capacity_mm=float(
+                string_vars["action_bearing_movement_capacity"].get()
+            ),
+            barrier_transverse_resistance_kn=float(
+                string_vars["action_barrier_transverse_resistance"].get()
+            ),
+            barrier_base_moment_resistance_knm=float(
+                string_vars["action_barrier_moment_resistance"].get()
             ),
             construction_enabled=bool_vars["action_construction_enabled"].get(),
             construction_execution_udl_kn_m2=float(
@@ -1686,8 +1719,20 @@ def main() -> int:
             f"{basis.gamma_g_favourable:g}"
         )
         string_vars["gamma_q_traffic"].set(f"{basis.gamma_q_traffic:g}")
+        string_vars["gamma_q_nontraffic"].set(
+            f"{basis.gamma_q_nontraffic:g}"
+        )
         string_vars["psi1_traffic"].set(f"{basis.psi1_traffic:g}")
         string_vars["psi2_traffic"].set(f"{basis.psi2_traffic:g}")
+        string_vars["psi1_lm2"].set(f"{basis.psi1_lm2:g}")
+        string_vars["psi0_thermal_uls"].set(
+            f"{basis.psi0_thermal_uls:g}"
+        )
+        string_vars["psi0_thermal_sls"].set(
+            f"{basis.psi0_thermal_sls:g}"
+        )
+        string_vars["psi1_thermal"].set(f"{basis.psi1_thermal:g}")
+        string_vars["psi2_thermal"].set(f"{basis.psi2_thermal:g}")
         string_vars["crack_limit"].set(f"{basis.crack_limit_mm:g}")
         string_vars["deflection_ratio"].set(
             f"{basis.deflection_limit_span_ratio:g}"
@@ -1757,6 +1802,15 @@ def main() -> int:
         string_vars["action_pedestrian_q"].set(
             f"{actions.pedestrian_load_kn_m2:g}"
         )
+        string_vars["action_pedestrian_reduced_q"].set(
+            f"{actions.pedestrian_reduced_with_lm1_kn_m2:g}"
+        )
+        string_vars["action_gr2_ts_factor"].set(
+            f"{actions.gr2_lm1_tandem_factor:g}"
+        )
+        string_vars["action_gr2_udl_factor"].set(
+            f"{actions.gr2_lm1_udl_factor:g}"
+        )
         string_vars["action_left_footway"].set(
             f"{displayed_unit.from_metres(actions.left_footway_width_m):g}"
         )
@@ -1783,6 +1837,18 @@ def main() -> int:
         )
         string_vars["action_barrier_alpha_Q1"].set(
             f"{actions.barrier_alpha_Q1:g}"
+        )
+        string_vars["action_bearing_force_capacity"].set(
+            f"{actions.bearing_longitudinal_capacity_per_bearing_kn:g}"
+        )
+        string_vars["action_bearing_movement_capacity"].set(
+            f"{actions.bearing_movement_capacity_mm:g}"
+        )
+        string_vars["action_barrier_transverse_resistance"].set(
+            f"{actions.barrier_transverse_resistance_kn:g}"
+        )
+        string_vars["action_barrier_moment_resistance"].set(
+            f"{actions.barrier_base_moment_resistance_knm:g}"
         )
         bool_vars["action_construction_enabled"].set(actions.construction_enabled)
         string_vars["action_construction_udl"].set(
@@ -1881,7 +1947,8 @@ def main() -> int:
                 tree.delete(item)
         search_status_var.set("No native LM1 analysis has been run.")
         design_status_var.set(
-            "Run native LM1 analysis before the design interpretation."
+            "Run native LM1 and Additional actions 1–6 before the integrated "
+            "design interpretation."
         )
 
     def show_result(result) -> None:
@@ -2001,6 +2068,18 @@ def main() -> int:
                     "Input incomplete: set project climate ranges."
                     if not item.climate_input_complete
                     else "Uses the entered longitudinal restraint fraction."
+                ),
+            )
+
+        if result.gr2_frequent_lm1 is not None:
+            item = result.gr2_frequent_lm1
+            add(
+                "Braking / acceleration",
+                "gr2 frequent LM1 search",
+                f"{item.search.evaluated_case_count:,} cases",
+                (
+                    f"TS factor={item.tandem_factor:g}; "
+                    f"UDL factor={item.udl_factor:g}. {item.status}"
                 ),
             )
 
@@ -2191,11 +2270,53 @@ def main() -> int:
                     f"{row.design.crack.utilization:.3f}",
                     f"{row.design.deflection.interpolated_deflection_mm:.3f}",
                     f"{row.design.deflection.utilization:.3f}",
+                    row.governing_uls_moment_situation,
+                    row.governing_uls_shear_situation,
+                    (
+                        "none"
+                        if not row.construction_stage_checks
+                        else max(
+                            row.construction_stage_checks,
+                            key=lambda item: max(
+                                item.flexural_utilization,
+                                item.shear_utilization,
+                            ),
+                        ).stage.value
+                        + " "
+                        + f"util={max(max(item.flexural_utilization, item.shear_utilization) for item in row.construction_stage_checks):.3f}"
+                    ),
                     "PASS" if row.passes_current_checks else "CHECK",
                 ),
             )
-        design_status_var.set(result.status)
-        status_var.set("Design interpretation complete.")
+        summary = result.status
+        if result.action_combinations is not None:
+            bearing = result.action_combinations.bearing
+            barrier = result.action_combinations.barrier
+            extras: list[str] = []
+            if bearing is not None:
+                extras.append(
+                    "Bearing ULS longitudinal="
+                    f"{bearing.persistent_uls_total_longitudinal_kn:.1f} kN "
+                    f"({bearing.persistent_uls_per_bearing_kn:.1f} kN/bearing); "
+                    f"movement={bearing.required_movement_mm:.1f} mm"
+                )
+            if barrier is not None:
+                extras.append(
+                    "Barrier accidental demand="
+                    f"{barrier.transverse_accidental_demand_kn:.1f} kN, "
+                    f"{barrier.base_moment_accidental_demand_knm:.1f} kNm"
+                )
+            if extras:
+                summary += "\n" + " | ".join(extras)
+        if result.coverage_blockers:
+            summary += (
+                "\nDESIGN BLOCKERS: "
+                + "; ".join(result.coverage_blockers)
+            )
+            status_var.set("Design interpretation complete with unresolved blockers.")
+        else:
+            status_var.set("Integrated design interpretation complete.")
+        design_status_var.set(summary)
         refresh_dashboard()
 
     def run_design_interpretation() -> None:
@@ -2213,7 +2334,8 @@ def main() -> int:
         ):
             messagebox.showinfo(
                 "Design interpretation",
-                "Project or analysis settings changed. Run native LM1 analysis again first.",
+                "Project or analysis settings changed. Run native LM1 and then "
+                "Additional actions 1–6 again before design.",
             )
             return
         try:
