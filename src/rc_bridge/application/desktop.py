@@ -695,6 +695,28 @@ def main() -> int:
     revert_project_button = ttk.Button(project_button_frame, text="Revert")
     revert_project_button.pack(side=tk.LEFT, padx=4)
 
+    project_preview_frame = ttk.LabelFrame(
+        project_tab,
+        text="Applied bridge geometry preview",
+        style="Card.TLabelframe",
+        padding=8,
+    )
+    project_preview_frame.grid(
+        row=2,
+        column=0,
+        columnspan=3,
+        sticky="nsew",
+        pady=(10, 0),
+    )
+    project_tab.rowconfigure(2, weight=1)
+    project_preview_canvas = tk.Canvas(
+        project_preview_frame,
+        height=300,
+        background="#FFFFFF",
+        highlightthickness=0,
+    )
+    project_preview_canvas.pack(fill=tk.BOTH, expand=True)
+
     # ------------------------------------------------------------------
     # Design-basis tab
     # ------------------------------------------------------------------
@@ -943,6 +965,13 @@ def main() -> int:
         permanent_audit_tree.heading(key, text=audit_headings[key])
         permanent_audit_tree.column(key, width=105, anchor=tk.CENTER)
     permanent_audit_tree.pack(fill=tk.BOTH, expand=True)
+    permanent_load_canvas = tk.Canvas(
+        audit_frame,
+        height=155,
+        background="#FFFFFF",
+        highlightthickness=0,
+    )
+    permanent_load_canvas.pack(fill=tk.X, pady=(8, 0))
     load_views.add(audit_frame, weight=1)
 
     lower_load_frame = ttk.Frame(load_views)
@@ -1494,6 +1523,68 @@ def main() -> int:
         wraplength=1100,
     ).pack(fill=tk.X, pady=(8, 6))
 
+    analysis_metric_frame = ttk.Frame(analysis_tab)
+    analysis_metric_frame.pack(fill=tk.X, pady=(0, 8))
+    analysis_metric_vars = {
+        "moment": tk.StringVar(value="—"),
+        "shear": tk.StringVar(value="—"),
+        "torsion": tk.StringVar(value="—"),
+        "deflection": tk.StringVar(value="—"),
+    }
+    for metric_index, (metric_key, metric_title) in enumerate(
+        (
+            ("moment", "Max |M|"),
+            ("shear", "Max |V|"),
+            ("torsion", "Max |T|"),
+            ("deflection", "Max |DZ|"),
+        )
+    ):
+        card = ttk.LabelFrame(
+            analysis_metric_frame,
+            text=metric_title,
+            style="Card.TLabelframe",
+            padding=(12, 8),
+        )
+        card.grid(
+            row=0,
+            column=metric_index,
+            sticky="ew",
+            padx=(0 if metric_index == 0 else 4, 0),
+        )
+        analysis_metric_frame.columnconfigure(metric_index, weight=1)
+        ttk.Label(
+            card,
+            textvariable=analysis_metric_vars[metric_key],
+            style="Metric.TLabel",
+        ).pack(anchor="w")
+
+    analysis_chart_frame = ttk.LabelFrame(
+        analysis_tab,
+        text="Girder response overview",
+        style="Card.TLabelframe",
+        padding=8,
+    )
+    analysis_chart_frame.pack(fill=tk.X, pady=(0, 8))
+    analysis_chart_controls = ttk.Frame(analysis_chart_frame)
+    analysis_chart_controls.pack(fill=tk.X)
+    ttk.Label(analysis_chart_controls, text="Display").pack(side=tk.LEFT)
+    analysis_chart_metric_var = tk.StringVar(value="Moment")
+    analysis_chart_metric = ttk.Combobox(
+        analysis_chart_controls,
+        textvariable=analysis_chart_metric_var,
+        values=("Moment", "Shear", "Torsion", "Deflection"),
+        state="readonly",
+        width=16,
+    )
+    analysis_chart_metric.pack(side=tk.LEFT, padx=(6, 0))
+    analysis_chart_canvas = tk.Canvas(
+        analysis_chart_frame,
+        height=210,
+        background="#FFFFFF",
+        highlightthickness=0,
+    )
+    analysis_chart_canvas.pack(fill=tk.X, pady=(6, 0))
+
     effect_frame = ttk.LabelFrame(
         analysis_tab,
         text="Governing native LM1 girder effects",
@@ -1693,6 +1784,41 @@ def main() -> int:
         justify=tk.LEFT,
     ).pack(fill=tk.X, pady=(8, 4))
 
+    design_dashboard_frame = ttk.Frame(design_tab)
+    design_dashboard_frame.pack(fill=tk.X, pady=(2, 8))
+    design_worst_var = tk.StringVar(value="—")
+    design_governing_var = tk.StringVar(value="—")
+    design_blocker_var = tk.StringVar(value="—")
+    for metric_index, (title, variable) in enumerate(
+        (
+            ("Worst utilization", design_worst_var),
+            ("Governing girder", design_governing_var),
+            ("Open blockers", design_blocker_var),
+        )
+    ):
+        card = ttk.LabelFrame(
+            design_dashboard_frame,
+            text=title,
+            style="Card.TLabelframe",
+            padding=(12, 8),
+        )
+        card.grid(
+            row=0,
+            column=metric_index,
+            sticky="ew",
+            padx=(0 if metric_index == 0 else 4, 0),
+        )
+        design_dashboard_frame.columnconfigure(metric_index, weight=1)
+        ttk.Label(card, textvariable=variable, style="Metric.TLabel").pack(anchor="w")
+
+    design_chart_canvas = tk.Canvas(
+        design_tab,
+        height=180,
+        background="#FFFFFF",
+        highlightthickness=0,
+    )
+    design_chart_canvas.pack(fill=tk.X, pady=(0, 8))
+
     design_frame = ttk.LabelFrame(
         design_tab,
         text="Per-girder design results",
@@ -1776,6 +1902,48 @@ def main() -> int:
     design_tree.pack(fill=tk.BOTH, expand=True)
     design_x_scroll.pack(fill=tk.X)
 
+    design_review_frame = ttk.LabelFrame(
+        design_tab,
+        text="Selected girder / construction-stage review",
+        style="Card.TLabelframe",
+        padding=8,
+    )
+    design_review_frame.pack(fill=tk.X, pady=(8, 0))
+    design_review_frame.columnconfigure(0, weight=2)
+    design_review_frame.columnconfigure(1, weight=3)
+    design_selected_var = tk.StringVar(
+        value="Select a girder result to inspect its reinforcement and governing checks."
+    )
+    ttk.Label(
+        design_review_frame,
+        textvariable=design_selected_var,
+        wraplength=600,
+        justify=tk.LEFT,
+    ).grid(row=0, column=0, sticky="nw", padx=(0, 8))
+    design_stage_tree = ttk.Treeview(
+        design_review_frame,
+        columns=("stage", "m", "v", "m_util", "v_util", "status"),
+        show="headings",
+        height=4,
+    )
+    for key, title, width_value in (
+        ("stage", "Construction stage", 150),
+        ("m", "MEd kNm", 95),
+        ("v", "VEd kN", 95),
+        ("m_util", "M util.", 80),
+        ("v_util", "V util.", 80),
+        ("status", "Status", 80),
+    ):
+        design_stage_tree.heading(key, text=title)
+        design_stage_tree.column(key, width=width_value, anchor=tk.CENTER)
+    design_stage_tree.grid(row=0, column=1, sticky="ew")
+    design_show_calculation_button = ttk.Button(
+        design_review_frame,
+        text="Show selected girder calculations",
+        style="Secondary.TButton",
+    )
+    design_show_calculation_button.grid(row=1, column=0, sticky="w", pady=(7, 0))
+
     capability_frame = ttk.LabelFrame(
         design_tab,
         text="Verification and capability boundary",
@@ -1807,7 +1975,7 @@ def main() -> int:
     # ------------------------------------------------------------------
     local_tab.columnconfigure(0, weight=1)
     local_tab.columnconfigure(1, weight=1)
-    local_tab.rowconfigure(1, weight=1)
+    local_tab.rowconfigure(3, weight=1)
 
     deck_controls = ttk.LabelFrame(
         local_tab,
@@ -1896,13 +2064,69 @@ def main() -> int:
     run_fatigue_button.grid(row=7, column=1, sticky="e", pady=(8, 0))
     analysis_buttons.extend((run_local_deck_button, run_fatigue_button))
 
+    local_dashboard_frame = ttk.Frame(local_tab)
+    local_dashboard_frame.grid(
+        row=1,
+        column=0,
+        columnspan=2,
+        sticky="ew",
+        pady=(8, 0),
+    )
+    local_bottom_var = tk.StringVar(value="Bottom: —")
+    local_top_var = tk.StringVar(value="Top: —")
+    local_shear_var = tk.StringVar(value="Shear: —")
+    local_fatigue_var = tk.StringVar(value="Fatigue: —")
+    for metric_index, (title, variable) in enumerate(
+        (
+            ("Bottom transverse", local_bottom_var),
+            ("Top transverse", local_top_var),
+            ("One-way shear", local_shear_var),
+            ("FLM3", local_fatigue_var),
+        )
+    ):
+        card = ttk.LabelFrame(
+            local_dashboard_frame,
+            text=title,
+            style="Card.TLabelframe",
+            padding=(10, 7),
+        )
+        card.grid(
+            row=0,
+            column=metric_index,
+            sticky="ew",
+            padx=(0 if metric_index == 0 else 4, 0),
+        )
+        local_dashboard_frame.columnconfigure(metric_index, weight=1)
+        ttk.Label(card, textvariable=variable, style="CardTitle.TLabel").pack(anchor="w")
+
+    local_chart_frame = ttk.LabelFrame(
+        local_tab,
+        text="Transverse deck response",
+        style="Card.TLabelframe",
+        padding=8,
+    )
+    local_chart_frame.grid(
+        row=2,
+        column=0,
+        columnspan=2,
+        sticky="ew",
+        pady=(8, 0),
+    )
+    local_chart_canvas = tk.Canvas(
+        local_chart_frame,
+        height=210,
+        background="#FFFFFF",
+        highlightthickness=0,
+    )
+    local_chart_canvas.pack(fill=tk.X)
+
     local_result_frame = ttk.LabelFrame(
         local_tab,
         text="Deck / fatigue results",
         padding=8,
     )
     local_result_frame.grid(
-        row=1,
+        row=3,
         column=0,
         columnspan=2,
         sticky="nsew",
@@ -1980,6 +2204,41 @@ def main() -> int:
             save_verification_evidence_button,
         )
     )
+
+    verification_dashboard_frame = ttk.Frame(verification_tab)
+    verification_dashboard_frame.pack(fill=tk.X, pady=(10, 0))
+    verification_status_metric_var = tk.StringVar(value="NOT IMPORTED")
+    verification_coverage_metric_var = tk.StringVar(value="—")
+    verification_error_metric_var = tk.StringVar(value="—")
+    for metric_index, (title, variable) in enumerate(
+        (
+            ("Comparison status", verification_status_metric_var),
+            ("Imported coverage", verification_coverage_metric_var),
+            ("Maximum relative error", verification_error_metric_var),
+        )
+    ):
+        card = ttk.LabelFrame(
+            verification_dashboard_frame,
+            text=title,
+            style="Card.TLabelframe",
+            padding=(10, 7),
+        )
+        card.grid(
+            row=0,
+            column=metric_index,
+            sticky="ew",
+            padx=(0 if metric_index == 0 else 4, 0),
+        )
+        verification_dashboard_frame.columnconfigure(metric_index, weight=1)
+        ttk.Label(card, textvariable=variable, style="CardTitle.TLabel").pack(anchor="w")
+
+    verification_error_canvas = tk.Canvas(
+        verification_tab,
+        height=180,
+        background="#FFFFFF",
+        highlightthickness=0,
+    )
+    verification_error_canvas.pack(fill=tk.X, pady=(8, 0))
 
     package_tree = ttk.Treeview(
         verification_tab,
