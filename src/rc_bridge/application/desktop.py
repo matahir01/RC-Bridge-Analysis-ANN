@@ -593,7 +593,7 @@ def main() -> int:
 
     combinations_frame = ttk.LabelFrame(
         lower_load_frame,
-        text="EN 1990 interpretation after LM1 analysis",
+        text="Baseline Gk + LM1 interpretation",
         padding=8,
     )
     combinations_frame.grid(row=0, column=1, sticky="nsew", padx=(5, 0))
@@ -638,9 +638,10 @@ def main() -> int:
         load_cases_tab,
         text=(
             "Permanent self-weight is derived automatically from the physical girder/deck. "
-            "Surfacing, barriers and services are project inputs. LM1 is the implemented "
-            "vertical road-traffic action; missing variable actions remain explicitly marked "
-            "not wired rather than being silently ignored."
+            "The table above is deliberately the baseline Gk + characteristic-LM1 view. "
+            "Run Additional actions 1–6 and then Design & checks for the governing compatible "
+            "traffic groups, construction stages, bearing/restraint demand and accidental "
+            "barrier path; they are not silently added into this baseline table."
         ),
         wraplength=1180,
         justify=tk.LEFT,
