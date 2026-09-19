@@ -4890,6 +4890,44 @@ def main() -> int:
             ),
         )
 
+    project_preview_canvas.bind("<Configure>", refresh_project_preview)
+    permanent_load_canvas.bind("<Configure>", refresh_permanent_load_chart)
+    analysis_chart_metric.bind("<<ComboboxSelected>>", refresh_analysis_chart)
+    analysis_chart_girder.bind("<<ComboboxSelected>>", refresh_analysis_chart)
+    analysis_chart_canvas.bind("<Configure>", refresh_analysis_chart)
+    design_chart_canvas.bind("<Configure>", refresh_design_dashboard)
+    design_tree.bind("<<TreeviewSelect>>", show_selected_design_result)
+    design_section_canvas.bind("<Configure>", show_selected_design_result)
+    design_show_calculation_button.configure(
+        command=open_selected_design_calculations
+    )
+    local_chart_canvas.bind("<Configure>", refresh_local_dashboard)
+    verification_error_canvas.bind("<Configure>", refresh_verification_dashboard)
+
+    def refresh_active_workspace_visuals(_event=None) -> None:
+        active_key = page_keys.get(notebook.select())
+        if active_key == "project":
+            refresh_project_preview()
+        elif active_key == "loads":
+            refresh_permanent_load_chart()
+        elif active_key == "analysis":
+            refresh_analysis_chart()
+        elif active_key == "design":
+            refresh_design_dashboard()
+            show_selected_design_result()
+        elif active_key == "deck":
+            refresh_local_dashboard()
+        elif active_key == "calculations":
+            refresh_calculation_view()
+        elif active_key == "verification":
+            refresh_verification_dashboard()
+
+    notebook.bind(
+        "<<NotebookTabChanged>>",
+        refresh_active_workspace_visuals,
+        add="+",
+    )
+
     calculation_tree.bind("<<TreeviewSelect>>", show_calculation_detail)
     calculation_refresh_button.configure(command=refresh_calculation_view)
     header_open_button.configure(command=open_project)
