@@ -9,6 +9,8 @@ from rc_bridge.export.staad_anl import parse_staad_anl_results
 from rc_bridge.export.verification_model import (
     VerificationBeam,
     VerificationLoadCase,
+    VerificationLoadCombination,
+    VerificationLoadCombinationTerm,
     VerificationMaterial,
     VerificationModel,
     VerificationNode,
@@ -136,3 +138,33 @@ def test_staad_anl_parser_requires_explicit_case_for_multi_case_model() -> None:
     )
     with pytest.raises(ValueError, match="requires load_case_id"):
         parse_staad_anl_results(_anl_text(), model)
+
+
+def test_staad_anl_parser_accepts_load_combination_result_id() -> None:
+    base = _model()
+    model = VerificationModel(
+        name=base.name,
+        nodes=base.nodes,
+        materials=base.materials,
+        sections=base.sections,
+        beams=base.beams,
+        supports=base.supports,
+        load_cases=(VerificationLoadCase(2, "BASE"),),
+        load_combinations=(
+            VerificationLoadCombination(
+                1,
+                "COMB",
+                (VerificationLoadCombinationTerm(2, 1.0),),
+            ),
+        ),
+    )
+
+    normalized = parse_staad_anl_results(
+        _anl_text(),
+        model,
+        load_case_id=1,
+    )
+    records = parse_verification_results_csv(normalized)
+
+    assert records
+    assert any(item.component == "M_VERTICAL" for item in records)
