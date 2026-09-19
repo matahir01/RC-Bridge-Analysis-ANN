@@ -42,6 +42,10 @@ from rc_bridge.application.reporting import (
     application_html_report,
     write_native_lm1_pdf_report,
 )
+from rc_bridge.application.verification_campaign import (
+    WrittenVerificationCampaign,
+    write_application_verification_campaign,
+)
 from rc_bridge.application.verification_files import (
     WrittenConsolidatedVerificationFiles,
     WrittenVerificationPackage,
@@ -387,6 +391,48 @@ class BridgeApplicationSession:
             local_deck_design=self.last_local_deck_design,
             design_interpretation=self.last_design_interpretation,
             fatigue=self.last_fatigue,
+        )
+
+    def export_verification_campaign(
+        self,
+        directory: str | Path,
+        *,
+        base_name: str = "application_verification",
+    ) -> WrittenVerificationCampaign:
+        """Export the complete available Stage-7 MIDAS/STAAD verification campaign."""
+
+        if self.last_lm1_search is None:
+            raise RuntimeError(
+                "Run native LM1 analysis before exporting the verification campaign."
+            )
+        if self.last_extended_actions is None:
+            raise RuntimeError(
+                "Run Additional actions before export so gr2, LM2, pedestrian, wind, "
+                "braking, thermal, barrier and construction actions are not omitted."
+            )
+        if self.last_local_deck_design is None:
+            raise RuntimeError(
+                "Run local deck design before export so local LM2/barrier results are recorded."
+            )
+        if self.last_action_combinations is None or self.last_design_interpretation is None:
+            raise RuntimeError(
+                "Run integrated Design & checks before export so compatible traffic groups "
+                "and ULS/SLS combination summaries are included."
+            )
+        if self.last_fatigue is None:
+            raise RuntimeError(
+                "Run FLM3 fatigue before export so governing fatigue vehicle cases are included."
+            )
+        return write_application_verification_campaign(
+            self.project,
+            self.last_lm1_search,
+            directory,
+            extended_actions=self.last_extended_actions,
+            action_combinations=self.last_action_combinations,
+            local_deck=self.last_local_deck_design,
+            fatigue=self.last_fatigue,
+            grid_spacing_m=self.preferences.analysis.grid_spacing_m,
+            base_name=base_name,
         )
 
     def export_last_lm1_verification(
