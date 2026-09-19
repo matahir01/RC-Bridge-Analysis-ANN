@@ -379,11 +379,12 @@ def eurocode_variable_action_scope() -> tuple[VariableActionScope, ...]:
         ),
         VariableActionScope(
             "LM2 local axle",
-            "implemented / verification-gated",
+            "integrated into global design / local deck blocked",
             (
-                "The Additional actions workspace scans the 400 kN isolated axle "
-                "across the carriageway on the native vertical grillage and retains "
-                "the 0.35 m x 0.60 m wheel contact patch for local slab checks."
+                "The isolated axle is scanned across the carriageway and its compatible "
+                "gr1b girder effects enter the integrated design envelope. The local "
+                "deck/slab plate resistance check remains an explicit blocker until a "
+                "dedicated local plate model or verified external result is supplied."
             ),
         ),
         VariableActionScope(
@@ -398,11 +399,11 @@ def eurocode_variable_action_scope() -> tuple[VariableActionScope, ...]:
         ),
         VariableActionScope(
             "Braking / acceleration",
-            "action implemented / horizontal solver pending",
+            "integrated through gr2 + bearing/restraint path",
             (
-                "EN 1991-2 characteristic Qlk is calculated with explicit adjustment "
-                "factors and loaded length. Longitudinal deck/bearing/substructure "
-                "response remains outside the vertical grillage."
+                "Characteristic Qlk is paired with a separately rerun frequent-LM1 "
+                "vertical component for gr2. The longitudinal resultant feeds the "
+                "bearing/restraint design path instead of being faked as a vertical load."
             ),
         ),
         VariableActionScope(
@@ -412,20 +413,20 @@ def eurocode_variable_action_scope() -> tuple[VariableActionScope, ...]:
         ),
         VariableActionScope(
             "Pedestrian / footway live load",
-            "implemented / verification-gated",
+            "integrated into compatible traffic groups",
             (
-                "User-defined usable footway strips are solved as characteristic "
-                "vertical area loads on the physical final-stage grillage."
+                "User-defined footway strips are solved on the final-stage grillage; "
+                "full pedestrian loading and the reduced value accompanying LM1 enter "
+                "separate compatible design situations."
             ),
         ),
         VariableActionScope(
             "Thermal action",
-            "kinematics implemented / restraint model explicit",
+            "integrated into bearing/restraint design",
             (
-                "Uniform expansion/contraction movement, linear gradient curvature "
-                "and transparent restraint-force benchmarks are calculated from "
-                "project inputs. Climate/National Annex values and bearing/restraint "
-                "conditions remain explicit inputs."
+                "Uniform movement and gradient kinematics are calculated from project "
+                "inputs; restraint force and movement demand enter the bearing path. "
+                "Climate/National Annex values remain explicit project inputs."
             ),
         ),
         VariableActionScope(
@@ -435,22 +436,22 @@ def eurocode_variable_action_scope() -> tuple[VariableActionScope, ...]:
         ),
         VariableActionScope(
             "Vehicle impact on safety barrier",
-            "local accidental action implemented / horizontal solver pending",
+            "accidental demand/capacity path integrated",
             (
-                "The Additional actions workspace calculates the transverse accidental "
-                "force, associated barrier-base moment and accompanying vertical wheel "
-                "reference action. Restraint-class/anchorage/deck-edge verification remains "
-                "a local horizontal design task."
+                "Transverse accidental force and barrier-base moment are retained as "
+                "a separate accidental local check with optional verified resistance "
+                "inputs. The accompanying vertical wheel still requires the local deck "
+                "plate check and remains an explicit blocker."
             ),
         ),
         VariableActionScope(
             "Construction-stage actions",
-            "implemented / verification-gated",
+            "integrated into reinforcement selection",
             (
-                "Precast-girder, wet-deck and superimposed permanent actions are "
-                "separated by physical stage, with an explicit optional execution UDL. "
-                "The detailed construction grillage remains the route for temporary "
-                "transverse members, propping or changed supports/continuity."
+                "Precast-girder and wet-deck construction stages are checked using the "
+                "physical section active at each stage and can govern selected bars/links. "
+                "Temporary transverse members, propping or changed support systems still "
+                "use the detailed construction workflow."
             ),
         ),
     )
