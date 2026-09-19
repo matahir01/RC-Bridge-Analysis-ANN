@@ -1645,7 +1645,7 @@ def main() -> int:
         deflection_frame,
         columns=("girder", "value", "position", "case"),
         show="headings",
-        height=5,
+        height=9,
     )
     for key, title in (
         ("girder", "Girder"),
@@ -1796,7 +1796,16 @@ def main() -> int:
         justify=tk.LEFT,
     ).pack(fill=tk.X, pady=(8, 4))
 
-    design_dashboard_frame = ttk.Frame(design_tab)
+    design_views = ttk.Notebook(design_tab)
+    design_views.pack(fill=tk.BOTH, expand=True, pady=(4, 0))
+    design_summary_page = ttk.Frame(design_views, padding=6)
+    design_selected_page = ttk.Frame(design_views, padding=6)
+    design_capability_page = ttk.Frame(design_views, padding=6)
+    design_views.add(design_summary_page, text="Design summary")
+    design_views.add(design_selected_page, text="Selected girder")
+    design_views.add(design_capability_page, text="Capability / verification")
+
+    design_dashboard_frame = ttk.Frame(design_summary_page)
     design_dashboard_frame.pack(fill=tk.X, pady=(2, 8))
     design_worst_var = tk.StringVar(value="—")
     design_governing_var = tk.StringVar(value="—")
@@ -1824,15 +1833,15 @@ def main() -> int:
         ttk.Label(card, textvariable=variable, style="Metric.TLabel").pack(anchor="w")
 
     design_chart_canvas = tk.Canvas(
-        design_tab,
-        height=180,
+        design_summary_page,
+        height=150,
         background="#FFFFFF",
         highlightthickness=0,
     )
     design_chart_canvas.pack(fill=tk.X, pady=(0, 8))
 
     design_frame = ttk.LabelFrame(
-        design_tab,
+        design_summary_page,
         text="Per-girder design results",
         padding=6,
     )
@@ -1861,7 +1870,7 @@ def main() -> int:
         design_frame,
         columns=design_columns,
         show="headings",
-        height=10,
+        height=7,
     )
     design_headings = {
         "girder": "Girder",
@@ -1915,12 +1924,12 @@ def main() -> int:
     design_x_scroll.pack(fill=tk.X)
 
     design_review_frame = ttk.LabelFrame(
-        design_tab,
+        design_selected_page,
         text="Selected girder / construction-stage review",
         style="Card.TLabelframe",
         padding=8,
     )
-    design_review_frame.pack(fill=tk.X, pady=(8, 0))
+    design_review_frame.pack(fill=tk.BOTH, expand=True, pady=(4, 0))
     design_review_frame.columnconfigure(0, weight=2)
     design_review_frame.columnconfigure(1, weight=3)
     design_selected_var = tk.StringVar(
@@ -1964,11 +1973,11 @@ def main() -> int:
     design_show_calculation_button.grid(row=2, column=0, sticky="w", pady=(7, 0))
 
     capability_frame = ttk.LabelFrame(
-        design_tab,
+        design_capability_page,
         text="Verification and capability boundary",
         padding=6,
     )
-    capability_frame.pack(fill=tk.X, pady=(8, 0))
+    capability_frame.pack(fill=tk.BOTH, expand=True, pady=(4, 0))
     capability_tree = ttk.Treeview(
         capability_frame,
         columns=("capability", "state", "detail"),
