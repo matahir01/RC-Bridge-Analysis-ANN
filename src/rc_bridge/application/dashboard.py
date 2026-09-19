@@ -45,6 +45,8 @@ def build_application_dashboard(
     has_native_lm1_analysis: bool,
     has_extended_actions: bool = False,
     has_integrated_design: bool = False,
+    has_local_deck_design: bool = False,
+    has_fatigue: bool = False,
     design_blocker_count: int = 0,
 ) -> ApplicationDashboard:
     """Describe what the current project can do without weakening verification gates."""
@@ -84,15 +86,14 @@ def build_application_dashboard(
                 detail=(
                     "Physical girder/deck self-weight, editable surfacing/barrier/services "
                     "actions and simple-span Gk + native-LM1 Qk ULS/SLS interpretation are "
-                    "available. Braking, thermal, pedestrian, LM2, safety-barrier impact "
-                    "and construction-stage action modules are now exposed separately; "
-                    "wind and other out-of-scope actions remain explicit."
+                    "available. Braking, thermal, pedestrian, LM2, safety-barrier impact, "
+                    "construction-stage and static wind actions are exposed separately."
                 ),
             )
         )
         capabilities.append(
             ApplicationCapability(
-                name="Additional actions 1-6",
+                name="Additional actions + wind",
                 state=(
                     CapabilityState.READY
                     if has_extended_actions
@@ -101,9 +102,40 @@ def build_application_dashboard(
                 detail=(
                     "Braking/acceleration, thermal kinematics/restraint benchmark, "
                     "pedestrian footway loading, LM2 axle scanning, safety-barrier "
-                    "accidental action and construction-stage action separation are "
-                    "implemented. Horizontal/local physics remain explicitly bounded "
-                    "where the vertical grillage is not an appropriate solver."
+                    "accidental action, construction-stage separation and static wind "
+                    "resultants are implemented. Longitudinal/transverse actions feed "
+                    "explicit bearing/restraint checks instead of being faked as vertical loads."
+                ),
+            )
+        )
+        capabilities.append(
+            ApplicationCapability(
+                name="Native local deck/slab design",
+                state=(
+                    CapabilityState.READY
+                    if has_local_deck_design
+                    else CapabilityState.REQUIRES_ANALYSIS
+                ),
+                detail=(
+                    "Continuous transverse slab-strip analysis spans over the actual girder "
+                    "lines and edge cantilevers under permanent actions, dispersed LM2 wheel "
+                    "patches and the barrier-impact vertical wheel, with EC2 top/bottom "
+                    "transverse reinforcement selection."
+                ),
+            )
+        )
+        capabilities.append(
+            ApplicationCapability(
+                name="Desktop FLM3 fatigue",
+                state=(
+                    CapabilityState.READY
+                    if has_fatigue
+                    else CapabilityState.REQUIRES_ANALYSIS
+                ),
+                detail=(
+                    "Native full-width FLM3 traffic is connected to the selected girder "
+                    "reinforcement, concrete compression and vertical links. Project fatigue "
+                    "detail-category inputs remain explicit rather than hidden constants."
                 ),
             )
         )
@@ -117,9 +149,10 @@ def build_application_dashboard(
                 ),
                 detail=(
                     "Compatible traffic groups feed girder ULS/SLS design; construction "
-                    "stages can govern selected bars/links; braking/thermal feed the "
-                    "bearing/restraint path and barrier impact remains an accidental local "
-                    "check. "
+                    "stages can govern selected bars/links; braking/thermal/wind feed the "
+                    "bearing/restraint path; local deck LM2/barrier-wheel flexure is checked "
+                    "by the native slab solver and barrier impact remains a separate accidental "
+                    "restraint check. "
                     + (
                         "No unresolved model/input blockers remain in the current design run."
                         if has_integrated_design and design_blocker_count == 0
@@ -164,11 +197,15 @@ def build_application_dashboard(
         capabilities.append(
             ApplicationCapability(
                 name="FLM3 fatigue and reinforcement detailing",
-                state=CapabilityState.VERIFICATION_REQUIRED,
+                state=(
+                    CapabilityState.VERIFICATION_REQUIRED
+                    if has_fatigue
+                    else CapabilityState.REQUIRES_ANALYSIS
+                ),
                 detail=(
-                    "Dedicated FLM3 girder fatigue and drawing-level reinforcement zoning "
-                    "are implemented; clause/project verification and independent acceptance "
-                    "remain outstanding."
+                    "Dedicated FLM3 girder fatigue is now a desktop workflow and drawing-level "
+                    "reinforcement zoning remains implemented; independent acceptance remains "
+                    "outstanding."
                 ),
             )
         )

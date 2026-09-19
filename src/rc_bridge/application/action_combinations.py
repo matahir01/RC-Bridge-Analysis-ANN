@@ -6,13 +6,17 @@ from rc_bridge.application.extended_actions import (
     ExtendedActionSettings,
     ExtendedActionSuite,
 )
+from rc_bridge.application.local_deck import LocalDeckDesignResult
 from rc_bridge.codes.common import LoadEffects
 from rc_bridge.codes.eurocode.combinations import EurocodeFactors
 from rc_bridge.core.models import ProjectInput
 from rc_bridge.workflow.lm1_grillage_search import (
     ProjectNativeLM1GrillageSearchResult,
 )
-from rc_bridge.workflow.project_bridge import girder_characteristic_permanent_effects
+from rc_bridge.workflow.project_bridge import (
+    girder_characteristic_permanent_effects,
+    girder_deck_tributary_width_m,
+)
 
 
 @dataclass(frozen=True)
@@ -108,15 +112,21 @@ class BearingActionDesignResult:
     braking_characteristic_kn: float
     thermal_restrained_expansion_kn: float
     thermal_restrained_contraction_kn: float
+    wind_transverse_characteristic_kn: float
+    wind_vertical_characteristic_kn: float
     persistent_uls_total_longitudinal_kn: float
     persistent_uls_governing_situation: str
     persistent_uls_per_bearing_kn: float
+    persistent_uls_total_transverse_kn: float
+    persistent_uls_transverse_per_bearing_kn: float
     characteristic_sls_total_longitudinal_kn: float
     characteristic_sls_per_bearing_kn: float
     required_movement_mm: float
     force_capacity_per_bearing_kn: float | None
+    transverse_capacity_per_bearing_kn: float | None
     movement_capacity_mm: float | None
     force_utilization: float | None
+    transverse_utilization: float | None
     movement_utilization: float | None
     passes_specified_capacities: bool | None
     status: str
@@ -140,6 +150,7 @@ class IntegratedActionCombinationSuite:
     girders: tuple[GirderActionEnvelope, ...]
     bearing: BearingActionDesignResult | None
     barrier: BarrierLocalDesignResult | None
+    local_deck: LocalDeckDesignResult | None
     blockers: tuple[str, ...]
 
     @property
@@ -337,6 +348,45 @@ def build_vertical_action_envelopes(
                 )
             )
 
+        if (
+            actions.wind is not None
+            and abs(actions.wind.vertical_pressure_kn_m2) > 1.0e-12
+        ):
+            span_m = float(project.geometry.span_lengths_m[0])
+            tributary_width = girder_deck_tributary_width_m(
+                project,
+                girder_index=girder_index,
+            )
+            wind_udl = (
+                abs(actions.wind.vertical_pressure_kn_m2)
+                * tributary_width
+            )
+            wind_vertical = LoadEffects(
+                moment_knm=wind_udl * span_m**2 / 8.0,
+                shear_kn=wind_udl * span_m / 2.0,
+                torsion_knm=0.0,
+            )
+            situations.append(
+                VerticalActionSituation(
+                    name="vertical wind leading",
+                    group="wind",
+                    variable_effects=wind_vertical,
+                    uls_effects=(
+                        permanent.scaled(factors.uls.gamma_g_unfavourable)
+                        + wind_vertical.scaled(factors.gamma_q_nontraffic)
+                    ),
+                    characteristic_sls_effects=permanent + wind_vertical,
+                    frequent_sls_effects=permanent,
+                    quasi_permanent_sls_effects=permanent,
+                    basis=(
+                        "Optional static vertical wind resultant distributed by physical "
+                        "girder tributary width. Frequent/quasi-permanent wind contribution "
+                        "is conservatively omitted unless a project-specific combination "
+                        "basis is supplied."
+                    ),
+                )
+            )
+
         situation_tuple = tuple(situations)
         uls, uls_names = _component_envelope(situation_tuple, attribute="uls")
         char, char_names = _component_envelope(
@@ -397,7 +447,7 @@ def build_bearing_action_design(
     settings: ExtendedActionSettings,
     factors: BridgeActionCombinationFactors,
 ) -> BearingActionDesignResult | None:
-    if actions.braking is None and actions.thermal is None:
+    if actions.braking is None and actions.thermal is None and actions.wind is None:
         return None
 
     braking = 0.0 if actions.braking is None else actions.braking.characteristic_force_kn
@@ -412,6 +462,17 @@ def build_bearing_action_design(
         else actions.thermal.modelled_restraint_contraction_force_kn
     )
     thermal_force = max(abs(thermal_exp), abs(thermal_con))
+
+    wind_transverse = (
+        0.0
+        if actions.wind is None
+        else actions.wind.transverse_characteristic_force_kn
+    )
+    wind_vertical = (
+        0.0
+        if actions.wind is None
+        else actions.wind.vertical_characteristic_force_kn
+    )
 
     braking_leading = (
         factors.uls.gamma_q_traffic * braking
@@ -431,6 +492,10 @@ def build_bearing_action_design(
 
     bearing_count = int(project.geometry.girder_count)
     per_bearing = uls_total / bearing_count if bearing_count > 0 else 0.0
+    transverse_uls = factors.gamma_q_nontraffic * abs(wind_transverse)
+    transverse_per_bearing = (
+        transverse_uls / bearing_count if bearing_count > 0 else 0.0
+    )
     per_bearing_sls = sls_total / bearing_count if bearing_count > 0 else 0.0
     movement = 0.0
     if actions.thermal is not None:
@@ -444,6 +509,11 @@ def build_bearing_action_design(
         if settings.bearing_longitudinal_capacity_per_bearing_kn > 0.0
         else None
     )
+    transverse_capacity = (
+        settings.bearing_transverse_capacity_per_bearing_kn
+        if settings.bearing_transverse_capacity_per_bearing_kn > 0.0
+        else None
+    )
     movement_capacity = (
         settings.bearing_movement_capacity_mm
         if settings.bearing_movement_capacity_mm > 0.0
@@ -454,15 +524,28 @@ def build_bearing_action_design(
         if force_capacity is not None
         else None
     )
+    transverse_util = (
+        transverse_per_bearing / transverse_capacity
+        if transverse_capacity is not None
+        else None
+    )
     movement_util = (
         movement / movement_capacity
         if movement_capacity is not None
         else None
     )
     passes = None
-    if force_util is not None or movement_util is not None:
+    if (
+        force_util is not None
+        or transverse_util is not None
+        or movement_util is not None
+    ):
         passes = (
             (force_util is None or force_util <= 1.0 + 1.0e-9)
+            and (
+                transverse_util is None
+                or transverse_util <= 1.0 + 1.0e-9
+            )
             and (movement_util is None or movement_util <= 1.0 + 1.0e-9)
         )
 
@@ -472,22 +555,29 @@ def build_bearing_action_design(
         braking_characteristic_kn=braking,
         thermal_restrained_expansion_kn=thermal_exp,
         thermal_restrained_contraction_kn=thermal_con,
+        wind_transverse_characteristic_kn=wind_transverse,
+        wind_vertical_characteristic_kn=wind_vertical,
         persistent_uls_total_longitudinal_kn=uls_total,
         persistent_uls_governing_situation=governing,
         persistent_uls_per_bearing_kn=per_bearing,
+        persistent_uls_total_transverse_kn=transverse_uls,
+        persistent_uls_transverse_per_bearing_kn=transverse_per_bearing,
         characteristic_sls_total_longitudinal_kn=sls_total,
         characteristic_sls_per_bearing_kn=per_bearing_sls,
         required_movement_mm=movement,
         force_capacity_per_bearing_kn=force_capacity,
+        transverse_capacity_per_bearing_kn=transverse_capacity,
         movement_capacity_mm=movement_capacity,
         force_utilization=force_util,
+        transverse_utilization=transverse_util,
         movement_utilization=movement_util,
         passes_specified_capacities=passes,
         status=(
             "Equilibrium bearing/restraint design path: the restrained support line "
             "takes the longitudinal resultant and shares it equally between girder "
-            "bearings. This is not a substitute for a detailed substructure/bearing "
-            "stiffness model where load sharing is non-uniform."
+            "bearings; the static wind transverse resultant is similarly distributed "
+            "for a transparent support-level check. This is not a substitute for a "
+            "detailed bearing/substructure stiffness model where load sharing is non-uniform."
         ),
     )
 
@@ -551,6 +641,7 @@ def build_integrated_action_combinations(
     *,
     settings: ExtendedActionSettings,
     factors: BridgeActionCombinationFactors,
+    local_deck: LocalDeckDesignResult | None = None,
 ) -> IntegratedActionCombinationSuite:
     girders = build_vertical_action_envelopes(
         project,
@@ -569,23 +660,29 @@ def build_integrated_action_combinations(
 
     blockers: list[str] = []
     blockers.extend(actions.unresolved_inputs)
-    if actions.lm2 is not None:
-        blockers.append(
-            "LM2 local deck/slab plate resistance check requires a dedicated "
-            "local plate model or verified external local-deck result"
-        )
-    if actions.barrier_impact is not None:
-        blockers.append(
-            "barrier accompanying vertical wheel local deck/slab check requires "
-            "a dedicated local plate model or verified external local-deck result"
-        )
+    if actions.lm2 is not None or actions.barrier_impact is not None:
+        if local_deck is None:
+            blockers.append(
+                "native local deck/slab design has not been run"
+            )
+        elif not local_deck.passes:
+            blockers.append(
+                "native local deck/slab reinforcement check is not adequate"
+            )
     if bearing is not None:
         if bearing.force_capacity_per_bearing_kn is None:
             blockers.append("bearing longitudinal resistance not specified")
         if bearing.movement_capacity_mm is None:
             blockers.append("bearing movement capacity not specified")
+        if (
+            abs(bearing.wind_transverse_characteristic_kn) > 1.0e-9
+            and bearing.transverse_capacity_per_bearing_kn is None
+        ):
+            blockers.append("bearing transverse wind resistance not specified")
         if bearing.passes_specified_capacities is False:
-            blockers.append("bearing longitudinal/movement capacity exceeded")
+            blockers.append(
+                "bearing longitudinal/transverse/movement capacity exceeded"
+            )
     if barrier is not None:
         if barrier.transverse_resistance_kn is None:
             blockers.append("safety-barrier transverse resistance not specified")
@@ -598,5 +695,6 @@ def build_integrated_action_combinations(
         girders=girders,
         bearing=bearing,
         barrier=barrier,
+        local_deck=local_deck,
         blockers=tuple(dict.fromkeys(blockers)),
     )

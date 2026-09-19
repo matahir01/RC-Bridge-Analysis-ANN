@@ -9,6 +9,7 @@ from rc_bridge.application.extended_actions import (
     pedestrian_action,
     run_extended_actions,
     thermal_action,
+    wind_action,
 )
 from rc_bridge.application.preferences import (
     AnalysisApplicationSettings,
@@ -38,6 +39,9 @@ def _settings() -> ExtendedActionSettings:
         lm2_longitudinal_step_m=15.0,
         lm2_transverse_step_m=5.0,
         barrier_impact_enabled=True,
+        wind_enabled=True,
+        wind_basic_velocity_m_s=40.0,
+        wind_transverse_force_coefficient=1.30,
         construction_enabled=True,
         construction_execution_udl_kn_m2=1.0,
     )
@@ -111,6 +115,16 @@ def test_barrier_impact_calculates_horizontal_local_action_without_faking_3d_sol
     assert "vertical grillage does not analyse the horizontal force" in result.status
 
 
+def test_wind_action_uses_explicit_speed_and_projected_bridge_height() -> None:
+    result = wind_action(application_default_project(), _settings())
+
+    assert result.basic_dynamic_pressure_kn_m2 == pytest.approx(1.0)
+    assert result.projected_height_m == pytest.approx(1.20)
+    assert result.transverse_characteristic_force_kn == pytest.approx(23.4)
+    assert result.transverse_line_load_kn_m == pytest.approx(1.56)
+    assert result.input_complete
+
+
 def test_construction_action_separates_all_three_physical_stages() -> None:
     result = construction_action(application_default_project(), _settings())
 
@@ -167,6 +181,7 @@ def test_session_runs_all_six_actions_and_retains_result() -> None:
     assert result.gr2_frequent_lm1 is not None
     assert result.lm2 is not None
     assert result.barrier_impact is not None
+    assert result.wind is not None
     assert result.construction is not None
     assert not result.unresolved_inputs
     assert session.last_extended_actions is result
@@ -185,3 +200,4 @@ def test_default_extended_actions_keep_unknown_project_inputs_visible() -> None:
 
     assert "thermal uniform expansion/contraction ranges" in result.unresolved_inputs
     assert "footway widths for pedestrian loading" in result.unresolved_inputs
+    assert "project/basic wind speed" in result.unresolved_inputs
