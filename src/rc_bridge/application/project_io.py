@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
@@ -16,7 +16,7 @@ PROJECT_DOCUMENT_SCHEMA_VERSION = 1
 @dataclass(frozen=True)
 class ProjectDocument:
     project: ProjectInput
-    application_preferences: ApplicationPreferences = ApplicationPreferences()
+    application_preferences: ApplicationPreferences = field(default_factory=ApplicationPreferences)
     schema_version: int = PROJECT_DOCUMENT_SCHEMA_VERSION
     document_format: str = PROJECT_DOCUMENT_FORMAT
 
