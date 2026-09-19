@@ -512,7 +512,7 @@ def main() -> int:
     print_button.pack(side=tk.LEFT, padx=6)
     export_button = ttk.Button(
         verification_buttons,
-        text="Export governing MIDAS / STAAD packages",
+        text="Export consolidated MIDAS / STAAD",
     )
     export_button.pack(side=tk.LEFT, padx=6)
     analysis_buttons.extend((html_button, pdf_button, print_button, export_button))
@@ -1216,15 +1216,16 @@ def main() -> int:
         if not directory:
             return
         try:
-            packages = session.export_last_lm1_verification(
+            written = session.export_last_lm1_verification(
                 directory,
-                base_name="application_lm1",
+                base_name="application_lm1_governing",
             )
         except (OSError, TypeError, ValueError, RuntimeError) as exc:
             messagebox.showerror("Verification export", str(exc))
             return
         status_var.set(
-            f"Exported {len(packages)} governing MIDAS/STAAD case packages."
+            "Exported one MIDAS .mct and one STAAD .std containing "
+            f"{len(written.case_ids)} governing LM1 load cases."
         )
 
     apply_project_button.configure(command=apply_project)
@@ -1266,7 +1267,7 @@ def main() -> int:
 
     verification_menu = tk.Menu(menu, tearoff=False)
     verification_menu.add_command(
-        label="Export MIDAS / STAAD...",
+        label="Export consolidated MIDAS / STAAD...",
         command=export_verification,
     )
     menu.add_cascade(label="Verification", menu=verification_menu)
