@@ -569,6 +569,16 @@ def build_integrated_action_combinations(
 
     blockers: list[str] = []
     blockers.extend(actions.unresolved_inputs)
+    if actions.lm2 is not None:
+        blockers.append(
+            "LM2 local deck/slab plate resistance check requires a dedicated "
+            "local plate model or verified external local-deck result"
+        )
+    if actions.barrier_impact is not None:
+        blockers.append(
+            "barrier accompanying vertical wheel local deck/slab check requires "
+            "a dedicated local plate model or verified external local-deck result"
+        )
     if bearing is not None:
         if bearing.force_capacity_per_bearing_kn is None:
             blockers.append("bearing longitudinal resistance not specified")
