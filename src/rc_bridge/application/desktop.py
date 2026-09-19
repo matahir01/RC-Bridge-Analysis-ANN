@@ -2631,6 +2631,20 @@ def main() -> int:
                 "Gk + accidental accompanying vertical wheel local strip response.",
             ),
         )
+        local_result_tree.insert(
+            "",
+            tk.END,
+            values=(
+                "Local deck shear",
+                "One-way transverse strip",
+                (
+                    f"VEd={result.one_way_shear.design_shear_kn_per_m:.2f} kN/m; "
+                    f"VRdc={result.one_way_shear.concrete_resistance_kn_per_m:.2f} kN/m; "
+                    f"util={result.one_way_shear.utilization:.3f}"
+                ),
+                result.one_way_shear.status,
+            ),
+        )
         for reinforcement in (
             result.bottom_transverse,
             result.top_transverse,
