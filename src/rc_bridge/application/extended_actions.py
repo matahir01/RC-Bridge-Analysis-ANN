@@ -207,6 +207,9 @@ class LM2ActionResult:
     contact_pressure_kn_m2: float
     girders: tuple[GirderActionEnvelope, ...]
     governing_positions: tuple[tuple[int, float, float], ...]
+    governing_moment_positions: tuple[tuple[int, float, float], ...]
+    governing_shear_positions: tuple[tuple[int, float, float], ...]
+    governing_torsion_positions: tuple[tuple[int, float, float], ...]
     status: str
 
 
@@ -595,9 +598,13 @@ def lm2_action(
     if not cases:
         raise ValueError("No LM2 scan positions were generated.")
 
-    best: dict[int, GirderActionEnvelope] = {}
-    best_metric: dict[int, float] = {}
-    governing_positions: dict[int, tuple[int, float, float]] = {}
+    girder_y: dict[int, float] = {}
+    best_moment: dict[int, float] = {}
+    best_shear: dict[int, float] = {}
+    best_torsion: dict[int, float] = {}
+    moment_positions: dict[int, tuple[int, float, float]] = {}
+    shear_positions: dict[int, tuple[int, float, float]] = {}
+    torsion_positions: dict[int, tuple[int, float, float]] = {}
     prepared = None
     total_cases = len(cases)
     for completed, (case_id, x_m, y_center) in enumerate(cases, start=1):
@@ -627,36 +634,59 @@ def lm2_action(
             prepared = prepare_vertical_grillage(model)
         analysis = solve_prepared_vertical_grillage(prepared, model)
         for item in _effects_from_native_envelope(model, analysis, case_id=case_id):
-            metric = max(
-                abs(item.effects.moment_knm),
-                abs(item.effects.shear_kn),
-                abs(item.effects.torsion_knm),
-            )
-            if metric > best_metric.get(item.girder_index, -1.0):
-                best_metric[item.girder_index] = metric
-                best[item.girder_index] = item
-                governing_positions[item.girder_index] = (
-                    case_id,
-                    x_m,
-                    y_center,
-                )
+            index = item.girder_index
+            girder_y[index] = item.y_m
+            moment = abs(item.effects.moment_knm)
+            shear = abs(item.effects.shear_kn)
+            torsion = abs(item.effects.torsion_knm)
+            if moment > best_moment.get(index, -1.0):
+                best_moment[index] = moment
+                moment_positions[index] = (case_id, x_m, y_center)
+            if shear > best_shear.get(index, -1.0):
+                best_shear[index] = shear
+                shear_positions[index] = (case_id, x_m, y_center)
+            if torsion > best_torsion.get(index, -1.0):
+                best_torsion[index] = torsion
+                torsion_positions[index] = (case_id, x_m, y_center)
         if progress_callback is not None:
             progress_callback(completed, total_cases)
 
+    indices = tuple(sorted(girder_y))
+    girders = tuple(
+        GirderActionEnvelope(
+            girder_index=index,
+            y_m=girder_y[index],
+            effects=LoadEffects(
+                moment_knm=best_moment[index],
+                shear_kn=best_shear[index],
+                torsion_knm=best_torsion[index],
+            ),
+            case_id=moment_positions[index][0],
+        )
+        for index in indices
+    )
     return LM2ActionResult(
         evaluated_case_count=total_cases,
         wheel_load_kn=wheel_load,
         axle_load_kn=axle_load,
         contact_pressure_kn_m2=contact_pressure,
-        girders=tuple(best[index] for index in sorted(best)),
-        governing_positions=tuple(
-            governing_positions[index] for index in sorted(governing_positions)
+        girders=girders,
+        governing_positions=tuple(moment_positions[index] for index in indices),
+        governing_moment_positions=tuple(
+            moment_positions[index] for index in indices
+        ),
+        governing_shear_positions=tuple(
+            shear_positions[index] for index in indices
+        ),
+        governing_torsion_positions=tuple(
+            torsion_positions[index] for index in indices
         ),
         status=(
-            "EN 1991-2 LM2 global/local grillage scan using two wheel-centroid point loads. "
-            "The 0.35 m x 0.60 m contact patch is retained as an explicit local-design "
-            "pressure, but slab punching/local plate stress is not replaced by the beam "
-            "grillage response."
+            "EN 1991-2 LM2 scan with independent per-girder M/V/T envelopes. "
+            "Each response component retains its own governing axle placement; "
+            "the 0.35 m x 0.60 m contact patch remains an explicit local-design "
+            "pressure, while slab punching/local plate stress is not relabelled "
+            "from the beam-grillage response."
         ),
     )
 
