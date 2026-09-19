@@ -405,7 +405,7 @@ def import_staad_anl_verification_results(
     requested = result_ids or verification_result_ids(model)
     if len(requested) != len(set(requested)):
         raise ValueError("Verification result IDs cannot contain duplicates.")
-    expected = nativenative_expected_results_by_id(model, requested)
+    expected = native_expected_results_by_id(model, requested)
     policy = tolerance or VerificationImportTolerance()
 
     imported: list[ImportedVerificationResultSet] = []
