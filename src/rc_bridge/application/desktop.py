@@ -359,12 +359,33 @@ def main() -> int:
         key="gamma_g_favourable",
     )
     add_entry(ec_frame, row=2, label="γQ traffic", key="gamma_q_traffic")
-    add_entry(ec_frame, row=3, label="ψ1 traffic", key="psi1_traffic")
-    add_entry(ec_frame, row=4, label="ψ2 traffic", key="psi2_traffic")
-    add_entry(ec_frame, row=5, label="Crack limit (mm)", key="crack_limit")
     add_entry(
         ec_frame,
-        row=6,
+        row=3,
+        label="γQ non-traffic / execution",
+        key="gamma_q_nontraffic",
+    )
+    add_entry(ec_frame, row=4, label="ψ1 traffic", key="psi1_traffic")
+    add_entry(ec_frame, row=5, label="ψ2 traffic", key="psi2_traffic")
+    add_entry(ec_frame, row=6, label="ψ1 LM2", key="psi1_lm2")
+    add_entry(
+        ec_frame,
+        row=7,
+        label="ψ0 thermal ULS",
+        key="psi0_thermal_uls",
+    )
+    add_entry(
+        ec_frame,
+        row=8,
+        label="ψ0 thermal SLS",
+        key="psi0_thermal_sls",
+    )
+    add_entry(ec_frame, row=9, label="ψ1 thermal", key="psi1_thermal")
+    add_entry(ec_frame, row=10, label="ψ2 thermal", key="psi2_thermal")
+    add_entry(ec_frame, row=11, label="Crack limit (mm)", key="crack_limit")
+    add_entry(
+        ec_frame,
+        row=12,
         label="Deflection limit denominator (L/...)",
         key="deflection_ratio",
     )
@@ -678,55 +699,73 @@ def main() -> int:
         label="Braking alpha q1",
         key="action_braking_alpha_q1",
     )
+    add_entry(
+        traffic_actions_frame,
+        row=4,
+        label="gr2 LM1 tandem factor",
+        key="action_gr2_ts_factor",
+    )
+    add_entry(
+        traffic_actions_frame,
+        row=5,
+        label="gr2 LM1 UDL factor",
+        key="action_gr2_udl_factor",
+    )
     ttk.Separator(traffic_actions_frame).grid(
-        row=4, column=0, columnspan=2, sticky="ew", pady=5
+        row=6, column=0, columnspan=2, sticky="ew", pady=5
     )
     ttk.Checkbutton(
         traffic_actions_frame,
         text="Pedestrian / footway UDL",
         variable=bvar("action_pedestrian_enabled"),
-    ).grid(row=5, column=0, columnspan=2, sticky="w")
+    ).grid(row=7, column=0, columnspan=2, sticky="w")
     add_entry(
         traffic_actions_frame,
-        row=6,
+        row=8,
         label="Pedestrian qfk (kN/m²)",
         key="action_pedestrian_q",
     )
     add_entry(
         traffic_actions_frame,
-        row=7,
+        row=9,
+        label="Reduced qfk with LM1 (kN/m²)",
+        key="action_pedestrian_reduced_q",
+    )
+    add_entry(
+        traffic_actions_frame,
+        row=10,
         label="Left usable footway width",
         key="action_left_footway",
     )
     add_entry(
         traffic_actions_frame,
-        row=8,
+        row=11,
         label="Right usable footway width",
         key="action_right_footway",
     )
     ttk.Separator(traffic_actions_frame).grid(
-        row=9, column=0, columnspan=2, sticky="ew", pady=5
+        row=12, column=0, columnspan=2, sticky="ew", pady=5
     )
     ttk.Checkbutton(
         traffic_actions_frame,
         text="LM2 isolated axle scan",
         variable=bvar("action_lm2_enabled"),
-    ).grid(row=10, column=0, columnspan=2, sticky="w")
+    ).grid(row=13, column=0, columnspan=2, sticky="w")
     add_entry(
         traffic_actions_frame,
-        row=11,
+        row=14,
         label="LM2 beta Q",
         key="action_lm2_beta",
     )
     add_entry(
         traffic_actions_frame,
-        row=12,
+        row=15,
         label="LM2 longitudinal step",
         key="action_lm2_x_step",
     )
     add_entry(
         traffic_actions_frame,
-        row=13,
+        row=16,
         label="LM2 transverse step",
         key="action_lm2_y_step",
     )
@@ -779,16 +818,31 @@ def main() -> int:
         label="Longitudinal restraint fraction",
         key="action_thermal_restraint",
     )
+    ttk.Separator(thermal_actions_frame).grid(
+        row=7, column=0, columnspan=2, sticky="ew", pady=5
+    )
+    add_entry(
+        thermal_actions_frame,
+        row=8,
+        label="Bearing longitudinal capacity / bearing (kN)",
+        key="action_bearing_force_capacity",
+    )
+    add_entry(
+        thermal_actions_frame,
+        row=9,
+        label="Bearing movement capacity (mm)",
+        key="action_bearing_movement_capacity",
+    )
     ttk.Label(
         thermal_actions_frame,
         text=(
             "15/8 °C are first-generation concrete-beam reference gradients. "
             "Uniform expansion/contraction ranges must come from the project climate/"
-            "National Annex; zero means not yet specified."
+            "National Annex; zero capacity means demand-only and remains a design blocker."
         ),
         wraplength=340,
         justify=tk.LEFT,
-    ).grid(row=7, column=0, columnspan=2, sticky="w", pady=(8, 0))
+    ).grid(row=10, column=0, columnspan=2, sticky="w", pady=(8, 0))
 
     accidental_actions_frame = ttk.LabelFrame(
         actions_input,
@@ -826,17 +880,29 @@ def main() -> int:
         label="Barrier alpha Q1",
         key="action_barrier_alpha_Q1",
     )
+    add_entry(
+        accidental_actions_frame,
+        row=5,
+        label="Barrier transverse resistance (kN)",
+        key="action_barrier_transverse_resistance",
+    )
+    add_entry(
+        accidental_actions_frame,
+        row=6,
+        label="Barrier base-moment resistance (kNm)",
+        key="action_barrier_moment_resistance",
+    )
     ttk.Separator(accidental_actions_frame).grid(
-        row=5, column=0, columnspan=2, sticky="ew", pady=5
+        row=7, column=0, columnspan=2, sticky="ew", pady=5
     )
     ttk.Checkbutton(
         accidental_actions_frame,
         text="Construction-stage actions",
         variable=bvar("action_construction_enabled"),
-    ).grid(row=6, column=0, columnspan=2, sticky="w")
+    ).grid(row=8, column=0, columnspan=2, sticky="w")
     add_entry(
         accidental_actions_frame,
-        row=7,
+        row=9,
         label="Execution UDL (kN/m²)",
         key="action_construction_udl",
     )
@@ -844,12 +910,12 @@ def main() -> int:
         accidental_actions_frame,
         text=(
             "Girder, false-slab, wet-deck and superimposed permanent actions are "
-            "automatically separated by construction stage. Execution UDL is an "
-            "explicit project input and is not invented."
+            "automatically separated by construction stage. Zero barrier resistance "
+            "means demand-only and remains a design blocker."
         ),
         wraplength=340,
         justify=tk.LEFT,
-    ).grid(row=8, column=0, columnspan=2, sticky="w", pady=(8, 0))
+    ).grid(row=10, column=0, columnspan=2, sticky="w", pady=(8, 0))
 
     action_buttons = ttk.Frame(actions_tab)
     action_buttons.grid(row=2, column=0, sticky="ne", pady=(0, 6))
@@ -984,9 +1050,10 @@ def main() -> int:
         text=(
             "Analysis-derived EC2 design interpretation. Flexure, shear, crack width, "
             "service deflection and reinforcement/detailing are calculated from the current "
-            "physical layered section and native LM1 results. Production acceptance remains "
-            "locked until Stage 7 independent verification and completion of all applicable "
-            "traffic/environmental/accidental actions."
+            "physical layered section and the governing compatible action groups. "
+            "Construction stages, bearing/restraint demand and local barrier demand are "
+            "carried with the design; unresolved capacities remain explicit blockers. "
+            "Production acceptance remains locked until Stage 7 independent verification."
         ),
         wraplength=1180,
         justify=tk.LEFT,
@@ -1102,7 +1169,10 @@ def main() -> int:
     run_design_button.grid(row=3, column=5, sticky="e", pady=3)
 
     design_status_var = tk.StringVar(
-        value="Run native LM1 analysis before the design interpretation."
+        value=(
+            "Run native LM1 and Additional actions 1–6 before the integrated "
+            "design interpretation."
+        )
     )
     ttk.Label(
         design_tab,
@@ -1132,6 +1202,9 @@ def main() -> int:
         "crack_util",
         "defl",
         "defl_util",
+        "gov_m",
+        "gov_v",
+        "construction",
         "status",
     )
     design_tree = ttk.Treeview(
@@ -1155,14 +1228,32 @@ def main() -> int:
         "crack_util": "Crack util.",
         "defl": "Defl. (mm)",
         "defl_util": "Defl. util.",
+        "gov_m": "Governing M situation",
+        "gov_v": "Governing V situation",
+        "construction": "Construction stage",
         "status": "Current checks",
     }
     for key in design_columns:
         design_tree.heading(key, text=design_headings[key])
         design_tree.column(
             key,
-            width=105 if key not in {"bars", "links", "status"} else 155,
-            anchor=tk.CENTER if key != "status" else tk.W,
+            width=(
+                105
+                if key not in {
+                    "bars",
+                    "links",
+                    "gov_m",
+                    "gov_v",
+                    "construction",
+                    "status",
+                }
+                else 185
+            ),
+            anchor=(
+                tk.CENTER
+                if key not in {"gov_m", "gov_v", "construction", "status"}
+                else tk.W
+            ),
         )
     design_x_scroll = ttk.Scrollbar(
         design_frame,
