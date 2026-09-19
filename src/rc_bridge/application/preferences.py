@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, field
 from enum import Enum
 from typing import Any
 
@@ -101,7 +101,7 @@ class ApplicationPreferences:
     units: UnitDisplay = UnitDisplay.SI_METRES
     eurocode: EurocodeApplicationBasis = EurocodeApplicationBasis()
     analysis: AnalysisApplicationSettings = AnalysisApplicationSettings()
-    design: ApplicationDesignSettings = ApplicationDesignSettings()
+    design: ApplicationDesignSettings = field(default_factory=ApplicationDesignSettings)
 
     def as_dict(self) -> dict[str, Any]:
         data = asdict(self)
