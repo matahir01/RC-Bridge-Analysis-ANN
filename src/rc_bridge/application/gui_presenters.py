@@ -12,7 +12,10 @@ from rc_bridge.core.models import (
     RectangularGirderProfile,
     TGirderProfile,
 )
-from rc_bridge.workflow.lm1_grillage_search import ProjectNativeLM1GrillageSearchResult
+from rc_bridge.workflow.lm1_grillage_search import (
+    ProjectNativeLM1GrillageSearchResult,
+    native_lm1_girder_moment_diagram,
+)
 
 
 @dataclass(frozen=True)
@@ -53,6 +56,17 @@ class AnalysisDashboardData:
     evaluated_case_count: int
     prepared_structure_count: int
     reused_factorization_solve_count: int
+
+
+@dataclass(frozen=True)
+class AnalysisLineDiagram:
+    girder_index: int
+    metric: str
+    case_id: int
+    stations_m: tuple[float, ...]
+    values: tuple[float, ...]
+    unit: str
+    note: str
 
 
 @dataclass(frozen=True)
@@ -229,6 +243,128 @@ def analysis_dashboard_data(
         evaluated_case_count=result.evaluated_case_count,
         prepared_structure_count=result.prepared_structure_count,
         reused_factorization_solve_count=result.reused_factorization_solve_count,
+    )
+
+
+def analysis_girder_diagram(
+    result: ProjectNativeLM1GrillageSearchResult,
+    *,
+    girder_index: int,
+    metric: str,
+) -> AnalysisLineDiagram:
+    """Recover one signed governing longitudinal response diagram for the GUI."""
+
+    girder = next(
+        (item for item in result.girders if item.girder_index == girder_index),
+        None,
+    )
+    if girder is None:
+        raise ValueError(f"Unknown girder index {girder_index}.")
+
+    metric_key = metric.strip().lower()
+    if metric_key == "moment":
+        case_id = girder.moment_knm.case_id
+        diagram = native_lm1_girder_moment_diagram(
+            result,
+            girder_index=girder_index,
+            case_id=case_id,
+        )
+        return AnalysisLineDiagram(
+            girder_index=girder_index,
+            metric="Moment",
+            case_id=case_id,
+            stations_m=diagram.stations_m,
+            values=diagram.moments_knm,
+            unit="kNm",
+            note="Signed internal section moment from the exact governing LM1 case.",
+        )
+
+    if metric_key == "deflection":
+        trace = result.deflection_for_girder(girder_index)
+        case_id = trace.case_id
+    elif metric_key == "shear":
+        case_id = girder.shear_kn.case_id
+    elif metric_key == "torsion":
+        case_id = girder.torsion_knm.case_id
+    else:
+        raise ValueError(f"Unsupported analysis diagram metric: {metric}")
+
+    case = next(
+        (item for item in result.cases if item.placement.case_id == case_id),
+        None,
+    )
+    if case is None:
+        raise RuntimeError(
+            f"Governing case {case_id} is not retained in the native LM1 result."
+        )
+
+    nodes = {item.node_id: item for item in case.model.nodes}
+    target_y = float(girder.y_m)
+
+    if metric_key == "deflection":
+        node_results = {item.node_id: item for item in case.analysis.nodes}
+        points = sorted(
+            (
+                (float(node.x_m), node_results[node.node_id].vertical_displacement_m * 1000.0)
+                for node in case.model.nodes
+                if abs(float(node.y_m) - target_y) <= 1.0e-9
+            ),
+            key=lambda item: item[0],
+        )
+        return AnalysisLineDiagram(
+            girder_index=girder_index,
+            metric="Deflection",
+            case_id=case_id,
+            stations_m=tuple(item[0] for item in points),
+            values=tuple(item[1] for item in points),
+            unit="mm",
+            note=(
+                "Signed nodal vertical displacement from the exact governing deflection "
+                "case; the solver's reported governing displacement may occur between nodes."
+            ),
+        )
+
+    member_results = {item.member_id: item for item in case.analysis.members}
+    longitudinal = []
+    for beam in case.model.beams:
+        ni = nodes[beam.node_i]
+        nj = nodes[beam.node_j]
+        if (
+            abs(float(ni.y_m) - target_y) <= 1.0e-9
+            and abs(float(nj.y_m) - target_y) <= 1.0e-9
+            and float(nj.x_m) > float(ni.x_m) + 1.0e-9
+        ):
+            longitudinal.append((float(ni.x_m), float(nj.x_m), beam.member_id))
+    longitudinal.sort()
+
+    stations: list[float] = []
+    values: list[float] = []
+    for x_i, x_j, member_id in longitudinal:
+        end = member_results[member_id]
+        if metric_key == "shear":
+            left_value = -float(end.i_vertical_force_kn)
+            right_value = float(end.j_vertical_force_kn)
+            unit = "kN"
+            title = "Shear"
+        else:
+            left_value = -float(end.i_torsion_knm)
+            right_value = float(end.j_torsion_knm)
+            unit = "kNm"
+            title = "Torsion"
+        stations.extend((x_i, x_j))
+        values.extend((left_value, right_value))
+
+    return AnalysisLineDiagram(
+        girder_index=girder_index,
+        metric=title,
+        case_id=case_id,
+        stations_m=tuple(stations),
+        values=tuple(values),
+        unit=unit,
+        note=(
+            "Signed member-end internal actions from the exact governing LM1 case. "
+            "Repeated stations preserve genuine joint jumps."
+        ),
     )
 
 
