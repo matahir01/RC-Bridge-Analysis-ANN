@@ -196,13 +196,19 @@ def _girder_outline(project: ProjectInput) -> tuple[tuple[float, float], ...]:
 
 def bridge_preview_data(project: ProjectInput) -> BridgePreviewData:
     geometry = project.geometry
-    layout = geometry.girder_layout
+    count = int(geometry.girder_count)
+    spacing = float(geometry.girder_spacing_m)
+    centre_offset = 0.5 * (count - 1) * spacing
+    girder_y_m = tuple(
+        index * spacing - centre_offset
+        for index in range(count)
+    )
     return BridgePreviewData(
         span_lengths_m=tuple(float(value) for value in geometry.span_lengths_m),
         deck_width_m=float(geometry.deck_width_m),
         carriageway_left_m=float(geometry.carriageway_left_edge_m),
         carriageway_right_m=float(geometry.carriageway_right_edge_m),
-        girder_y_m=tuple(float(value) for value in layout.girder_y_m),
+        girder_y_m=girder_y_m,
         girder_shape=geometry.section_type.value,
         girder_outline_m=_girder_outline(project),
         girder_depth_m=float(geometry.girder_depth_m),
