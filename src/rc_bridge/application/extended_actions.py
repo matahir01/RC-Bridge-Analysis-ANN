@@ -94,6 +94,8 @@ class ExtendedActionSettings:
     # demand-only reporting rather than a fabricated pass/fail check.
     bearing_longitudinal_capacity_per_bearing_kn: float = 0.0
     bearing_movement_capacity_mm: float = 0.0
+    barrier_transverse_resistance_kn: float = 0.0
+    barrier_base_moment_resistance_knm: float = 0.0
 
     # 6. Construction-stage actions
     construction_enabled: bool = True
@@ -132,6 +134,8 @@ class ExtendedActionSettings:
             self.construction_execution_udl_kn_m2,
             self.bearing_longitudinal_capacity_per_bearing_kn,
             self.bearing_movement_capacity_mm,
+            self.barrier_transverse_resistance_kn,
+            self.barrier_base_moment_resistance_knm,
         )
         if any(value < 0.0 for value in nonnegative):
             raise ValueError("Bridge-action magnitudes/widths cannot be negative.")
