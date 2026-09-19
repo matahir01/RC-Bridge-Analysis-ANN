@@ -3654,6 +3654,8 @@ def main() -> int:
                 text="Run native LM1 or the full workflow first",
                 values=("PENDING",),
             )
+            calculation_tree.selection_set(placeholder)
+            calculation_tree.focus(placeholder)
             calculation_item_map[placeholder] = (
                 type(
                     "_Placeholder",
@@ -4288,6 +4290,17 @@ def main() -> int:
                 f"({format_duration(elapsed)})."
             ),
         )
+
+    calculation_tree.bind("<<TreeviewSelect>>", show_calculation_detail)
+    calculation_refresh_button.configure(command=refresh_calculation_view)
+    header_open_button.configure(command=open_project)
+    header_save_button.configure(command=save_current)
+    header_run_button.configure(command=run_full_workflow)
+    overview_run_button.configure(command=run_full_workflow)
+    overview_calculations_button.configure(command=open_calculation_workspace)
+    overview_verification_button.configure(
+        command=lambda: notebook.select(verification_tab)
+    )
 
     apply_project_button.configure(command=apply_project)
     apply_load_cases_button.configure(command=apply_load_cases)
