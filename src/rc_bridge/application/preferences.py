@@ -1,13 +1,15 @@
 from __future__ import annotations
 
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, field
 from enum import Enum
 from typing import Any
 
+from rc_bridge.application.design_checks import ApplicationDesignSettings
 from rc_bridge.codes.eurocode.combinations import (
     EurocodeFactors,
     ServiceabilityPsiFactors,
 )
+from rc_bridge.workflow.project_bridge import SLSCombinationChoice
 
 
 class UnitDisplay(str, Enum):
@@ -99,10 +101,15 @@ class ApplicationPreferences:
     units: UnitDisplay = UnitDisplay.SI_METRES
     eurocode: EurocodeApplicationBasis = EurocodeApplicationBasis()
     analysis: AnalysisApplicationSettings = AnalysisApplicationSettings()
+    design: ApplicationDesignSettings = field(default_factory=ApplicationDesignSettings)
 
     def as_dict(self) -> dict[str, Any]:
         data = asdict(self)
         data["units"] = self.units.value
+        data["design"]["crack_combination"] = self.design.crack_combination.value
+        data["design"]["deflection_combination"] = (
+            self.design.deflection_combination.value
+        )
         return data
 
     @classmethod
@@ -114,12 +121,29 @@ class ApplicationPreferences:
         units = UnitDisplay(payload.get("units", UnitDisplay.SI_METRES.value))
         eurocode_payload = payload.get("eurocode", {})
         analysis_payload = payload.get("analysis", {})
+        design_payload = payload.get("design", {})
         if not isinstance(eurocode_payload, dict):
             raise TypeError("application_preferences.eurocode must be an object.")
         if not isinstance(analysis_payload, dict):
             raise TypeError("application_preferences.analysis must be an object.")
+        if not isinstance(design_payload, dict):
+            raise TypeError("application_preferences.design must be an object.")
+        design_data = dict(design_payload)
+        design_data["crack_combination"] = SLSCombinationChoice(
+            design_data.get(
+                "crack_combination",
+                SLSCombinationChoice.FREQUENT.value,
+            )
+        )
+        design_data["deflection_combination"] = SLSCombinationChoice(
+            design_data.get(
+                "deflection_combination",
+                SLSCombinationChoice.FREQUENT.value,
+            )
+        )
         return cls(
             units=units,
             eurocode=EurocodeApplicationBasis(**eurocode_payload),
             analysis=AnalysisApplicationSettings(**analysis_payload),
+            design=ApplicationDesignSettings(**design_data),
         )

@@ -10,6 +10,7 @@ from rc_bridge.analysis.physical_sections import (
     composite_section_description,
     girder_tributary_slab_widths_m,
 )
+from rc_bridge.application.design_checks import ApplicationDesignSettings
 from rc_bridge.application.load_cases import (
     ApplicationLoadCaseFields,
     SurfacingExtent,
@@ -28,6 +29,7 @@ from rc_bridge.application.project_editor import (
 from rc_bridge.application.session import BridgeApplicationSession
 from rc_bridge.core.models import DesignCode, SectionType, SupportSystem
 from rc_bridge.workflow.lm1_grillage_search import LM1SearchCancelled
+from rc_bridge.workflow.project_bridge import SLSCombinationChoice
 
 
 def main() -> int:
@@ -719,30 +721,222 @@ def main() -> int:
     ttk.Label(
         design_tab,
         text=(
-            "This dashboard exposes what the deterministic engine can do and "
-            "keeps independent-validation gates visible. Implemented design "
-            "modules are not relabelled as production-certified before Stage 7."
+            "Analysis-derived EC2 design interpretation. Flexure, shear, crack width, "
+            "service deflection and reinforcement/detailing are calculated from the current "
+            "physical layered section and native LM1 results. Production acceptance remains "
+            "locked until Stage 7 independent verification and completion of all applicable "
+            "traffic/environmental/accidental actions."
         ),
-        wraplength=1080,
+        wraplength=1180,
         justify=tk.LEFT,
     ).pack(fill=tk.X)
 
-    capability_tree = ttk.Treeview(
+    design_controls = ttk.LabelFrame(
         design_tab,
+        text="Design assumptions",
+        padding=8,
+    )
+    design_controls.pack(fill=tk.X, pady=(8, 0))
+    for column in range(6):
+        design_controls.columnconfigure(column, weight=1)
+
+    add_entry_at(
+        design_controls,
+        row=0,
+        label="Cover (mm)",
+        key="design_cover",
+        label_column=0,
+        entry_column=1,
+    )
+    add_entry_at(
+        design_controls,
+        row=1,
+        label="Durability min cover (mm)",
+        key="design_durability_cover",
+        label_column=0,
+        entry_column=1,
+    )
+    add_entry_at(
+        design_controls,
+        row=2,
+        label="Cover deviation (mm)",
+        key="design_cover_deviation",
+        label_column=0,
+        entry_column=1,
+    )
+    add_entry_at(
+        design_controls,
+        row=0,
+        label="Aggregate size (mm)",
+        key="design_aggregate",
+        label_column=2,
+        entry_column=3,
+    )
+    add_entry_at(
+        design_controls,
+        row=1,
+        label="Nominal link dia. (mm)",
+        key="design_link_diameter",
+        label_column=2,
+        entry_column=3,
+    )
+    add_entry_at(
+        design_controls,
+        row=2,
+        label="cot θ",
+        key="design_cot_theta",
+        label_column=2,
+        entry_column=3,
+    )
+    add_entry_at(
+        design_controls,
+        row=0,
+        label="Creep coefficient",
+        key="design_creep",
+        label_column=4,
+        entry_column=5,
+    )
+    add_entry_at(
+        design_controls,
+        row=1,
+        label="Deflection β",
+        key="design_beta",
+        label_column=4,
+        entry_column=5,
+    )
+    add_entry_at(
+        design_controls,
+        row=2,
+        label="Crack kt",
+        key="design_crack_kt",
+        label_column=4,
+        entry_column=5,
+    )
+
+    ttk.Label(design_controls, text="Crack SLS combination").grid(
+        row=3, column=0, sticky="w", padx=(0, 8), pady=3
+    )
+    ttk.Combobox(
+        design_controls,
+        textvariable=svar("design_crack_combination"),
+        values=[item.value for item in SLSCombinationChoice],
+        state="readonly",
+        width=18,
+    ).grid(row=3, column=1, sticky="ew", pady=3)
+    ttk.Label(design_controls, text="Deflection SLS combination").grid(
+        row=3, column=2, sticky="w", padx=(8, 8), pady=3
+    )
+    ttk.Combobox(
+        design_controls,
+        textvariable=svar("design_deflection_combination"),
+        values=[item.value for item in SLSCombinationChoice],
+        state="readonly",
+        width=18,
+    ).grid(row=3, column=3, sticky="ew", pady=3)
+
+    run_design_button = ttk.Button(
+        design_controls,
+        text="Run design interpretation",
+    )
+    run_design_button.grid(row=3, column=5, sticky="e", pady=3)
+
+    design_status_var = tk.StringVar(
+        value="Run native LM1 analysis before the design interpretation."
+    )
+    ttk.Label(
+        design_tab,
+        textvariable=design_status_var,
+        wraplength=1180,
+        justify=tk.LEFT,
+    ).pack(fill=tk.X, pady=(8, 4))
+
+    design_frame = ttk.LabelFrame(
+        design_tab,
+        text="Per-girder design results",
+        padding=6,
+    )
+    design_frame.pack(fill=tk.BOTH, expand=True)
+    design_columns = (
+        "girder",
+        "d",
+        "med",
+        "as_req",
+        "bars",
+        "mrd",
+        "flex_util",
+        "ved",
+        "links",
+        "shear_util",
+        "wk",
+        "crack_util",
+        "defl",
+        "defl_util",
+        "status",
+    )
+    design_tree = ttk.Treeview(
+        design_frame,
+        columns=design_columns,
+        show="headings",
+        height=10,
+    )
+    design_headings = {
+        "girder": "Girder",
+        "d": "d (mm)",
+        "med": "MEd (kNm)",
+        "as_req": "As,req (mm²)",
+        "bars": "Selected bars",
+        "mrd": "MRd (kNm)",
+        "flex_util": "M util.",
+        "ved": "VEd (kN)",
+        "links": "Selected links",
+        "shear_util": "V util.",
+        "wk": "wk (mm)",
+        "crack_util": "Crack util.",
+        "defl": "Defl. (mm)",
+        "defl_util": "Defl. util.",
+        "status": "Current checks",
+    }
+    for key in design_columns:
+        design_tree.heading(key, text=design_headings[key])
+        design_tree.column(
+            key,
+            width=105 if key not in {"bars", "links", "status"} else 155,
+            anchor=tk.CENTER if key != "status" else tk.W,
+        )
+    design_x_scroll = ttk.Scrollbar(
+        design_frame,
+        orient=tk.HORIZONTAL,
+        command=design_tree.xview,
+    )
+    design_tree.configure(xscrollcommand=design_x_scroll.set)
+    design_tree.pack(fill=tk.BOTH, expand=True)
+    design_x_scroll.pack(fill=tk.X)
+
+    capability_frame = ttk.LabelFrame(
+        design_tab,
+        text="Verification and capability boundary",
+        padding=6,
+    )
+    capability_frame.pack(fill=tk.X, pady=(8, 0))
+    capability_tree = ttk.Treeview(
+        capability_frame,
         columns=("capability", "state", "detail"),
         show="headings",
-        height=18,
+        height=5,
     )
     capability_tree.heading("capability", text="Capability")
     capability_tree.heading("state", text="State")
     capability_tree.heading("detail", text="Engineering boundary")
-    capability_tree.column("capability", width=310, anchor=tk.W)
-    capability_tree.column("state", width=160, anchor=tk.CENTER)
-    capability_tree.column("detail", width=720, anchor=tk.W)
-    capability_tree.pack(fill=tk.BOTH, expand=True, pady=(10, 0))
+    capability_tree.column("capability", width=280, anchor=tk.W)
+    capability_tree.column("state", width=150, anchor=tk.CENTER)
+    capability_tree.column("detail", width=760, anchor=tk.W)
+    capability_tree.pack(fill=tk.X, expand=True)
 
-    refresh_dashboard_button = ttk.Button(design_tab, text="Refresh dashboard")
-    refresh_dashboard_button.pack(anchor=tk.E, pady=(8, 0))
+    refresh_dashboard_button = ttk.Button(
+        capability_frame,
+        text="Refresh dashboard",
+    )
+    refresh_dashboard_button.pack(anchor=tk.E, pady=(6, 0))
 
     # ------------------------------------------------------------------
     # Verification tab
@@ -897,10 +1091,34 @@ def main() -> int:
                 string_vars["max_tandem"].get()
             ),
         )
+        design = ApplicationDesignSettings(
+            cover_mm=float(string_vars["design_cover"].get()),
+            durability_minimum_cover_mm=float(
+                string_vars["design_durability_cover"].get()
+            ),
+            cover_deviation_mm=float(
+                string_vars["design_cover_deviation"].get()
+            ),
+            aggregate_size_mm=float(string_vars["design_aggregate"].get()),
+            nominal_link_diameter_mm=float(
+                string_vars["design_link_diameter"].get()
+            ),
+            crack_combination=SLSCombinationChoice(
+                string_vars["design_crack_combination"].get()
+            ),
+            deflection_combination=SLSCombinationChoice(
+                string_vars["design_deflection_combination"].get()
+            ),
+            creep_coefficient=float(string_vars["design_creep"].get()),
+            deflection_beta=float(string_vars["design_beta"].get()),
+            crack_kt=float(string_vars["design_crack_kt"].get()),
+            cot_theta=float(string_vars["design_cot_theta"].get()),
+        )
         return ApplicationPreferences(
             units=new_units,
             eurocode=basis,
             analysis=analysis,
+            design=design,
         )
 
     def load_case_fields_from_form() -> ApplicationLoadCaseFields:
@@ -1068,6 +1286,28 @@ def main() -> int:
         string_vars["max_tandem"].set(
             str(preferences.analysis.max_exhaustive_tandem_combinations)
         )
+        design = preferences.design
+        string_vars["design_cover"].set(f"{design.cover_mm:g}")
+        string_vars["design_durability_cover"].set(
+            f"{design.durability_minimum_cover_mm:g}"
+        )
+        string_vars["design_cover_deviation"].set(
+            f"{design.cover_deviation_mm:g}"
+        )
+        string_vars["design_aggregate"].set(f"{design.aggregate_size_mm:g}")
+        string_vars["design_link_diameter"].set(
+            f"{design.nominal_link_diameter_mm:g}"
+        )
+        string_vars["design_crack_combination"].set(
+            design.crack_combination.value
+        )
+        string_vars["design_deflection_combination"].set(
+            design.deflection_combination.value
+        )
+        string_vars["design_creep"].set(f"{design.creep_coefficient:g}")
+        string_vars["design_beta"].set(f"{design.deflection_beta:g}")
+        string_vars["design_crack_kt"].set(f"{design.crack_kt:g}")
+        string_vars["design_cot_theta"].set(f"{design.cot_theta:g}")
 
     def populate_load_cases(project) -> None:
         fields = ApplicationLoadCaseFields.from_project(project)
@@ -1149,10 +1389,19 @@ def main() -> int:
             )
 
     def clear_results() -> None:
-        for tree in (effect_tree, deflection_tree, package_tree, combination_tree):
+        for tree in (
+            effect_tree,
+            deflection_tree,
+            package_tree,
+            combination_tree,
+            design_tree,
+        ):
             for item in tree.get_children():
                 tree.delete(item)
         search_status_var.set("No native LM1 analysis has been run.")
+        design_status_var.set(
+            "Run native LM1 analysis before the design interpretation."
+        )
 
     def show_result(result) -> None:
         for item in effect_tree.get_children():
@@ -1210,6 +1459,69 @@ def main() -> int:
         status_var.set("Native LM1 analysis complete.")
         refresh_load_case_views()
         refresh_dashboard()
+
+    def show_design_result(result) -> None:
+        for item in design_tree.get_children():
+            design_tree.delete(item)
+        for row in result.girders:
+            flex = row.design.uls_design.flexure
+            bars = row.selected_bars
+            links = row.selected_links
+            design_tree.insert(
+                "",
+                tk.END,
+                values=(
+                    row.girder_index,
+                    f"{row.effective_depth_m * 1000.0:.1f}",
+                    f"{row.design.uls_design.design_effects.moment_knm:.2f}",
+                    f"{flex.required_steel_area_mm2:.0f}",
+                    (
+                        f"{bars.bar_count}-Y{bars.bar_diameter_mm:g} "
+                        f"({bars.layer_count} layer)"
+                    ),
+                    f"{flex.resistance_knm:.2f}",
+                    f"{flex.utilization:.3f}",
+                    f"{abs(row.design.uls_design.design_effects.shear_kn):.2f}",
+                    (
+                        f"{links.leg_count}L-Y{links.link_diameter_mm:g}"
+                        f"@{links.spacing_mm:g}"
+                    ),
+                    f"{row.design.shear_utilization:.3f}",
+                    f"{row.design.crack.crack_width_mm:.3f}",
+                    f"{row.design.crack.utilization:.3f}",
+                    f"{row.design.deflection.interpolated_deflection_mm:.3f}",
+                    f"{row.design.deflection.utilization:.3f}",
+                    "PASS" if row.passes_current_checks else "CHECK",
+                ),
+            )
+        design_status_var.set(result.status)
+        status_var.set("Design interpretation complete.")
+        refresh_dashboard()
+
+    def run_design_interpretation() -> None:
+        try:
+            project_before = session.project
+            search_before = session.last_lm1_search
+            commit_forms()
+        except (TypeError, ValueError) as exc:
+            messagebox.showerror("Design assumptions", str(exc))
+            return
+        if (
+            project_before != session.project
+            or search_before is not session.last_lm1_search
+            or session.last_lm1_search is None
+        ):
+            messagebox.showinfo(
+                "Design interpretation",
+                "Project or analysis settings changed. Run native LM1 analysis again first.",
+            )
+            return
+        try:
+            result = session.run_design_interpretation()
+        except (TypeError, ValueError, RuntimeError) as exc:
+            messagebox.showerror("Design interpretation", str(exc))
+            return
+        show_design_result(result)
 
     def refresh_dashboard() -> None:
         for item in capability_tree.get_children():
@@ -1469,6 +1781,7 @@ def main() -> int:
         session.project_path = None
         session.preferences = ApplicationPreferences()
         session.last_lm1_search = None
+        session.last_design_interpretation = None
         displayed_unit = session.preferences.units
         populate_project(session.project)
         populate_preferences(session.preferences)
@@ -1630,6 +1943,7 @@ def main() -> int:
         command=lambda: populate_preferences(session.preferences)
     )
     run_button.configure(command=run_analysis)
+    run_design_button.configure(command=run_design_interpretation)
     cancel_button.configure(command=cancel_analysis)
     refresh_dashboard_button.configure(command=refresh_dashboard)
     html_button.configure(command=save_html_report)
@@ -1651,6 +1965,13 @@ def main() -> int:
     analysis_menu = tk.Menu(menu, tearoff=False)
     analysis_menu.add_command(label="Run native LM1", command=run_analysis)
     menu.add_cascade(label="Analysis", menu=analysis_menu)
+
+    design_menu = tk.Menu(menu, tearoff=False)
+    design_menu.add_command(
+        label="Run design interpretation",
+        command=run_design_interpretation,
+    )
+    menu.add_cascade(label="Design", menu=design_menu)
 
     report_menu = tk.Menu(menu, tearoff=False)
     report_menu.add_command(label="Save HTML...", command=save_html_report)
