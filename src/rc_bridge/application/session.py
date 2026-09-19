@@ -136,6 +136,7 @@ class BridgeApplicationSession:
             include_spanwise_udl_patterns=True,
             progress_callback=progress_callback,
             cancel_check=cancel_check,
+            retain_all_cases=False,
             name=f"{self.project.name} - application native LM1",
         )
         self.last_lm1_search = result
