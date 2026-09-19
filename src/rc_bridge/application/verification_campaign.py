@@ -227,7 +227,7 @@ def _all_permanent_reference_model(
     )
 
 
-def _construction_stage_line_model(
+def _construction_stage_physical_model(
     project: ProjectInput,
     actions: ExtendedActionSuite,
     stage: PermanentActionStage,
@@ -262,6 +262,81 @@ def _construction_stage_line_model(
             stations.add(float(segment.x_start_m))
             stations.add(float(segment.x_end_m))
     x_values = tuple(sorted(stations))
+
+    if stage is PermanentActionStage.SUPERIMPOSED:
+        base = build_project_grillage_verification_model(
+            project,
+            transverse_stations_m=x_values,
+            load_case=GrillageVerificationLoadCase(
+                name="completed composite bridge - superimposed permanent actions",
+            ),
+        )
+        nodes_by_id = {node.node_id: node for node in base.nodes}
+        loads: list[VerificationUniformLoad] = []
+        for beam in base.beams:
+            ni = nodes_by_id[beam.node_i]
+            nj = nodes_by_id[beam.node_j]
+            if abs(ni.y_m - nj.y_m) > 1.0e-9 or nj.x_m <= ni.x_m + 1.0e-12:
+                continue
+            girder_index = next(
+                (
+                    index + 1
+                    for index, y_m in enumerate(girder_y)
+                    if abs(ni.y_m - y_m) <= 1.0e-9
+                ),
+                None,
+            )
+            if girder_index is None:
+                continue
+            midpoint = 0.5 * (ni.x_m + nj.x_m)
+            magnitude = sum(
+                segment.magnitude_kn_m
+                for segment in segments_by_girder[girder_index]
+                if (
+                    segment.x_start_m - 1.0e-9
+                    <= midpoint
+                    <= segment.x_end_m + 1.0e-9
+                )
+            )
+            if magnitude > 0.0:
+                loads.append(
+                    VerificationUniformLoad(
+                        member_id=beam.member_id,
+                        direction="GZ",
+                        magnitude_kn_m=-magnitude,
+                    )
+                )
+        return replace(
+            base,
+            name=f"{project.name} - completed composite construction stage",
+            load_cases=(
+                VerificationLoadCase(
+                    load_case_id=1,
+                    name="superimposed permanent actions on completed composite bridge",
+                    uniform_loads=tuple(loads),
+                ),
+            ),
+            metadata={
+                **base.metadata,
+                "source": "RC-Bridge-Analysis-ANN",
+                "purpose": "construction_stage_application_verification",
+                "construction_stage": stage.value,
+                "structural_model": (
+                    "completed physical final-stage bridge grillage with longitudinal "
+                    "composite girders and transverse deck-strip members"
+                ),
+                "physical_presence": (
+                    "precast girders + precast false slab + hardened in-situ deck present; "
+                    "superimposed permanent actions applied to completed composite structure"
+                ),
+                "construction_history_boundary": (
+                    "earlier girder/false-slab/wet-deck loads are not reapplied here; "
+                    "their response belongs to the earlier construction increments"
+                ),
+                "stiffness_basis": "final hardened composite bridge section and deck grillage",
+                "load_basis": "SUPERIMPOSED-stage permanent segments only",
+            },
+        )
 
     e_kn_m2 = _elastic_modulus_kn_m2(project)
     material = VerificationMaterial(
@@ -386,10 +461,16 @@ def _construction_stage_line_model(
             "purpose": "construction_stage_application_verification",
             "construction_stage": stage.value,
             "structural_model": (
-                "independent simply-supported longitudinal girder lines matching "
-                "the desktop construction-stage summary"
+                "independent longitudinal girder lines for the pre-final construction "
+                "state; deck components that have not developed verified structural "
+                "stiffness are represented as loads, not fictitious beam members"
             ),
-            "stiffness_basis": "physical section active at this construction stage",
+            "physical_presence": (
+                "precast girders present; precast false slab is present from the precast "
+                "stage as permanent load; wet in-situ deck is present as load during the "
+                "deck-construction stage but is not credited with hardened deck stiffness"
+            ),
+            "stiffness_basis": "physical longitudinal section active at this construction stage",
             "load_basis": "exact stage-tagged permanent segments plus explicit execution UDL",
         },
     )
@@ -724,7 +805,7 @@ def write_application_verification_campaign(
 
         if extended_actions.construction is not None:
             for stage in PermanentActionStage:
-                model = _construction_stage_line_model(project, extended_actions, stage)
+                model = _construction_stage_physical_model(project, extended_actions, stage)
                 if model is None:
                     continue
                 written.append(
