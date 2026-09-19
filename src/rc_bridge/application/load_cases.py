@@ -29,7 +29,6 @@ from rc_bridge.workflow.project_bridge import (
     girder_permanent_load_segments,
 )
 
-
 _MANAGED_PREFIX = "APP:"
 
 
