@@ -13,12 +13,12 @@ from rc_bridge.analysis.physical_sections import (
 from rc_bridge.application.design_checks import ApplicationDesignSettings
 from rc_bridge.application.extended_actions import ExtendedActionSettings
 from rc_bridge.application.fatigue import FatigueApplicationSettings
-from rc_bridge.application.local_deck import LocalDeckSettings
 from rc_bridge.application.load_cases import (
     ApplicationLoadCaseFields,
     SurfacingExtent,
     eurocode_variable_action_scope,
 )
+from rc_bridge.application.local_deck import LocalDeckSettings
 from rc_bridge.application.preferences import (
     AnalysisApplicationSettings,
     ApplicationPreferences,
