@@ -8,6 +8,13 @@ from rc_bridge.application.dashboard import (
     ApplicationDashboard,
     build_application_dashboard,
 )
+from rc_bridge.application.load_cases import (
+    ApplicationGirderCombinationSummary,
+    ApplicationLoadCaseFields,
+    PermanentGirderLoadAudit,
+    application_combination_summary,
+    permanent_load_audit,
+)
 from rc_bridge.application.preferences import ApplicationPreferences
 from rc_bridge.application.project_io import load_project_document, save_project
 from rc_bridge.application.reporting import (
@@ -94,6 +101,29 @@ class BridgeApplicationSession:
         return build_application_dashboard(
             self.project,
             has_native_lm1_analysis=self.last_lm1_search is not None,
+        )
+
+    def load_case_fields(self) -> ApplicationLoadCaseFields:
+        return ApplicationLoadCaseFields.from_project(self.project)
+
+    def apply_load_case_fields(self, fields: ApplicationLoadCaseFields) -> None:
+        updated = fields.apply(self.project)
+        if updated != self.project:
+            self.replace_project(updated)
+
+    def permanent_load_audit(self) -> tuple[PermanentGirderLoadAudit, ...]:
+        return permanent_load_audit(self.project)
+
+    def combination_summary(self) -> tuple[ApplicationGirderCombinationSummary, ...]:
+        if self.last_lm1_search is None:
+            raise RuntimeError(
+                "Run native LM1 analysis before generating load combinations."
+            )
+        return application_combination_summary(
+            self.project,
+            self.last_lm1_search,
+            uls_factors=self.preferences.eurocode.uls_factors,
+            sls_factors=self.preferences.eurocode.sls_factors,
         )
 
     def run_native_lm1(

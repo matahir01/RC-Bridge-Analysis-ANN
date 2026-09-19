@@ -8,6 +8,11 @@ from rc_bridge.analysis.physical_sections import (
     girder_tributary_slab_widths_m,
 )
 from rc_bridge.application.dashboard import build_application_dashboard
+from rc_bridge.application.load_cases import (
+    application_combination_summary,
+    eurocode_variable_action_scope,
+    permanent_load_audit,
+)
 from rc_bridge.application.preferences import ApplicationPreferences
 from rc_bridge.core.models import ProjectInput
 from rc_bridge.workflow.lm1_grillage_search import ProjectNativeLM1GrillageSearchResult
@@ -40,6 +45,22 @@ def application_html_report(
         project,
         has_native_lm1_analysis=True,
     )
+
+    permanent_audit = permanent_load_audit(project)
+    try:
+        combination_rows_data = application_combination_summary(
+            project,
+            result,
+            uls_factors=prefs.eurocode.uls_factors,
+            sls_factors=prefs.eurocode.sls_factors,
+        )
+        combination_scope_note = (
+            "Simple-span magnitude interpretation using characteristic Gk and "
+            "native LM1 Qk. Production design remains benchmark-gated."
+        )
+    except ValueError as exc:
+        combination_rows_data = ()
+        combination_scope_note = str(exc)
 
     rows = []
     for girder in result.girders:
@@ -75,6 +96,44 @@ def application_html_report(
             + "".join(deflection_rows)
             + "</tbody></table>"
         )
+
+    permanent_rows = "".join(
+        "<tr>"
+        f"<td>{row.girder_index}</td>"
+        f"<td>{_number(row.girder_self_weight_kn_m)}</td>"
+        f"<td>{_number(row.false_slab_kn_m)}</td>"
+        f"<td>{_number(row.in_situ_slab_kn_m)}</td>"
+        f"<td>{_number(row.surfacing_kn_m)}</td>"
+        f"<td>{_number(row.barriers_kn_m)}</td>"
+        f"<td>{_number(row.services_kn_m)}</td>"
+        f"<td>{_number(row.other_kn_m)}</td>"
+        f"<td>{_number(row.total_equivalent_kn_m)}</td>"
+        "</tr>"
+        for row in permanent_audit
+    )
+    variable_action_rows = "".join(
+        "<tr>"
+        f"<td class=\"left\">{escape(item.name)}</td>"
+        f"<td>{escape(item.status)}</td>"
+        f"<td class=\"left\">{escape(item.detail)}</td>"
+        "</tr>"
+        for item in eurocode_variable_action_scope()
+    )
+    combination_rows = "".join(
+        "<tr>"
+        f"<td>{row.girder_index}</td>"
+        f"<td>{_number(row.permanent_characteristic.moment_knm)}</td>"
+        f"<td>{_number(row.traffic_characteristic.moment_knm)}</td>"
+        f"<td>{_number(row.uls.moment_knm)}</td>"
+        f"<td>{_number(row.permanent_characteristic.shear_kn)}</td>"
+        f"<td>{_number(row.traffic_characteristic.shear_kn)}</td>"
+        f"<td>{_number(row.uls.shear_kn)}</td>"
+        f"<td>{_number(row.sls_characteristic.moment_knm)}</td>"
+        f"<td>{_number(row.sls_frequent.moment_knm)}</td>"
+        f"<td>{_number(row.sls_quasi_permanent.moment_knm)}</td>"
+        "</tr>"
+        for row in combination_rows_data
+    )
 
     capability_rows = "".join(
         "<tr>"
@@ -169,6 +228,31 @@ The native LM1 search below is a characteristic traffic analysis. The design-bas
 ULS/SLS factors are persisted for design workflows and are not silently applied to
 the characteristic traffic envelope itself.
 </p>
+
+<h2>Load cases and combinations</h2>
+<p class="note">
+Physical girder/deck self-weight is derived from the project geometry. Surfacing,
+barriers and services are included only when defined in the project. The table
+below reports equivalent full-length line loads for audit; non-uniform positioned
+actions retain their actual extents in the deterministic permanent-load routines.
+</p>
+<table>
+<thead><tr>
+<th>Girder</th><th>Girder SW</th><th>False slab</th><th>In-situ slab</th>
+<th>Surfacing</th><th>Barriers</th><th>Services</th><th>Other</th><th>Total Gk</th>
+</tr></thead>
+<tbody>{permanent_rows}</tbody>
+</table>
+<p class="small">All permanent-load audit values above are kN/m equivalent over the bridge length.</p>
+
+<table>
+<thead><tr><th class="left">Variable action</th><th>Status</th><th class="left">Current treatment</th></tr></thead>
+<tbody>{variable_action_rows}</tbody>
+</table>
+
+<h3>EN 1990 combination interpretation</h3>
+<p class="note">{escape(combination_scope_note)}</p>
+{"<table><thead><tr><th>Girder</th><th>Gk M</th><th>LM1 Qk M</th><th>ULS M</th><th>Gk V</th><th>LM1 Qk V</th><th>ULS V</th><th>SLS char M</th><th>SLS freq M</th><th>SLS qp M</th></tr></thead><tbody>" + combination_rows + "</tbody></table>" if combination_rows else ""}
 
 <h2>Native LM1 search</h2>
 <div class="meta">
@@ -350,6 +434,109 @@ def write_native_lm1_pdf_report(
         )
     )
     story.extend([basis_table, Spacer(1, 4 * mm)])
+
+    story.append(Paragraph("Load cases and combinations", styles["Heading2"]))
+    permanent_rows_pdf = [
+        [
+            "Girder",
+            "Girder SW",
+            "False slab",
+            "In-situ",
+            "Surfacing",
+            "Barriers",
+            "Services",
+            "Other",
+            "Total Gk",
+        ]
+    ]
+    permanent_rows_pdf.extend(
+        [
+            str(row.girder_index),
+            _number(row.girder_self_weight_kn_m),
+            _number(row.false_slab_kn_m),
+            _number(row.in_situ_slab_kn_m),
+            _number(row.surfacing_kn_m),
+            _number(row.barriers_kn_m),
+            _number(row.services_kn_m),
+            _number(row.other_kn_m),
+            _number(row.total_equivalent_kn_m),
+        ]
+        for row in permanent_load_audit(project)
+    )
+    permanent_table = Table(permanent_rows_pdf, repeatRows=1)
+    permanent_table.setStyle(
+        TableStyle(
+            [
+                ("GRID", (0, 0), (-1, -1), 0.25, colors.grey),
+                ("BACKGROUND", (0, 0), (-1, 0), colors.whitesmoke),
+                ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+                ("FONTSIZE", (0, 0), (-1, -1), 6.8),
+                ("ALIGN", (0, 0), (-1, -1), "RIGHT"),
+            ]
+        )
+    )
+    story.extend([permanent_table, Spacer(1, 3 * mm)])
+
+    try:
+        combination_pdf = application_combination_summary(
+            project,
+            result,
+            uls_factors=prefs.eurocode.uls_factors,
+            sls_factors=prefs.eurocode.sls_factors,
+        )
+    except ValueError as exc:
+        story.extend(
+            [
+                Paragraph(
+                    "Combination interpretation: " + escape(str(exc)),
+                    small,
+                ),
+                Spacer(1, 3 * mm),
+            ]
+        )
+    else:
+        combo_rows_pdf = [
+            [
+                "Girder",
+                "Gk M",
+                "LM1 Qk M",
+                "ULS M",
+                "Gk V",
+                "LM1 Qk V",
+                "ULS V",
+                "SLS char M",
+                "SLS freq M",
+                "SLS qp M",
+            ]
+        ]
+        combo_rows_pdf.extend(
+            [
+                str(row.girder_index),
+                _number(row.permanent_characteristic.moment_knm),
+                _number(row.traffic_characteristic.moment_knm),
+                _number(row.uls.moment_knm),
+                _number(row.permanent_characteristic.shear_kn),
+                _number(row.traffic_characteristic.shear_kn),
+                _number(row.uls.shear_kn),
+                _number(row.sls_characteristic.moment_knm),
+                _number(row.sls_frequent.moment_knm),
+                _number(row.sls_quasi_permanent.moment_knm),
+            ]
+            for row in combination_pdf
+        )
+        combo_table = Table(combo_rows_pdf, repeatRows=1)
+        combo_table.setStyle(
+            TableStyle(
+                [
+                    ("GRID", (0, 0), (-1, -1), 0.25, colors.grey),
+                    ("BACKGROUND", (0, 0), (-1, 0), colors.whitesmoke),
+                    ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+                    ("FONTSIZE", (0, 0), (-1, -1), 6.6),
+                    ("ALIGN", (0, 0), (-1, -1), "RIGHT"),
+                ]
+            )
+        )
+        story.extend([combo_table, Spacer(1, 4 * mm)])
 
     story.append(Paragraph("Native LM1 search", styles["Heading2"]))
     search_rows = [
