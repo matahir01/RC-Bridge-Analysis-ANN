@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from itertools import permutations, product
 from math import sqrt
 
@@ -960,6 +960,114 @@ def run_project_native_lm1_grillage_search(
         evaluated_case_count_total=total_cases,
         retained_all_evaluated_cases=retain_all_cases,
     )
+
+
+def build_consolidated_governing_lm1_verification_model(
+    project: ProjectInput,
+    result: ProjectNativeLM1GrillageSearchResult,
+) -> VerificationModel:
+    """Build one common grillage containing every governing LM1 load case.
+
+    Governing cases retained by the application may have different exact
+    load-generated grid lines.  This adapter forms the union of their x/y grid
+    coordinates, rebuilds every governing placement on that common mesh, verifies
+    that the structural definitions are identical, and combines the loads as
+    separate static load cases in one VerificationModel.
+    """
+
+    by_id = {case.placement.case_id: case for case in result.cases}
+    missing = [
+        case_id for case_id in result.governing_case_ids if case_id not in by_id
+    ]
+    if missing:
+        raise ValueError(
+            "Consolidated verification export requires every governing case model "
+            f"to be retained; missing case IDs: {missing}."
+        )
+
+    selected = [by_id[case_id] for case_id in result.governing_case_ids]
+    if not selected:
+        raise ValueError("No governing LM1 cases are available for consolidation.")
+
+    x_stations = tuple(
+        sorted(
+            {
+                round(float(node.x_m), 12)
+                for case in selected
+                for node in case.model.nodes
+            }
+        )
+    )
+    y_stations = tuple(
+        sorted(
+            {
+                round(float(node.y_m), 12)
+                for case in selected
+                for node in case.model.nodes
+            }
+        )
+    )
+
+    rebuilt: list[tuple[int, VerificationModel]] = []
+    for case in selected:
+        case_id = case.placement.case_id
+        model = build_project_lm1_grillage_verification_model(
+            project,
+            transverse_stations_m=x_stations,
+            additional_transverse_y_m=y_stations,
+            lane_placements=case.placement.lane_placements,
+            remaining_area_placements=case.placement.remaining_area_placements,
+            name=f"LM1_CASE_{case_id:04d}",
+        )
+        rebuilt.append((case_id, model))
+
+    reference = rebuilt[0][1]
+    for case_id, model in rebuilt[1:]:
+        if (
+            model.nodes != reference.nodes
+            or model.materials != reference.materials
+            or model.sections != reference.sections
+            or model.beams != reference.beams
+            or model.supports != reference.supports
+        ):
+            raise RuntimeError(
+                "Governing LM1 cases could not be rebuilt on one identical "
+                f"verification mesh; mismatch at case {case_id}."
+            )
+
+    load_cases = tuple(
+        replace(
+            model.load_cases[0],
+            load_case_id=case_id,
+            name=f"LM1_CASE_{case_id:04d}",
+        )
+        for case_id, model in rebuilt
+    )
+    metadata = dict(reference.metadata)
+    metadata.update(
+        {
+            "verification_export": "consolidated_governing_lm1",
+            "governing_case_ids": ",".join(
+                str(case_id) for case_id, _ in rebuilt
+            ),
+            "governing_case_count": str(len(rebuilt)),
+            "common_mesh_basis": (
+                "union of exact x/y grid lines from all retained governing LM1 cases"
+            ),
+        }
+    )
+    combined = VerificationModel(
+        name=f"{project.name} - consolidated governing LM1",
+        nodes=reference.nodes,
+        materials=reference.materials,
+        sections=reference.sections,
+        beams=reference.beams,
+        supports=reference.supports,
+        load_cases=load_cases,
+        metadata=metadata,
+    )
+    combined.validate_load_positions()
+    return combined
 
 
 def build_governing_lm1_search_verification_packages(
