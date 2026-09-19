@@ -11,6 +11,7 @@ from rc_bridge.analysis.physical_sections import (
     girder_tributary_slab_widths_m,
 )
 from rc_bridge.application.design_checks import ApplicationDesignSettings
+from rc_bridge.application.extended_actions import ExtendedActionSettings
 from rc_bridge.application.load_cases import (
     ApplicationLoadCaseFields,
     SurfacingExtent,
@@ -71,6 +72,7 @@ def main() -> int:
     project_tab = ttk.Frame(notebook, padding=12)
     basis_tab = ttk.Frame(notebook, padding=12)
     load_cases_tab = ttk.Frame(notebook, padding=12)
+    actions_tab = ttk.Frame(notebook, padding=12)
     analysis_tab = ttk.Frame(notebook, padding=12)
     design_tab = ttk.Frame(notebook, padding=12)
     verification_tab = ttk.Frame(notebook, padding=12)
@@ -79,6 +81,7 @@ def main() -> int:
     notebook.add(project_tab, text="Project")
     notebook.add(basis_tab, text="Design basis")
     notebook.add(load_cases_tab, text="Load cases & combinations")
+    notebook.add(actions_tab, text="Additional actions")
     notebook.add(analysis_tab, text="Analysis")
     notebook.add(design_tab, text="Design & checks")
     notebook.add(verification_tab, text="Verification")
@@ -623,6 +626,264 @@ def main() -> int:
     ).grid(row=2, column=0, sticky="ew", pady=(8, 0))
 
     # ------------------------------------------------------------------
+    # Additional actions tab
+    # ------------------------------------------------------------------
+    actions_tab.columnconfigure(0, weight=1)
+    actions_tab.rowconfigure(2, weight=1)
+
+    ttk.Label(
+        actions_tab,
+        text=(
+            "Six additional action families required for an inclusive road-bridge design. "
+            "Vertical actions are solved on the native grillage where the current physics "
+            "supports them; longitudinal/horizontal/local actions are calculated explicitly "
+            "and kept outside the vertical solver rather than being silently approximated."
+        ),
+        wraplength=1180,
+        justify=tk.LEFT,
+    ).grid(row=0, column=0, sticky="ew")
+
+    actions_input = ttk.Frame(actions_tab)
+    actions_input.grid(row=1, column=0, sticky="ew", pady=(8, 8))
+    for column in range(3):
+        actions_input.columnconfigure(column, weight=1)
+
+    traffic_actions_frame = ttk.LabelFrame(
+        actions_input,
+        text="Traffic actions — braking, pedestrian, LM2",
+        padding=8,
+    )
+    traffic_actions_frame.grid(row=0, column=0, sticky="nsew", padx=(0, 4))
+    traffic_actions_frame.columnconfigure(1, weight=1)
+    ttk.Checkbutton(
+        traffic_actions_frame,
+        text="Braking / acceleration",
+        variable=bvar("action_braking_enabled"),
+    ).grid(row=0, column=0, columnspan=2, sticky="w")
+    add_entry(
+        traffic_actions_frame,
+        row=1,
+        label="Braking loaded length (blank = full)",
+        key="action_braking_length",
+    )
+    add_entry(
+        traffic_actions_frame,
+        row=2,
+        label="Braking alpha Q1",
+        key="action_braking_alpha_Q1",
+    )
+    add_entry(
+        traffic_actions_frame,
+        row=3,
+        label="Braking alpha q1",
+        key="action_braking_alpha_q1",
+    )
+    ttk.Separator(traffic_actions_frame).grid(
+        row=4, column=0, columnspan=2, sticky="ew", pady=5
+    )
+    ttk.Checkbutton(
+        traffic_actions_frame,
+        text="Pedestrian / footway UDL",
+        variable=bvar("action_pedestrian_enabled"),
+    ).grid(row=5, column=0, columnspan=2, sticky="w")
+    add_entry(
+        traffic_actions_frame,
+        row=6,
+        label="Pedestrian qfk (kN/m²)",
+        key="action_pedestrian_q",
+    )
+    add_entry(
+        traffic_actions_frame,
+        row=7,
+        label="Left usable footway width",
+        key="action_left_footway",
+    )
+    add_entry(
+        traffic_actions_frame,
+        row=8,
+        label="Right usable footway width",
+        key="action_right_footway",
+    )
+    ttk.Separator(traffic_actions_frame).grid(
+        row=9, column=0, columnspan=2, sticky="ew", pady=5
+    )
+    ttk.Checkbutton(
+        traffic_actions_frame,
+        text="LM2 isolated axle scan",
+        variable=bvar("action_lm2_enabled"),
+    ).grid(row=10, column=0, columnspan=2, sticky="w")
+    add_entry(
+        traffic_actions_frame,
+        row=11,
+        label="LM2 beta Q",
+        key="action_lm2_beta",
+    )
+    add_entry(
+        traffic_actions_frame,
+        row=12,
+        label="LM2 longitudinal step",
+        key="action_lm2_x_step",
+    )
+    add_entry(
+        traffic_actions_frame,
+        row=13,
+        label="LM2 transverse step",
+        key="action_lm2_y_step",
+    )
+
+    thermal_actions_frame = ttk.LabelFrame(
+        actions_input,
+        text="Thermal actions — EN 1991-1-5 inputs",
+        padding=8,
+    )
+    thermal_actions_frame.grid(row=0, column=1, sticky="nsew", padx=4)
+    thermal_actions_frame.columnconfigure(1, weight=1)
+    ttk.Checkbutton(
+        thermal_actions_frame,
+        text="Thermal action",
+        variable=bvar("action_thermal_enabled"),
+    ).grid(row=0, column=0, columnspan=2, sticky="w")
+    add_entry(
+        thermal_actions_frame,
+        row=1,
+        label="Thermal alpha (/°C)",
+        key="action_thermal_alpha",
+    )
+    add_entry(
+        thermal_actions_frame,
+        row=2,
+        label="Uniform expansion ΔT (°C)",
+        key="action_thermal_expansion",
+    )
+    add_entry(
+        thermal_actions_frame,
+        row=3,
+        label="Uniform contraction ΔT (°C)",
+        key="action_thermal_contraction",
+    )
+    add_entry(
+        thermal_actions_frame,
+        row=4,
+        label="Top-warmer gradient ΔT (°C)",
+        key="action_thermal_gradient_heat",
+    )
+    add_entry(
+        thermal_actions_frame,
+        row=5,
+        label="Bottom-warmer gradient ΔT (°C)",
+        key="action_thermal_gradient_cool",
+    )
+    add_entry(
+        thermal_actions_frame,
+        row=6,
+        label="Longitudinal restraint fraction",
+        key="action_thermal_restraint",
+    )
+    ttk.Label(
+        thermal_actions_frame,
+        text=(
+            "15/8 °C are first-generation concrete-beam reference gradients. "
+            "Uniform expansion/contraction ranges must come from the project climate/"
+            "National Annex; zero means not yet specified."
+        ),
+        wraplength=340,
+        justify=tk.LEFT,
+    ).grid(row=7, column=0, columnspan=2, sticky="w", pady=(8, 0))
+
+    accidental_actions_frame = ttk.LabelFrame(
+        actions_input,
+        text="Barrier impact & construction",
+        padding=8,
+    )
+    accidental_actions_frame.grid(row=0, column=2, sticky="nsew", padx=(4, 0))
+    accidental_actions_frame.columnconfigure(1, weight=1)
+    ttk.Checkbutton(
+        accidental_actions_frame,
+        text="Vehicle impact on safety barrier",
+        variable=bvar("action_barrier_enabled"),
+    ).grid(row=0, column=0, columnspan=2, sticky="w")
+    add_entry(
+        accidental_actions_frame,
+        row=1,
+        label="Transverse impact force (kN)",
+        key="action_barrier_force",
+    )
+    add_entry(
+        accidental_actions_frame,
+        row=2,
+        label="Barrier load height (m)",
+        key="action_barrier_height",
+    )
+    add_entry(
+        accidental_actions_frame,
+        row=3,
+        label="Vertical wheel factor",
+        key="action_barrier_vertical_factor",
+    )
+    add_entry(
+        accidental_actions_frame,
+        row=4,
+        label="Barrier alpha Q1",
+        key="action_barrier_alpha_Q1",
+    )
+    ttk.Separator(accidental_actions_frame).grid(
+        row=5, column=0, columnspan=2, sticky="ew", pady=5
+    )
+    ttk.Checkbutton(
+        accidental_actions_frame,
+        text="Construction-stage actions",
+        variable=bvar("action_construction_enabled"),
+    ).grid(row=6, column=0, columnspan=2, sticky="w")
+    add_entry(
+        accidental_actions_frame,
+        row=7,
+        label="Execution UDL (kN/m²)",
+        key="action_construction_udl",
+    )
+    ttk.Label(
+        accidental_actions_frame,
+        text=(
+            "Girder, false-slab, wet-deck and superimposed permanent actions are "
+            "automatically separated by construction stage. Execution UDL is an "
+            "explicit project input and is not invented."
+        ),
+        wraplength=340,
+        justify=tk.LEFT,
+    ).grid(row=8, column=0, columnspan=2, sticky="w", pady=(8, 0))
+
+    action_buttons = ttk.Frame(actions_tab)
+    action_buttons.grid(row=2, column=0, sticky="ne", pady=(0, 6))
+    run_actions_button = ttk.Button(
+        action_buttons,
+        text="Run actions 1–6",
+    )
+    run_actions_button.pack(side=tk.RIGHT)
+    analysis_buttons.append(run_actions_button)
+
+    actions_result_frame = ttk.LabelFrame(
+        actions_tab,
+        text="Action calculation / analysis results",
+        padding=8,
+    )
+    actions_result_frame.grid(row=3, column=0, sticky="nsew")
+    actions_tab.rowconfigure(3, weight=1)
+    action_result_tree = ttk.Treeview(
+        actions_result_frame,
+        columns=("action", "result", "value", "scope"),
+        show="headings",
+        height=14,
+    )
+    action_result_tree.heading("action", text="Action")
+    action_result_tree.heading("result", text="Result")
+    action_result_tree.heading("value", text="Value")
+    action_result_tree.heading("scope", text="Analysis / engineering boundary")
+    action_result_tree.column("action", width=190, anchor=tk.W)
+    action_result_tree.column("result", width=220, anchor=tk.W)
+    action_result_tree.column("value", width=180, anchor=tk.CENTER)
+    action_result_tree.column("scope", width=700, anchor=tk.W)
+    action_result_tree.pack(fill=tk.BOTH, expand=True)
+
+    # ------------------------------------------------------------------
     # Analysis tab
     # ------------------------------------------------------------------
     analysis_header = ttk.Frame(analysis_tab)
@@ -1114,11 +1375,74 @@ def main() -> int:
             crack_kt=float(string_vars["design_crack_kt"].get()),
             cot_theta=float(string_vars["design_cot_theta"].get()),
         )
+        actions = ExtendedActionSettings(
+            braking_enabled=bool_vars["action_braking_enabled"].get(),
+            braking_alpha_q1=float(string_vars["action_braking_alpha_q1"].get()),
+            braking_alpha_Q1=float(string_vars["action_braking_alpha_Q1"].get()),
+            braking_loaded_length_m=(
+                None
+                if not string_vars["action_braking_length"].get().strip()
+                else displayed_unit.to_metres(
+                    float(string_vars["action_braking_length"].get())
+                )
+            ),
+            thermal_enabled=bool_vars["action_thermal_enabled"].get(),
+            thermal_alpha_per_c=float(string_vars["action_thermal_alpha"].get()),
+            thermal_uniform_expansion_delta_c=float(
+                string_vars["action_thermal_expansion"].get()
+            ),
+            thermal_uniform_contraction_delta_c=float(
+                string_vars["action_thermal_contraction"].get()
+            ),
+            thermal_gradient_heat_c=float(
+                string_vars["action_thermal_gradient_heat"].get()
+            ),
+            thermal_gradient_cool_c=float(
+                string_vars["action_thermal_gradient_cool"].get()
+            ),
+            thermal_longitudinal_restraint_fraction=float(
+                string_vars["action_thermal_restraint"].get()
+            ),
+            pedestrian_enabled=bool_vars["action_pedestrian_enabled"].get(),
+            pedestrian_load_kn_m2=float(string_vars["action_pedestrian_q"].get()),
+            left_footway_width_m=displayed_unit.to_metres(
+                float(string_vars["action_left_footway"].get())
+            ),
+            right_footway_width_m=displayed_unit.to_metres(
+                float(string_vars["action_right_footway"].get())
+            ),
+            lm2_enabled=bool_vars["action_lm2_enabled"].get(),
+            lm2_beta_Q=float(string_vars["action_lm2_beta"].get()),
+            lm2_longitudinal_step_m=displayed_unit.to_metres(
+                float(string_vars["action_lm2_x_step"].get())
+            ),
+            lm2_transverse_step_m=displayed_unit.to_metres(
+                float(string_vars["action_lm2_y_step"].get())
+            ),
+            barrier_impact_enabled=bool_vars["action_barrier_enabled"].get(),
+            barrier_transverse_force_kn=float(
+                string_vars["action_barrier_force"].get()
+            ),
+            barrier_load_height_m=float(
+                string_vars["action_barrier_height"].get()
+            ),
+            barrier_vertical_factor=float(
+                string_vars["action_barrier_vertical_factor"].get()
+            ),
+            barrier_alpha_Q1=float(
+                string_vars["action_barrier_alpha_Q1"].get()
+            ),
+            construction_enabled=bool_vars["action_construction_enabled"].get(),
+            construction_execution_udl_kn_m2=float(
+                string_vars["action_construction_udl"].get()
+            ),
+        )
         return ApplicationPreferences(
             units=new_units,
             eurocode=basis,
             analysis=analysis,
             design=design,
+            actions=actions,
         )
 
     def load_case_fields_from_form() -> ApplicationLoadCaseFields:
@@ -1308,6 +1632,71 @@ def main() -> int:
         string_vars["design_beta"].set(f"{design.deflection_beta:g}")
         string_vars["design_crack_kt"].set(f"{design.crack_kt:g}")
         string_vars["design_cot_theta"].set(f"{design.cot_theta:g}")
+        actions = preferences.actions
+        bool_vars["action_braking_enabled"].set(actions.braking_enabled)
+        string_vars["action_braking_alpha_q1"].set(
+            f"{actions.braking_alpha_q1:g}"
+        )
+        string_vars["action_braking_alpha_Q1"].set(
+            f"{actions.braking_alpha_Q1:g}"
+        )
+        string_vars["action_braking_length"].set(
+            ""
+            if actions.braking_loaded_length_m is None
+            else f"{displayed_unit.from_metres(actions.braking_loaded_length_m):g}"
+        )
+        bool_vars["action_thermal_enabled"].set(actions.thermal_enabled)
+        string_vars["action_thermal_alpha"].set(f"{actions.thermal_alpha_per_c:g}")
+        string_vars["action_thermal_expansion"].set(
+            f"{actions.thermal_uniform_expansion_delta_c:g}"
+        )
+        string_vars["action_thermal_contraction"].set(
+            f"{actions.thermal_uniform_contraction_delta_c:g}"
+        )
+        string_vars["action_thermal_gradient_heat"].set(
+            f"{actions.thermal_gradient_heat_c:g}"
+        )
+        string_vars["action_thermal_gradient_cool"].set(
+            f"{actions.thermal_gradient_cool_c:g}"
+        )
+        string_vars["action_thermal_restraint"].set(
+            f"{actions.thermal_longitudinal_restraint_fraction:g}"
+        )
+        bool_vars["action_pedestrian_enabled"].set(actions.pedestrian_enabled)
+        string_vars["action_pedestrian_q"].set(
+            f"{actions.pedestrian_load_kn_m2:g}"
+        )
+        string_vars["action_left_footway"].set(
+            f"{displayed_unit.from_metres(actions.left_footway_width_m):g}"
+        )
+        string_vars["action_right_footway"].set(
+            f"{displayed_unit.from_metres(actions.right_footway_width_m):g}"
+        )
+        bool_vars["action_lm2_enabled"].set(actions.lm2_enabled)
+        string_vars["action_lm2_beta"].set(f"{actions.lm2_beta_Q:g}")
+        string_vars["action_lm2_x_step"].set(
+            f"{displayed_unit.from_metres(actions.lm2_longitudinal_step_m):g}"
+        )
+        string_vars["action_lm2_y_step"].set(
+            f"{displayed_unit.from_metres(actions.lm2_transverse_step_m):g}"
+        )
+        bool_vars["action_barrier_enabled"].set(actions.barrier_impact_enabled)
+        string_vars["action_barrier_force"].set(
+            f"{actions.barrier_transverse_force_kn:g}"
+        )
+        string_vars["action_barrier_height"].set(
+            f"{actions.barrier_load_height_m:g}"
+        )
+        string_vars["action_barrier_vertical_factor"].set(
+            f"{actions.barrier_vertical_factor:g}"
+        )
+        string_vars["action_barrier_alpha_Q1"].set(
+            f"{actions.barrier_alpha_Q1:g}"
+        )
+        bool_vars["action_construction_enabled"].set(actions.construction_enabled)
+        string_vars["action_construction_udl"].set(
+            f"{actions.construction_execution_udl_kn_m2:g}"
+        )
 
     def populate_load_cases(project) -> None:
         fields = ApplicationLoadCaseFields.from_project(project)
@@ -1395,6 +1784,7 @@ def main() -> int:
             package_tree,
             combination_tree,
             design_tree,
+            action_result_tree,
         ):
             for item in tree.get_children():
                 tree.delete(item)
@@ -1459,6 +1849,225 @@ def main() -> int:
         status_var.set("Native LM1 analysis complete.")
         refresh_load_case_views()
         refresh_dashboard()
+
+    def show_extended_action_result(result) -> None:
+        for item in action_result_tree.get_children():
+            action_result_tree.delete(item)
+
+        def add(action: str, name: str, value: str, scope: str) -> None:
+            action_result_tree.insert(
+                "",
+                tk.END,
+                values=(action, name, value, scope),
+            )
+
+        if result.braking is not None:
+            item = result.braking
+            add(
+                "Braking / acceleration",
+                "Characteristic Qlk",
+                f"{item.characteristic_force_kn:.2f} kN",
+                item.status,
+            )
+            add(
+                "Braking / acceleration",
+                "Loaded length",
+                f"{item.loaded_length_m:.3f} m",
+                "Both longitudinal signs are required.",
+            )
+
+        if result.thermal is not None:
+            item = result.thermal
+            add(
+                "Thermal",
+                "Free expansion / contraction",
+                (
+                    f"+{item.expansion_movement_mm:.2f} / "
+                    f"-{item.contraction_movement_mm:.2f} mm"
+                ),
+                item.status,
+            )
+            add(
+                "Thermal",
+                "Gradient free midspan",
+                (
+                    f"heat {item.heat_gradient_free_midspan_mm:.2f} mm; "
+                    f"cool {item.cool_gradient_free_midspan_mm:.2f} mm"
+                ),
+                (
+                    "Linear free-curvature reference; continuity/restraint changes "
+                    "the structural effects."
+                ),
+            )
+            add(
+                "Thermal",
+                "Modelled restraint force",
+                (
+                    f"exp {item.modelled_restraint_expansion_force_kn:.1f} kN; "
+                    f"con {item.modelled_restraint_contraction_force_kn:.1f} kN"
+                ),
+                (
+                    "Input incomplete: set project climate ranges."
+                    if not item.climate_input_complete
+                    else "Uses the entered longitudinal restraint fraction."
+                ),
+            )
+
+        if result.pedestrian is not None:
+            item = result.pedestrian
+            add(
+                "Pedestrian / footway",
+                "Characteristic total load",
+                f"{item.total_characteristic_load_kn:.2f} kN",
+                item.status,
+            )
+            if item.girders:
+                maximum = max(
+                    row.effects.moment_knm for row in item.girders
+                )
+                add(
+                    "Pedestrian / footway",
+                    "Maximum girder |M|",
+                    f"{maximum:.2f} kNm",
+                    "Native final-stage vertical grillage.",
+                )
+
+        if result.lm2 is not None:
+            item = result.lm2
+            add(
+                "LM2",
+                "Axle / wheel",
+                f"{item.axle_load_kn:.1f} / {item.wheel_load_kn:.1f} kN",
+                item.status,
+            )
+            add(
+                "LM2",
+                "Wheel contact pressure",
+                f"{item.contact_pressure_kn_m2:.1f} kN/m²",
+                "0.35 m × 0.60 m contact patch retained for local slab design.",
+            )
+            add(
+                "LM2",
+                "Evaluated placements",
+                f"{item.evaluated_case_count:,}",
+                "Longitudinal/transverse scan across the carriageway.",
+            )
+            if item.girders:
+                maximum = max(
+                    row.effects.moment_knm for row in item.girders
+                )
+                add(
+                    "LM2",
+                    "Maximum girder |M|",
+                    f"{maximum:.2f} kNm",
+                    "Global grillage response; local plate/punching check remains separate.",
+                )
+
+        if result.barrier_impact is not None:
+            item = result.barrier_impact
+            add(
+                "Safety-barrier impact",
+                "Transverse accidental force",
+                f"{item.transverse_characteristic_force_kn:.1f} kN",
+                item.status,
+            )
+            add(
+                "Safety-barrier impact",
+                "Base moment / vertical wheel",
+                (
+                    f"{item.barrier_base_moment_knm:.1f} kNm / "
+                    f"{item.accompanying_vertical_wheel_load_kn:.1f} kN"
+                ),
+                "Local barrier anchorage/deck-edge demand; horizontal solver not invented.",
+            )
+
+        if result.construction is not None:
+            for stage in ("precast_girder", "deck_construction", "superimposed"):
+                rows = [
+                    row
+                    for row in result.construction.girders
+                    if row.stage.value == stage
+                ]
+                if not rows:
+                    continue
+                add(
+                    "Construction stage",
+                    stage,
+                    (
+                        f"max M={max(row.characteristic_max_moment_knm for row in rows):.2f} "
+                        f"kNm; max |V|={max(row.characteristic_max_abs_shear_kn for row in rows):.2f} kN"
+                    ),
+                    rows[0].status,
+                )
+
+        unresolved = result.unresolved_inputs
+        status_var.set(
+            "Actions 1–6 complete."
+            if not unresolved
+            else "Actions 1–6 calculated; project inputs remain: "
+            + ", ".join(unresolved)
+        )
+        refresh_dashboard()
+
+    def run_extended_action_suite() -> None:
+        try:
+            commit_forms()
+        except (TypeError, ValueError) as exc:
+            messagebox.showerror("Additional actions", str(exc))
+            return
+
+        run_actions_button.configure(state=tk.DISABLED)
+        started_at = time.monotonic()
+        status_var.set("Running braking, thermal, pedestrian, LM2, barrier and construction actions...")
+
+        def lm2_progress(completed: int, total: int) -> None:
+            if total <= 0:
+                return
+            root.after(
+                0,
+                lambda: (
+                    progress.configure(value=100.0 * completed / total),
+                    status_var.set(
+                        f"LM2 placement {completed:,}/{total:,} — "
+                        f"{100.0 * completed / total:.1f}%"
+                    ),
+                ),
+            )
+
+        def worker() -> None:
+            try:
+                result = session.run_extended_actions(
+                    lm2_progress_callback=lm2_progress,
+                )
+            except (OSError, TypeError, ValueError, RuntimeError) as exc:
+                message = str(exc)
+
+                def failed() -> None:
+                    run_actions_button.configure(state=tk.NORMAL)
+                    status_var.set("Additional actions failed.")
+                    messagebox.showerror("Additional actions", message)
+
+                root.after(0, failed)
+                return
+
+            def complete() -> None:
+                run_actions_button.configure(state=tk.NORMAL)
+                progress["value"] = 100.0
+                show_extended_action_result(result)
+                elapsed = time.monotonic() - started_at
+                status_var.set(
+                    f"Actions 1–6 complete in {format_duration(elapsed)}"
+                    + (
+                        ""
+                        if not result.unresolved_inputs
+                        else "; inputs still required: "
+                        + ", ".join(result.unresolved_inputs)
+                    )
+                )
+
+            root.after(0, complete)
+
+        threading.Thread(target=worker, daemon=True).start()
 
     def show_design_result(result) -> None:
         for item in design_tree.get_children():
@@ -1782,6 +2391,7 @@ def main() -> int:
         session.preferences = ApplicationPreferences()
         session.last_lm1_search = None
         session.last_design_interpretation = None
+        session.last_extended_actions = None
         displayed_unit = session.preferences.units
         populate_project(session.project)
         populate_preferences(session.preferences)
@@ -1943,6 +2553,7 @@ def main() -> int:
         command=lambda: populate_preferences(session.preferences)
     )
     run_button.configure(command=run_analysis)
+    run_actions_button.configure(command=run_extended_action_suite)
     run_design_button.configure(command=run_design_interpretation)
     cancel_button.configure(command=cancel_analysis)
     refresh_dashboard_button.configure(command=refresh_dashboard)
