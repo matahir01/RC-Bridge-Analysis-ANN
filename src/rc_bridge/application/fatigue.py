@@ -3,7 +3,6 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from rc_bridge.application.design_checks import ApplicationDesignInterpretationSuite
-from rc_bridge.application.session_types import ApplicationAnalysisGrid
 from rc_bridge.core.models import ProjectInput, SupportSystem
 from rc_bridge.workflow.eurocode_layered_girder import LayeredGirderDesignInput
 from rc_bridge.workflow.project_native_fatigue import (
@@ -85,7 +84,7 @@ def run_application_fatigue(
     design: ApplicationDesignInterpretationSuite,
     *,
     settings: FatigueApplicationSettings,
-    analysis_grid: ApplicationAnalysisGrid,
+    transverse_stations_m: tuple[float, ...],
 ) -> FatigueApplicationResult:
     """Run native FLM3 and connect its stress ranges to the selected design cage."""
 
@@ -95,7 +94,7 @@ def run_application_fatigue(
         )
     search = run_project_native_flm3_grillage_search(
         project,
-        transverse_stations_m=analysis_grid.stations_m,
+        transverse_stations_m=transverse_stations_m,
         axle_load_factor=settings.axle_load_factor,
         movement_step_m=settings.movement_step_m,
         section_step_m=settings.section_step_m,
