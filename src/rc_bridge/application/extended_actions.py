@@ -226,7 +226,7 @@ def _grid_stations(total_length_m: float, spacing_m: float) -> tuple[float, ...]
     if total_length_m <= 0.0 or spacing_m <= 0.0:
         raise ValueError("Bridge length and grid spacing must be positive.")
     count = max(1, ceil(total_length_m / spacing_m))
-    values = {0.0, total_length_m}
+    values = {0.0, 0.5 * total_length_m, total_length_m}
     for index in range(1, count):
         values.add(min(total_length_m, index * spacing_m))
     return tuple(sorted(round(value, 12) for value in values))
