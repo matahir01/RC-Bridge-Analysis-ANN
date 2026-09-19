@@ -1,8 +1,8 @@
 from __future__ import annotations
 
 import argparse
+from collections.abc import Sequence
 from pathlib import Path
-from typing import Sequence
 
 from rc_bridge.application.project_io import load_project, save_project
 from rc_bridge.application.session import BridgeApplicationSession
@@ -48,10 +48,14 @@ def _summary(project: ProjectInput) -> str:
             f"Code: {project.design_code.value}",
             f"Support system: {geometry.support_system.value}",
             f"Spans (m): {spans}",
-            f"Deck / carriageway (m): {float(geometry.deck_width_m):.3f} / "
-            f"{float(geometry.carriageway_width_m):.3f}",
-            f"Girders: {int(geometry.girder_count)} @ "
-            f"{float(geometry.girder_spacing_m):.3f} m",
+            (
+                f"Deck / carriageway (m): {float(geometry.deck_width_m):.3f} / "
+                f"{float(geometry.carriageway_width_m):.3f}"
+            ),
+            (
+                f"Girders: {int(geometry.girder_count)} @ "
+                f"{float(geometry.girder_spacing_m):.3f} m"
+            ),
             f"Physical girder profile: {profile}",
         )
     )

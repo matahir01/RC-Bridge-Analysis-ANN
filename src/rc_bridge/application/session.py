@@ -30,7 +30,7 @@ def longitudinal_grid_stations(
         supports.append(supports[-1] + float(span))
     total_length = supports[-1]
 
-    values = set(round(value, 12) for value in supports)
+    values = {round(value, 12) for value in supports}
     position = 0.0
     while position < total_length - 1.0e-12:
         values.add(round(position, 12))

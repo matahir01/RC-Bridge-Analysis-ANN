@@ -1,3 +1,5 @@
+from itertools import pairwise
+
 import pytest
 
 from rc_bridge.application.session import (
@@ -39,7 +41,7 @@ def test_application_grid_preserves_supports_and_spacing() -> None:
     assert 0.0 in stations
     assert 4.0 in stations
     assert 10.0 in stations
-    assert max(b - a for a, b in zip(stations, stations[1:], strict=True)) <= 3.0
+    assert max(b - a for a, b in pairwise(stations)) <= 3.0
 
 
 def test_application_session_runs_reports_and_exports(tmp_path) -> None:
