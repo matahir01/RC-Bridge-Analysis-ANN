@@ -110,18 +110,18 @@ def test_construction_action_separates_all_three_physical_stages() -> None:
 
     assert len(result.girders) == 21
     assert {item.stage for item in result.girders} == set(PermanentActionStage)
-    precast = [
+    precast = next(
         item
         for item in result.girders
         if item.girder_index == 4
         and item.stage is PermanentActionStage.PRECAST_GIRDER
-    ][0]
-    wet = [
+    )
+    wet = next(
         item
         for item in result.girders
         if item.girder_index == 4
         and item.stage is PermanentActionStage.DECK_CONSTRUCTION
-    ][0]
+    )
     assert precast.characteristic_max_moment_knm > 0.0
     assert wet.characteristic_max_moment_knm > 0.0
     assert wet.execution_udl_kn_m > 0.0
