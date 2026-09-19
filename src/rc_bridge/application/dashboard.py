@@ -44,6 +44,8 @@ def build_application_dashboard(
     *,
     has_native_lm1_analysis: bool,
     has_extended_actions: bool = False,
+    has_integrated_design: bool = False,
+    design_blocker_count: int = 0,
 ) -> ApplicationDashboard:
     """Describe what the current project can do without weakening verification gates."""
 
@@ -102,6 +104,31 @@ def build_application_dashboard(
                     "accidental action and construction-stage action separation are "
                     "implemented. Horizontal/local physics remain explicitly bounded "
                     "where the vertical grillage is not an appropriate solver."
+                ),
+            )
+        )
+        capabilities.append(
+            ApplicationCapability(
+                name="Integrated action-to-design coverage",
+                state=(
+                    CapabilityState.READY
+                    if has_integrated_design and design_blocker_count == 0
+                    else CapabilityState.REQUIRES_ANALYSIS
+                ),
+                detail=(
+                    "Compatible traffic groups feed girder ULS/SLS design; construction "
+                    "stages can govern selected bars/links; braking/thermal feed the "
+                    "bearing/restraint path and barrier impact remains an accidental local "
+                    "check. "
+                    + (
+                        "No unresolved model/input blockers remain in the current design run."
+                        if has_integrated_design and design_blocker_count == 0
+                        else (
+                            f"{design_blocker_count} explicit design blocker(s) remain."
+                            if has_integrated_design
+                            else "Run LM1, Additional actions 1-6 and integrated design."
+                        )
+                    )
                 ),
             )
         )
