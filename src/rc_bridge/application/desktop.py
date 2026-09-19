@@ -1579,7 +1579,38 @@ def main() -> int:
         text="Export full MIDAS / STAAD campaign",
     )
     export_button.pack(side=tk.LEFT, padx=6)
-    analysis_buttons.extend((html_button, pdf_button, print_button, export_button))
+
+    verification_import_buttons = ttk.Frame(
+        verification_tab,
+        padding=(0, 8, 0, 0),
+    )
+    verification_import_buttons.pack(fill=tk.X)
+    import_staad_button = ttk.Button(
+        verification_import_buttons,
+        text="Import STAAD .ANL results",
+    )
+    import_staad_button.pack(side=tk.LEFT, padx=(0, 6))
+    import_midas_button = ttk.Button(
+        verification_import_buttons,
+        text="Import MIDAS result tables",
+    )
+    import_midas_button.pack(side=tk.LEFT, padx=6)
+    save_verification_evidence_button = ttk.Button(
+        verification_import_buttons,
+        text="Save comparison evidence",
+    )
+    save_verification_evidence_button.pack(side=tk.LEFT, padx=6)
+    analysis_buttons.extend(
+        (
+            html_button,
+            pdf_button,
+            print_button,
+            export_button,
+            import_staad_button,
+            import_midas_button,
+            save_verification_evidence_button,
+        )
+    )
 
     package_tree = ttk.Treeview(
         verification_tab,
@@ -1592,6 +1623,24 @@ def main() -> int:
     package_tree.column("case", width=150, anchor=tk.CENTER)
     package_tree.column("purpose", width=850, anchor=tk.W)
     package_tree.pack(fill=tk.BOTH, expand=True, pady=(12, 0))
+
+    verification_result_tree = ttk.Treeview(
+        verification_tab,
+        columns=("result", "kind", "status", "max_error", "source"),
+        show="headings",
+        height=8,
+    )
+    verification_result_tree.heading("result", text="Imported result")
+    verification_result_tree.heading("kind", text="Type")
+    verification_result_tree.heading("status", text="Comparison")
+    verification_result_tree.heading("max_error", text="Max rel. error")
+    verification_result_tree.heading("source", text="Source")
+    verification_result_tree.column("result", width=360, anchor=tk.W)
+    verification_result_tree.column("kind", width=120, anchor=tk.CENTER)
+    verification_result_tree.column("status", width=120, anchor=tk.CENTER)
+    verification_result_tree.column("max_error", width=130, anchor=tk.CENTER)
+    verification_result_tree.column("source", width=160, anchor=tk.W)
+    verification_result_tree.pack(fill=tk.BOTH, expand=True, pady=(8, 0))
 
     # ------------------------------------------------------------------
     # Research tab
@@ -2306,6 +2355,7 @@ def main() -> int:
             effect_tree,
             deflection_tree,
             package_tree,
+            verification_result_tree,
             combination_tree,
             design_tree,
             action_result_tree,
@@ -3162,6 +3212,20 @@ def main() -> int:
                 "for geometry, stiffness, loading, result axes, signs and justified "
                 "tolerances before production certification.\n\n"
                 + case_text
+                + (
+                    "\n\nLatest external import: "
+                    + (
+                        "none."
+                        if session.last_verification_import is None
+                        else (
+                            f"{session.last_verification_import.source_name}; "
+                            f"{'PASS' if session.last_verification_import.passes else 'REVIEW / FAIL'}; "
+                            f"{len(session.last_verification_import.result_sets)}/"
+                            f"{len(session.last_verification_import.requested_result_ids)} "
+                            "Stage-5 result sets imported."
+                        )
+                    )
+                )
             ),
         )
         _set_text(
@@ -3534,6 +3598,123 @@ def main() -> int:
             f"{written.manifest_json.name}."
         )
 
+
+    def show_verification_import(report) -> None:
+        for item in verification_result_tree.get_children():
+            verification_result_tree.delete(item)
+        by_id = {item.result_id: item for item in report.result_sets}
+        for result_id in report.requested_result_ids:
+            item = by_id.get(result_id)
+            if item is None:
+                verification_result_tree.insert(
+                    "",
+                    tk.END,
+                    values=(
+                        f"{result_id} - missing from external output",
+                        "",
+                        "MISSING",
+                        "",
+                        report.source_name,
+                    ),
+                )
+                continue
+            max_error = item.maximum_relative_error
+            verification_result_tree.insert(
+                "",
+                tk.END,
+                values=(
+                    f"{item.result_id} - {item.result_name}",
+                    item.result_kind.replace("_", " "),
+                    "PASS" if item.passes else "FAIL",
+                    "" if max_error is None else f"{100.0 * max_error:.3f}%",
+                    item.source_name,
+                ),
+            )
+        status = "PASS" if report.passes else "REVIEW / FAIL"
+        status_var.set(
+            f"{report.source_name} Stage-5 import: {status}; "
+            f"{len(report.result_sets)}/{len(report.requested_result_ids)} result "
+            f"sets imported; {len(report.failed_result_ids)} failed and "
+            f"{len(report.missing_result_ids)} missing."
+        )
+        refresh_dashboard()
+
+    def import_staad_verification_results() -> None:
+        path = filedialog.askopenfilename(
+            title="Import STAAD.Pro analysis output",
+            filetypes=(
+                ("STAAD analysis output", "*.anl"),
+                ("Text output", "*.txt"),
+                ("All files", "*.*"),
+            ),
+        )
+        if not path:
+            return
+        try:
+            report = session.import_stage5_staad_anl(path)
+        except (OSError, TypeError, ValueError, RuntimeError) as exc:
+            messagebox.showerror("STAAD verification import", str(exc))
+            return
+        show_verification_import(report)
+
+    def import_midas_verification_results() -> None:
+        common_types = (
+            ("CSV / text table", "*.csv *.txt *.tsv"),
+            ("All files", "*.*"),
+        )
+        reaction_path = filedialog.askopenfilename(
+            title="MIDAS reaction result table",
+            filetypes=common_types,
+        )
+        if not reaction_path:
+            return
+        displacement_path = filedialog.askopenfilename(
+            title="MIDAS displacement result table",
+            filetypes=common_types,
+        )
+        if not displacement_path:
+            return
+        member_force_path = filedialog.askopenfilename(
+            title="MIDAS beam-force result table",
+            filetypes=common_types,
+        )
+        if not member_force_path:
+            return
+        delimiter = "\t" if Path(reaction_path).suffix.lower() == ".tsv" else ","
+        try:
+            report = session.import_stage5_midas_tables(
+                reaction_path=reaction_path,
+                displacement_path=displacement_path,
+                member_force_path=member_force_path,
+                delimiter=delimiter,
+            )
+        except (OSError, TypeError, ValueError, RuntimeError) as exc:
+            messagebox.showerror("MIDAS verification import", str(exc))
+            return
+        show_verification_import(report)
+
+    def save_verification_evidence() -> None:
+        if session.last_verification_import is None:
+            messagebox.showinfo(
+                "Verification evidence",
+                "Import STAAD or MIDAS Stage-5 results first.",
+            )
+            return
+        directory = filedialog.askdirectory(
+            title="Choose folder for verification comparison evidence"
+        )
+        if not directory:
+            return
+        try:
+            written = session.write_last_verification_evidence(directory)
+        except (OSError, TypeError, ValueError, RuntimeError) as exc:
+            messagebox.showerror("Verification evidence", str(exc))
+            return
+        status_var.set(
+            "Saved verification evidence: "
+            f"{written.summary_json.name} and {written.comparisons_csv.name}."
+        )
+
     apply_project_button.configure(command=apply_project)
     apply_load_cases_button.configure(command=apply_load_cases)
     revert_load_cases_button.configure(
@@ -3561,6 +3742,9 @@ def main() -> int:
     pdf_button.configure(command=save_pdf_report)
     print_button.configure(command=print_preview)
     export_button.configure(command=export_verification)
+    import_staad_button.configure(command=import_staad_verification_results)
+    import_midas_button.configure(command=import_midas_verification_results)
+    save_verification_evidence_button.configure(command=save_verification_evidence)
 
     menu = tk.Menu(root)
     file_menu = tk.Menu(menu, tearoff=False)
@@ -3607,6 +3791,19 @@ def main() -> int:
     verification_menu.add_command(
         label="Export full MIDAS / STAAD campaign...",
         command=export_verification,
+    )
+    verification_menu.add_separator()
+    verification_menu.add_command(
+        label="Import STAAD .ANL results...",
+        command=import_staad_verification_results,
+    )
+    verification_menu.add_command(
+        label="Import MIDAS result tables...",
+        command=import_midas_verification_results,
+    )
+    verification_menu.add_command(
+        label="Save comparison evidence...",
+        command=save_verification_evidence,
     )
     menu.add_cascade(label="Verification", menu=verification_menu)
     root.configure(menu=menu)

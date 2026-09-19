@@ -44,6 +44,7 @@ from rc_bridge.application.reporting import (
 )
 from rc_bridge.application.verification_campaign import (
     WrittenVerificationCampaign,
+    build_unified_final_service_verification_model,
     write_application_verification_campaign,
 )
 from rc_bridge.application.verification_files import (
@@ -51,6 +52,14 @@ from rc_bridge.application.verification_files import (
     WrittenVerificationPackage,
     write_consolidated_governing_lm1_verification_files,
     write_governing_lm1_verification_packages,
+)
+from rc_bridge.application.verification_import import (
+    ApplicationVerificationImportReport,
+    VerificationImportTolerance,
+    WrittenVerificationImportEvidence,
+    import_midas_table_verification_results,
+    import_staad_anl_verification_results,
+    write_verification_import_evidence,
 )
 from rc_bridge.core.models import ProjectInput
 from rc_bridge.workflow.lm1_grillage_search import (
@@ -95,6 +104,7 @@ class BridgeApplicationSession:
     last_action_combinations: IntegratedActionCombinationSuite | None = None
     last_local_deck_design: LocalDeckDesignResult | None = None
     last_fatigue: FatigueApplicationResult | None = None
+    last_verification_import: ApplicationVerificationImportReport | None = None
 
     @classmethod
     def open(cls, path: str | Path) -> BridgeApplicationSession:
@@ -126,6 +136,7 @@ class BridgeApplicationSession:
         self.last_action_combinations = None
         self.last_local_deck_design = None
         self.last_fatigue = None
+        self.last_verification_import = None
 
     def set_preferences(self, preferences: ApplicationPreferences) -> None:
         if preferences.analysis != self.preferences.analysis:
@@ -135,12 +146,14 @@ class BridgeApplicationSession:
             self.last_action_combinations = None
             self.last_design_interpretation = None
             self.last_fatigue = None
+            self.last_verification_import = None
         elif preferences.actions != self.preferences.actions:
             self.last_extended_actions = None
             self.last_local_deck_design = None
             self.last_action_combinations = None
             self.last_design_interpretation = None
             self.last_fatigue = None
+            self.last_verification_import = None
         elif (
             preferences.local_deck != self.preferences.local_deck
             or preferences.eurocode != self.preferences.eurocode
@@ -150,8 +163,10 @@ class BridgeApplicationSession:
             self.last_action_combinations = None
             self.last_design_interpretation = None
             self.last_fatigue = None
+            self.last_verification_import = None
         elif preferences.fatigue != self.preferences.fatigue:
             self.last_fatigue = None
+            self.last_verification_import = None
         self.preferences = preferences
 
     def dashboard(self) -> ApplicationDashboard:
@@ -393,6 +408,103 @@ class BridgeApplicationSession:
             fatigue=self.last_fatigue,
         )
 
+
+    def _verification_combination_factors(self) -> BridgeActionCombinationFactors:
+        basis = self.preferences.eurocode
+        return BridgeActionCombinationFactors(
+            uls=basis.uls_factors,
+            gamma_q_nontraffic=basis.gamma_q_nontraffic,
+            psi1_lm2=basis.psi1_lm2,
+            psi0_thermal_uls=basis.psi0_thermal_uls,
+            psi0_thermal_sls=basis.psi0_thermal_sls,
+            psi1_thermal=basis.psi1_thermal,
+            psi2_thermal=basis.psi2_thermal,
+        )
+
+    def build_stage5_verification_model(self):
+        if self.last_lm1_search is None:
+            raise RuntimeError("Run native LM1 analysis before Stage-5 verification.")
+        if self.last_extended_actions is None:
+            raise RuntimeError(
+                "Run Additional actions before Stage-5 verification."
+            )
+        if self.last_action_combinations is None:
+            raise RuntimeError(
+                "Run integrated Design & checks before Stage-5 verification."
+            )
+        return build_unified_final_service_verification_model(
+            self.project,
+            self.last_lm1_search,
+            self.last_extended_actions,
+            action_settings=self.preferences.actions,
+            combination_factors=self._verification_combination_factors(),
+            grid_spacing_m=self.preferences.analysis.grid_spacing_m,
+        )
+
+    def import_stage5_staad_anl(
+        self,
+        path: str | Path,
+        *,
+        tolerance: VerificationImportTolerance | None = None,
+    ) -> ApplicationVerificationImportReport:
+        source = Path(path)
+        model = self.build_stage5_verification_model()
+        report = import_staad_anl_verification_results(
+            model,
+            staad_anl_text=source.read_text(encoding="utf-8", errors="replace"),
+            source_name="STAAD.Pro",
+            tolerance=tolerance,
+        )
+        self.last_verification_import = report
+        return report
+
+    def import_stage5_midas_tables(
+        self,
+        *,
+        reaction_path: str | Path,
+        displacement_path: str | Path,
+        member_force_path: str | Path,
+        delimiter: str = ",",
+        tolerance: VerificationImportTolerance | None = None,
+    ) -> ApplicationVerificationImportReport:
+        model = self.build_stage5_verification_model()
+        report = import_midas_table_verification_results(
+            model,
+            reaction_table=Path(reaction_path).read_text(
+                encoding="utf-8",
+                errors="replace",
+            ),
+            displacement_table=Path(displacement_path).read_text(
+                encoding="utf-8",
+                errors="replace",
+            ),
+            member_force_table=Path(member_force_path).read_text(
+                encoding="utf-8",
+                errors="replace",
+            ),
+            source_name="MIDAS Civil",
+            delimiter=delimiter,
+            tolerance=tolerance,
+        )
+        self.last_verification_import = report
+        return report
+
+    def write_last_verification_evidence(
+        self,
+        directory: str | Path,
+        *,
+        base_name: str = "stage5_external_verification",
+    ) -> WrittenVerificationImportEvidence:
+        if self.last_verification_import is None:
+            raise RuntimeError(
+                "Import STAAD/MIDAS Stage-5 results before saving verification evidence."
+            )
+        return write_verification_import_evidence(
+            self.last_verification_import,
+            directory,
+            base_name=base_name,
+        )
+
     def export_verification_campaign(
         self,
         directory: str | Path,
@@ -423,16 +535,7 @@ class BridgeApplicationSession:
             raise RuntimeError(
                 "Run FLM3 fatigue before export so governing fatigue vehicle cases are included."
             )
-        basis = self.preferences.eurocode
-        combination_factors = BridgeActionCombinationFactors(
-            uls=basis.uls_factors,
-            gamma_q_nontraffic=basis.gamma_q_nontraffic,
-            psi1_lm2=basis.psi1_lm2,
-            psi0_thermal_uls=basis.psi0_thermal_uls,
-            psi0_thermal_sls=basis.psi0_thermal_sls,
-            psi1_thermal=basis.psi1_thermal,
-            psi2_thermal=basis.psi2_thermal,
-        )
+        combination_factors = self._verification_combination_factors()
         return write_application_verification_campaign(
             self.project,
             self.last_lm1_search,

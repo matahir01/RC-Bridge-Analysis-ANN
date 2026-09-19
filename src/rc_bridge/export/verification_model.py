@@ -249,6 +249,16 @@ class VerificationModel:
                 if load.node_id not in node_ids:
                     raise ValueError("Nodal load references an unknown node.")
         load_case_ids = {item.load_case_id for item in self.load_cases}
+        combination_ids = {
+            item.combination_id for item in self.load_combinations
+        }
+        overlap = sorted(load_case_ids & combination_ids)
+        if overlap:
+            raise ValueError(
+                "Load-case and load-combination IDs must be globally unique for "
+                "external software export; overlapping IDs: "
+                + ", ".join(str(value) for value in overlap)
+            )
         for combination in self.load_combinations:
             unknown = [
                 term.load_case_id
