@@ -1,12 +1,23 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from importlib import import_module
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from rc_bridge.application.session import BridgeApplicationSession
 
 APPLICATION_INTERFACE_VERSION = "1.0"
+ENGINE_INTERFACE_VERSION = "1.0"
+
+FROZEN_ENGINE_ENTRYPOINTS: tuple[str, ...] = (
+    "rc_bridge.workflow.lm1_grillage_search:run_project_native_lm1_grillage_search",
+    "rc_bridge.application.extended_actions:run_extended_actions",
+    "rc_bridge.application.local_deck:run_local_deck_design",
+    "rc_bridge.application.design_checks:run_application_design_interpretation",
+    "rc_bridge.application.fatigue:run_application_fatigue",
+    "rc_bridge.application.verification_campaign:build_unified_final_service_verification_model",
+)
 
 # These names are the application-facing contract consumed by the desktop UI and
 # other presentation layers. New internal engine methods can be added freely; removing
@@ -76,6 +87,22 @@ class ApplicationViewSnapshot:
     @property
     def total_stage_count(self) -> int:
         return len(self.stages)
+
+
+def validate_engine_interface() -> None:
+    """Assert that the deterministic entry points frozen for presentation still exist."""
+
+    missing: list[str] = []
+    for entrypoint in FROZEN_ENGINE_ENTRYPOINTS:
+        module_name, attribute_name = entrypoint.split(":", 1)
+        module = import_module(module_name)
+        if not hasattr(module, attribute_name):
+            missing.append(entrypoint)
+    if missing:
+        raise TypeError(
+            "Deterministic engine does not satisfy interface "
+            f"{ENGINE_INTERFACE_VERSION}; missing: {', '.join(missing)}"
+        )
 
 
 def validate_application_interface(session: Any) -> None:
