@@ -1656,7 +1656,7 @@ def main() -> int:
             "physical layered section and the governing compatible action groups. "
             "Construction stages, bearing/restraint demand and local barrier demand are "
             "carried with the design; unresolved capacities remain explicit blockers. "
-            "Production acceptance remains locked until Stage 7 independent verification."
+            "Production acceptance remains locked until genuine independent verification is completed."
         ),
         wraplength=1180,
         justify=tk.LEFT,
@@ -2594,6 +2594,157 @@ def main() -> int:
         else:
             string_vars[key].set(f"{displayed_unit.from_metres(value_m):g}")
 
+    def refresh_project_preview(_event=None) -> None:
+        draw_bridge_preview(
+            project_preview_canvas,
+            bridge_preview_data(session.project),
+        )
+
+    def refresh_analysis_chart(_event=None) -> None:
+        result = session.last_lm1_search
+        if result is None:
+            draw_bar_chart(
+                analysis_chart_canvas,
+                labels=(),
+                values=(),
+                title="Girder response overview",
+                unit="",
+            )
+            return
+        dashboard = analysis_dashboard_data(result)
+        metric = analysis_chart_metric_var.get()
+        if metric == "Moment":
+            values = [item.moment_knm for item in dashboard.girders]
+            unit = "kNm"
+        elif metric == "Shear":
+            values = [item.shear_kn for item in dashboard.girders]
+            unit = "kN"
+        elif metric == "Torsion":
+            values = [item.torsion_knm for item in dashboard.girders]
+            unit = "kNm"
+        else:
+            values = [
+                0.0 if item.deflection_mm is None else item.deflection_mm
+                for item in dashboard.girders
+            ]
+            unit = "mm"
+        draw_bar_chart(
+            analysis_chart_canvas,
+            labels=[f"G{item.girder_index}" for item in dashboard.girders],
+            values=values,
+            title=f"LM1 governing {metric.lower()} by girder",
+            unit=unit,
+        )
+
+    def refresh_design_dashboard(_event=None) -> None:
+        result = session.last_design_interpretation
+        if result is None:
+            design_worst_var.set("—")
+            design_governing_var.set("—")
+            design_blocker_var.set("—")
+            draw_bar_chart(
+                design_chart_canvas,
+                labels=(),
+                values=(),
+                title="Governing design utilization by girder",
+                unit="utilization",
+                threshold=1.0,
+            )
+            return
+        dashboard = design_dashboard_data(result)
+        design_worst_var.set(f"{dashboard.worst_utilization:.3f}")
+        design_governing_var.set(
+            "—"
+            if dashboard.governing_girder_index is None
+            else f"G{dashboard.governing_girder_index}"
+        )
+        design_blocker_var.set(str(dashboard.blocker_count))
+        draw_bar_chart(
+            design_chart_canvas,
+            labels=[f"G{item.girder_index}" for item in dashboard.girders],
+            values=[item.governing_utilization for item in dashboard.girders],
+            title="Governing ULS/SLS utilization by girder",
+            unit="utilization",
+            threshold=1.0,
+        )
+
+    def refresh_local_dashboard(_event=None) -> None:
+        deck = session.last_local_deck_design
+        fatigue = session.last_fatigue
+        if deck is None:
+            local_bottom_var.set("Bottom: —")
+            local_top_var.set("Top: —")
+            local_shear_var.set("Shear: —")
+            local_fatigue_var.set(
+                "Fatigue: —" if fatigue is None else f"Fatigue: {fatigue.status}"
+            )
+            draw_line_chart(
+                local_chart_canvas,
+                x_values=(),
+                series=(),
+                title="Transverse deck moment response",
+                y_unit="kNm/m",
+            )
+            return
+        dashboard = deck_dashboard_data(deck, fatigue)
+        local_bottom_var.set(
+            f"{dashboard.bottom_reinforcement} · util {dashboard.bottom_utilization:.3f}"
+        )
+        local_top_var.set(
+            f"{dashboard.top_reinforcement} · util {dashboard.top_utilization:.3f}"
+        )
+        local_shear_var.set(f"util {dashboard.shear_utilization:.3f}")
+        local_fatigue_var.set(dashboard.fatigue_status)
+        series = [
+            ("Permanent", dashboard.permanent_moments_knm_per_m),
+        ]
+        if dashboard.lm2_moments_knm_per_m is not None:
+            series.append(("Governing LM2", dashboard.lm2_moments_knm_per_m))
+        draw_line_chart(
+            local_chart_canvas,
+            x_values=dashboard.stations_y_m,
+            series=tuple(series),
+            title="Transverse deck moment response",
+            y_unit="kNm/m",
+        )
+
+    def refresh_verification_dashboard(_event=None) -> None:
+        report = session.last_verification_import
+        if report is None:
+            verification_status_metric_var.set("NOT IMPORTED")
+            verification_coverage_metric_var.set("—")
+            verification_error_metric_var.set("—")
+            draw_bar_chart(
+                verification_error_canvas,
+                labels=(),
+                values=(),
+                title="External-result relative error",
+                unit="%",
+            )
+            return
+        dashboard = verification_dashboard_data(report)
+        verification_status_metric_var.set(dashboard.status)
+        verification_coverage_metric_var.set(
+            f"{dashboard.imported_count}/{dashboard.requested_count}"
+        )
+        verification_error_metric_var.set(
+            "—"
+            if dashboard.max_relative_error is None
+            else f"{100.0 * dashboard.max_relative_error:.3f}%"
+        )
+        draw_bar_chart(
+            verification_error_canvas,
+            labels=[str(item.result_id) for item in dashboard.results],
+            values=[
+                0.0
+                if item.max_relative_error is None
+                else 100.0 * item.max_relative_error
+                for item in dashboard.results
+            ],
+            title=f"{dashboard.source_name} maximum relative error by result set",
+            unit="%",
+        )
+
     def populate_project(project) -> None:
         fields = ProjectBasicFields.from_project(project)
         string_vars["name"].set(fields.name)
@@ -2700,6 +2851,7 @@ def main() -> int:
             f"{layout.minimum_deck_width_m:.3f} m."
             + composite_guidance
         )
+        refresh_project_preview()
 
     def populate_preferences(preferences: ApplicationPreferences) -> None:
         string_vars["units"].set(preferences.units.value)
@@ -2926,7 +3078,8 @@ def main() -> int:
     def refresh_load_case_views() -> None:
         for item in permanent_audit_tree.get_children():
             permanent_audit_tree.delete(item)
-        for row in session.permanent_load_audit():
+        audit_rows = session.permanent_load_audit()
+        for row in audit_rows:
             permanent_audit_tree.insert(
                 "",
                 tk.END,
@@ -2942,6 +3095,13 @@ def main() -> int:
                     f"{row.total_equivalent_kn_m:.3f}",
                 ),
             )
+        draw_bar_chart(
+            permanent_load_canvas,
+            labels=[f"G{row.girder_index}" for row in audit_rows],
+            values=[row.total_equivalent_kn_m for row in audit_rows],
+            title="Characteristic permanent line load by girder",
+            unit="kN/m",
+        )
 
         for item in action_scope_tree.get_children():
             action_scope_tree.delete(item)
@@ -3003,6 +3163,17 @@ def main() -> int:
             "Run analysis, then open Calculations to review the deterministic "
             "equation/substitution/result trace.",
         )
+        for variable in analysis_metric_vars.values():
+            variable.set("—")
+        design_selected_var.set(
+            "Select a girder result to inspect its reinforcement and governing checks."
+        )
+        for item in design_stage_tree.get_children():
+            design_stage_tree.delete(item)
+        refresh_analysis_chart()
+        refresh_design_dashboard()
+        refresh_local_dashboard()
+        refresh_verification_dashboard()
 
     def show_result(result) -> None:
         for item in effect_tree.get_children():
@@ -3022,6 +3193,17 @@ def main() -> int:
                     girder.torsion_knm.case_id,
                 ),
             )
+
+        dashboard = analysis_dashboard_data(result)
+        analysis_metric_vars["moment"].set(f"{dashboard.max_moment_knm:.2f} kNm")
+        analysis_metric_vars["shear"].set(f"{dashboard.max_shear_kn:.2f} kN")
+        analysis_metric_vars["torsion"].set(f"{dashboard.max_torsion_knm:.2f} kNm")
+        analysis_metric_vars["deflection"].set(
+            "—"
+            if dashboard.max_deflection_mm is None
+            else f"{dashboard.max_deflection_mm:.3f} mm"
+        )
+        refresh_analysis_chart()
 
         for item in deflection_tree.get_children():
             deflection_tree.delete(item)
@@ -3401,6 +3583,7 @@ def main() -> int:
                 ),
             )
         status_var.set("Local deck/slab design complete.")
+        refresh_local_dashboard()
         refresh_dashboard()
 
     def run_local_deck_workflow() -> None:
@@ -3712,14 +3895,16 @@ def main() -> int:
     def show_design_result(result) -> None:
         for item in design_tree.get_children():
             design_tree.delete(item)
+        inserted_design_items: list[str] = []
         for row in result.girders:
             flex = row.design.uls_design.flexure
             bars = row.selected_bars
             links = row.selected_links
-            design_tree.insert(
-                "",
-                tk.END,
-                values=(
+            inserted_design_items.append(
+                design_tree.insert(
+                    "",
+                    tk.END,
+                    values=(
                     row.girder_index,
                     f"{row.effective_depth_m * 1000.0:.1f}",
                     f"{row.design.uls_design.design_effects.moment_knm:.2f}",
@@ -3756,8 +3941,15 @@ def main() -> int:
                         + f"util={max(max(item.flexural_utilization, item.shear_utilization) for item in row.construction_stage_checks):.3f}"
                     ),
                     "PASS" if row.passes_current_checks else "CHECK",
-                ),
+                    ),
+                )
             )
+        refresh_design_dashboard()
+        if inserted_design_items:
+            design_tree.selection_set(inserted_design_items[0])
+            design_tree.focus(inserted_design_items[0])
+            design_tree.see(inserted_design_items[0])
+            show_selected_design_result()
         summary = result.status
         if result.action_combinations is not None:
             bearing = result.action_combinations.bearing
@@ -3989,6 +4181,8 @@ def main() -> int:
 
     def refresh_dashboard() -> None:
         refresh_overview()
+        refresh_project_preview()
+        refresh_verification_dashboard()
         for item in capability_tree.get_children():
             capability_tree.delete(item)
         dashboard = session.dashboard()
@@ -4016,7 +4210,7 @@ def main() -> int:
         _set_text(
             verification_text,
             (
-                "Stage 7 independent acceptance boundary\n\n"
+                "Independent structural acceptance boundary\n\n"
                 "The application can generate the exact MIDAS Civil .mct and STAAD.Pro "
                 ".std models used by the native analysis. Those files must be run in the "
                 "installed external programs and their genuine returned results checked "
@@ -4050,10 +4244,10 @@ def main() -> int:
                 "Required profile evidence includes traffic loading, load combinations, "
                 "flexure, shear, cracking, deflection, fatigue, detailing, transverse "
                 "distribution, independent benchmarking and torsion when it is in scope.\n\n"
-                "After Stage 7 external acceptance, Stage 8 closes the manifests; Stage 9 "
-                "defines justified random-variable distributions/bounds/correlations; "
-                "Stage 10 generates verified datasets, trains/validates the ANN and then "
-                "runs reliability analysis/RBDO."
+                "After genuine external acceptance, the applicable verification manifest "
+                "can be closed. The research phase then defines justified random-variable "
+                "distributions/bounds/correlations before generating verified datasets, "
+                "training/validating the ANN and running reliability analysis/RBDO."
             ),
         )
 
@@ -4478,6 +4672,7 @@ def main() -> int:
                     item.source_name,
                 ),
             )
+        refresh_verification_dashboard()
         status = "PASS" if report.passes else "REVIEW / FAIL"
         status_var.set(
             f"{report.source_name} Stage-5 import: {status}; "
