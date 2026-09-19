@@ -96,14 +96,20 @@ def test_variable_action_scope_does_not_hide_unimplemented_actions() -> None:
     scope = {item.name: item.status for item in eurocode_variable_action_scope()}
 
     assert scope["LM1 vertical road traffic"] == "implemented"
-    assert scope["Braking / acceleration"].startswith("action implemented")
-    assert scope["Thermal action"].startswith("kinematics implemented")
-    assert scope["Pedestrian / footway live load"].startswith("implemented")
-    assert scope["LM2 local axle"].startswith("implemented")
-    assert scope["Vehicle impact on safety barrier"].startswith(
-        "local accidental action implemented"
+    assert scope["Braking / acceleration"].startswith("integrated through gr2")
+    assert scope["Thermal action"].startswith("integrated into bearing")
+    assert scope["Pedestrian / footway live load"].startswith(
+        "integrated into compatible traffic groups"
     )
-    assert scope["Construction-stage actions"].startswith("implemented")
+    assert scope["LM2 local axle"].startswith(
+        "integrated into global design"
+    )
+    assert scope["Vehicle impact on safety barrier"].startswith(
+        "accidental demand/capacity path integrated"
+    )
+    assert scope["Construction-stage actions"].startswith(
+        "integrated into reinforcement selection"
+    )
     assert scope["Wind action"] == "not wired"
 
 
