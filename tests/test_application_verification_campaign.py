@@ -165,4 +165,4 @@ def test_completed_construction_stage_uses_full_transverse_deck_grillage(tmp_pat
     # A seven-girder line-only model would contain longitudinal members only.
     # The completed stage must also contain transverse deck-strip members.
     assert len(lines) > 7
-    assert "completed_composite_bridge" in text.lower()
+    assert "completed_composite_construction_stage" in text.lower()
