@@ -2771,11 +2771,24 @@ def main() -> int:
     def run_local_deck_workflow() -> None:
         try:
             commit_forms()
-            result = session.run_local_deck_design()
-        except (TypeError, ValueError, RuntimeError) as exc:
+        except (TypeError, ValueError) as exc:
             messagebox.showerror("Local deck design", str(exc))
             return
-        show_local_deck_result(result)
+
+        def completed(result, elapsed: float) -> None:
+            show_local_deck_result(result)
+            record = session.last_performance_record
+            cache_text = " (cached)" if record is not None and record.cache_hit else ""
+            status_var.set(
+                f"Local deck/slab design complete in {format_duration(elapsed)}{cache_text}."
+            )
+
+        run_background_operation(
+            title="Local deck design",
+            status="Running local deck/slab analysis and design...",
+            operation=session.run_local_deck_design,
+            on_success=completed,
+        )
 
     def show_fatigue_result(result, *, clear: bool = True) -> None:
         if clear:
@@ -3170,12 +3183,22 @@ def main() -> int:
                 "required additional actions + wind again before design.",
             )
             return
-        try:
-            result = session.run_design_interpretation()
-        except (TypeError, ValueError, RuntimeError) as exc:
-            messagebox.showerror("Design interpretation", str(exc))
-            return
-        show_design_result(result)
+
+        def completed(result, elapsed: float) -> None:
+            show_design_result(result)
+            record = session.last_performance_record
+            cache_text = " (cached)" if record is not None and record.cache_hit else ""
+            status_var.set(
+                f"Integrated design interpretation complete in "
+                f"{format_duration(elapsed)}{cache_text}."
+            )
+
+        run_background_operation(
+            title="Design interpretation",
+            status="Running integrated girder design and serviceability checks...",
+            operation=session.run_design_interpretation,
+            on_success=completed,
+        )
 
     def refresh_dashboard() -> None:
         for item in capability_tree.get_children():
@@ -3292,6 +3315,34 @@ def main() -> int:
         set_busy(False)
         status_var.set("Operation failed")
         messagebox.showerror(title, message)
+
+    def run_background_operation(
+        *,
+        title: str,
+        status: str,
+        operation,
+        on_success,
+    ) -> None:
+        """Run a potentially expensive application operation without blocking Tk."""
+        started_at = time.monotonic()
+        set_busy(True)
+        status_var.set(status)
+
+        def worker() -> None:
+            try:
+                value = operation()
+            except (OSError, TypeError, ValueError, RuntimeError) as exc:
+                message = str(exc)
+                root.after(0, lambda: fail(title, message))
+                return
+
+            def complete() -> None:
+                set_busy(False)
+                on_success(value, time.monotonic() - started_at)
+
+            root.after(0, complete)
+
+        threading.Thread(target=worker, daemon=True).start()
 
     def commit_forms() -> None:
         nonlocal displayed_unit
@@ -3534,12 +3585,16 @@ def main() -> int:
         )
         if not path:
             return
-        try:
-            report = session.write_last_lm1_report(path)
-        except (OSError, TypeError, ValueError, RuntimeError) as exc:
-            messagebox.showerror("Calculation report", str(exc))
-            return
-        status_var.set(f"HTML report saved: {report.name}")
+
+        run_background_operation(
+            title="Calculation report",
+            status="Generating step-by-step HTML calculation report...",
+            operation=lambda: session.write_last_lm1_report(path),
+            on_success=lambda report, elapsed: status_var.set(
+                f"HTML report saved: {report.name} "
+                f"({format_duration(elapsed)})."
+            ),
+        )
 
     def save_pdf_report() -> None:
         if not require_analysis("PDF calculation report"):
@@ -3551,12 +3606,16 @@ def main() -> int:
         )
         if not path:
             return
-        try:
-            report = session.write_last_lm1_pdf_report(path)
-        except (OSError, TypeError, ValueError, RuntimeError) as exc:
-            messagebox.showerror("PDF calculation report", str(exc))
-            return
-        status_var.set(f"PDF report saved: {report.name}")
+
+        run_background_operation(
+            title="PDF calculation report",
+            status="Generating step-by-step PDF calculation report...",
+            operation=lambda: session.write_last_lm1_pdf_report(path),
+            on_success=lambda report, elapsed: status_var.set(
+                f"PDF report saved: {report.name} "
+                f"({format_duration(elapsed)})."
+            ),
+        )
 
     def print_preview() -> None:
         if not require_analysis("Print / preview report"):
@@ -3583,19 +3642,24 @@ def main() -> int:
         )
         if not directory:
             return
-        try:
-            written = session.export_verification_campaign(
+
+        def completed(written, elapsed: float) -> None:
+            status_var.set(
+                "Exported full independent-verification campaign with "
+                f"{written.model_count} structural model package(s) across "
+                f"{len(written.families)} action families in "
+                f"{format_duration(elapsed)}; campaign manifest: "
+                f"{written.manifest_json.name}."
+            )
+
+        run_background_operation(
+            title="Verification export",
+            status="Building MIDAS/STAAD verification campaign...",
+            operation=lambda: session.export_verification_campaign(
                 directory,
                 base_name="application_verification",
-            )
-        except (OSError, TypeError, ValueError, RuntimeError) as exc:
-            messagebox.showerror("Verification export", str(exc))
-            return
-        status_var.set(
-            "Exported full independent-verification campaign with "
-            f"{written.model_count} structural model package(s) across "
-            f"{len(written.families)} action families; campaign manifest: "
-            f"{written.manifest_json.name}."
+            ),
+            on_success=completed,
         )
 
 
@@ -3650,12 +3714,12 @@ def main() -> int:
         )
         if not path:
             return
-        try:
-            report = session.import_stage5_staad_anl(path)
-        except (OSError, TypeError, ValueError, RuntimeError) as exc:
-            messagebox.showerror("STAAD verification import", str(exc))
-            return
-        show_verification_import(report)
+        run_background_operation(
+            title="STAAD verification import",
+            status="Importing and comparing STAAD Stage-5 results...",
+            operation=lambda: session.import_stage5_staad_anl(path),
+            on_success=lambda report, elapsed: show_verification_import(report),
+        )
 
     def import_midas_verification_results() -> None:
         common_types = (
@@ -3681,17 +3745,17 @@ def main() -> int:
         if not member_force_path:
             return
         delimiter = "\t" if Path(reaction_path).suffix.lower() == ".tsv" else ","
-        try:
-            report = session.import_stage5_midas_tables(
+        run_background_operation(
+            title="MIDAS verification import",
+            status="Importing and comparing MIDAS Stage-5 result tables...",
+            operation=lambda: session.import_stage5_midas_tables(
                 reaction_path=reaction_path,
                 displacement_path=displacement_path,
                 member_force_path=member_force_path,
                 delimiter=delimiter,
-            )
-        except (OSError, TypeError, ValueError, RuntimeError) as exc:
-            messagebox.showerror("MIDAS verification import", str(exc))
-            return
-        show_verification_import(report)
+            ),
+            on_success=lambda report, elapsed: show_verification_import(report),
+        )
 
     def save_verification_evidence() -> None:
         if session.last_verification_import is None:
@@ -3705,14 +3769,15 @@ def main() -> int:
         )
         if not directory:
             return
-        try:
-            written = session.write_last_verification_evidence(directory)
-        except (OSError, TypeError, ValueError, RuntimeError) as exc:
-            messagebox.showerror("Verification evidence", str(exc))
-            return
-        status_var.set(
-            "Saved verification evidence: "
-            f"{written.summary_json.name} and {written.comparisons_csv.name}."
+        run_background_operation(
+            title="Verification evidence",
+            status="Writing verification comparison evidence...",
+            operation=lambda: session.write_last_verification_evidence(directory),
+            on_success=lambda written, elapsed: status_var.set(
+                "Saved verification evidence: "
+                f"{written.summary_json.name} and {written.comparisons_csv.name} "
+                f"({format_duration(elapsed)})."
+            ),
         )
 
     apply_project_button.configure(command=apply_project)
