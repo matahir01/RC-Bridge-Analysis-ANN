@@ -13,6 +13,20 @@ from rc_bridge.analysis.physical_sections import (
 from rc_bridge.application.design_checks import ApplicationDesignSettings
 from rc_bridge.application.extended_actions import ExtendedActionSettings
 from rc_bridge.application.fatigue import FatigueApplicationSettings
+from rc_bridge.application.gui_presenters import (
+    analysis_dashboard_data,
+    analysis_girder_diagram,
+    bridge_preview_data,
+    deck_dashboard_data,
+    design_dashboard_data,
+    verification_dashboard_data,
+)
+from rc_bridge.application.gui_rendering import (
+    draw_bar_chart,
+    draw_bridge_preview,
+    draw_line_chart,
+    draw_reinforcement_section,
+)
 from rc_bridge.application.gui_theme import configure_desktop_theme
 from rc_bridge.application.interface_contract import (
     APPLICATION_INTERFACE_VERSION,
@@ -683,6 +697,28 @@ def main() -> int:
     revert_project_button = ttk.Button(project_button_frame, text="Revert")
     revert_project_button.pack(side=tk.LEFT, padx=4)
 
+    project_preview_frame = ttk.LabelFrame(
+        project_tab,
+        text="Applied bridge geometry preview",
+        style="Card.TLabelframe",
+        padding=8,
+    )
+    project_preview_frame.grid(
+        row=2,
+        column=0,
+        columnspan=3,
+        sticky="nsew",
+        pady=(10, 0),
+    )
+    project_tab.rowconfigure(2, weight=1)
+    project_preview_canvas = tk.Canvas(
+        project_preview_frame,
+        height=300,
+        background="#FFFFFF",
+        highlightthickness=0,
+    )
+    project_preview_canvas.pack(fill=tk.BOTH, expand=True)
+
     # ------------------------------------------------------------------
     # Design-basis tab
     # ------------------------------------------------------------------
@@ -931,6 +967,13 @@ def main() -> int:
         permanent_audit_tree.heading(key, text=audit_headings[key])
         permanent_audit_tree.column(key, width=105, anchor=tk.CENTER)
     permanent_audit_tree.pack(fill=tk.BOTH, expand=True)
+    permanent_load_canvas = tk.Canvas(
+        audit_frame,
+        height=155,
+        background="#FFFFFF",
+        highlightthickness=0,
+    )
+    permanent_load_canvas.pack(fill=tk.X, pady=(8, 0))
     load_views.add(audit_frame, weight=1)
 
     lower_load_frame = ttk.Frame(load_views)
@@ -1482,6 +1525,78 @@ def main() -> int:
         wraplength=1100,
     ).pack(fill=tk.X, pady=(8, 6))
 
+    analysis_metric_frame = ttk.Frame(analysis_tab)
+    analysis_metric_frame.pack(fill=tk.X, pady=(0, 8))
+    analysis_metric_vars = {
+        "moment": tk.StringVar(value="—"),
+        "shear": tk.StringVar(value="—"),
+        "torsion": tk.StringVar(value="—"),
+        "deflection": tk.StringVar(value="—"),
+    }
+    for metric_index, (metric_key, metric_title) in enumerate(
+        (
+            ("moment", "Max |M|"),
+            ("shear", "Max |V|"),
+            ("torsion", "Max |T|"),
+            ("deflection", "Max |DZ|"),
+        )
+    ):
+        card = ttk.LabelFrame(
+            analysis_metric_frame,
+            text=metric_title,
+            style="Card.TLabelframe",
+            padding=(12, 8),
+        )
+        card.grid(
+            row=0,
+            column=metric_index,
+            sticky="ew",
+            padx=(0 if metric_index == 0 else 4, 0),
+        )
+        analysis_metric_frame.columnconfigure(metric_index, weight=1)
+        ttk.Label(
+            card,
+            textvariable=analysis_metric_vars[metric_key],
+            style="Metric.TLabel",
+        ).pack(anchor="w")
+
+    analysis_chart_frame = ttk.LabelFrame(
+        analysis_tab,
+        text="Girder response overview",
+        style="Card.TLabelframe",
+        padding=8,
+    )
+    analysis_chart_frame.pack(fill=tk.X, pady=(0, 8))
+    analysis_chart_controls = ttk.Frame(analysis_chart_frame)
+    analysis_chart_controls.pack(fill=tk.X)
+    ttk.Label(analysis_chart_controls, text="Display").pack(side=tk.LEFT)
+    analysis_chart_metric_var = tk.StringVar(value="Moment")
+    analysis_chart_metric = ttk.Combobox(
+        analysis_chart_controls,
+        textvariable=analysis_chart_metric_var,
+        values=("Moment", "Shear", "Torsion", "Deflection"),
+        state="readonly",
+        width=16,
+    )
+    analysis_chart_metric.pack(side=tk.LEFT, padx=(6, 12))
+    ttk.Label(analysis_chart_controls, text="Girder").pack(side=tk.LEFT)
+    analysis_chart_girder_var = tk.StringVar(value="G1")
+    analysis_chart_girder = ttk.Combobox(
+        analysis_chart_controls,
+        textvariable=analysis_chart_girder_var,
+        values=("G1",),
+        state="readonly",
+        width=9,
+    )
+    analysis_chart_girder.pack(side=tk.LEFT, padx=(6, 0))
+    analysis_chart_canvas = tk.Canvas(
+        analysis_chart_frame,
+        height=210,
+        background="#FFFFFF",
+        highlightthickness=0,
+    )
+    analysis_chart_canvas.pack(fill=tk.X, pady=(6, 0))
+
     effect_frame = ttk.LabelFrame(
         analysis_tab,
         text="Governing native LM1 girder effects",
@@ -1530,7 +1645,7 @@ def main() -> int:
         deflection_frame,
         columns=("girder", "value", "position", "case"),
         show="headings",
-        height=5,
+        height=9,
     )
     for key, title in (
         ("girder", "Girder"),
@@ -1553,7 +1668,7 @@ def main() -> int:
             "physical layered section and the governing compatible action groups. "
             "Construction stages, bearing/restraint demand and local barrier demand are "
             "carried with the design; unresolved capacities remain explicit blockers. "
-            "Production acceptance remains locked until Stage 7 independent verification."
+            "Production acceptance remains locked until genuine independent verification is completed."
         ),
         wraplength=1180,
         justify=tk.LEFT,
@@ -1681,8 +1796,52 @@ def main() -> int:
         justify=tk.LEFT,
     ).pack(fill=tk.X, pady=(8, 4))
 
+    design_views = ttk.Notebook(design_tab)
+    design_views.pack(fill=tk.BOTH, expand=True, pady=(4, 0))
+    design_summary_page = ttk.Frame(design_views, padding=6)
+    design_selected_page = ttk.Frame(design_views, padding=6)
+    design_capability_page = ttk.Frame(design_views, padding=6)
+    design_views.add(design_summary_page, text="Design summary")
+    design_views.add(design_selected_page, text="Selected girder")
+    design_views.add(design_capability_page, text="Capability / verification")
+
+    design_dashboard_frame = ttk.Frame(design_summary_page)
+    design_dashboard_frame.pack(fill=tk.X, pady=(2, 8))
+    design_worst_var = tk.StringVar(value="—")
+    design_governing_var = tk.StringVar(value="—")
+    design_blocker_var = tk.StringVar(value="—")
+    for metric_index, (title, variable) in enumerate(
+        (
+            ("Worst utilization", design_worst_var),
+            ("Governing girder", design_governing_var),
+            ("Open blockers", design_blocker_var),
+        )
+    ):
+        card = ttk.LabelFrame(
+            design_dashboard_frame,
+            text=title,
+            style="Card.TLabelframe",
+            padding=(12, 8),
+        )
+        card.grid(
+            row=0,
+            column=metric_index,
+            sticky="ew",
+            padx=(0 if metric_index == 0 else 4, 0),
+        )
+        design_dashboard_frame.columnconfigure(metric_index, weight=1)
+        ttk.Label(card, textvariable=variable, style="Metric.TLabel").pack(anchor="w")
+
+    design_chart_canvas = tk.Canvas(
+        design_summary_page,
+        height=150,
+        background="#FFFFFF",
+        highlightthickness=0,
+    )
+    design_chart_canvas.pack(fill=tk.X, pady=(0, 8))
+
     design_frame = ttk.LabelFrame(
-        design_tab,
+        design_summary_page,
         text="Per-girder design results",
         padding=6,
     )
@@ -1711,7 +1870,7 @@ def main() -> int:
         design_frame,
         columns=design_columns,
         show="headings",
-        height=10,
+        height=7,
     )
     design_headings = {
         "girder": "Girder",
@@ -1764,12 +1923,61 @@ def main() -> int:
     design_tree.pack(fill=tk.BOTH, expand=True)
     design_x_scroll.pack(fill=tk.X)
 
+    design_review_frame = ttk.LabelFrame(
+        design_selected_page,
+        text="Selected girder / construction-stage review",
+        style="Card.TLabelframe",
+        padding=8,
+    )
+    design_review_frame.pack(fill=tk.BOTH, expand=True, pady=(4, 0))
+    design_review_frame.columnconfigure(0, weight=2)
+    design_review_frame.columnconfigure(1, weight=3)
+    design_selected_var = tk.StringVar(
+        value="Select a girder result to inspect its reinforcement and governing checks."
+    )
+    design_section_canvas = tk.Canvas(
+        design_review_frame,
+        height=185,
+        background="#FFFFFF",
+        highlightthickness=0,
+    )
+    design_section_canvas.grid(row=0, column=0, sticky="ew", padx=(0, 8))
+    ttk.Label(
+        design_review_frame,
+        textvariable=design_selected_var,
+        wraplength=520,
+        justify=tk.LEFT,
+    ).grid(row=1, column=0, sticky="nw", padx=(0, 8), pady=(5, 0))
+    design_stage_tree = ttk.Treeview(
+        design_review_frame,
+        columns=("stage", "m", "v", "m_util", "v_util", "status"),
+        show="headings",
+        height=4,
+    )
+    for key, title, width_value in (
+        ("stage", "Construction stage", 150),
+        ("m", "MEd kNm", 95),
+        ("v", "VEd kN", 95),
+        ("m_util", "M util.", 80),
+        ("v_util", "V util.", 80),
+        ("status", "Status", 80),
+    ):
+        design_stage_tree.heading(key, text=title)
+        design_stage_tree.column(key, width=width_value, anchor=tk.CENTER)
+    design_stage_tree.grid(row=0, column=1, sticky="ew")
+    design_show_calculation_button = ttk.Button(
+        design_review_frame,
+        text="Show selected girder calculations",
+        style="Secondary.TButton",
+    )
+    design_show_calculation_button.grid(row=2, column=0, sticky="w", pady=(7, 0))
+
     capability_frame = ttk.LabelFrame(
-        design_tab,
+        design_capability_page,
         text="Verification and capability boundary",
         padding=6,
     )
-    capability_frame.pack(fill=tk.X, pady=(8, 0))
+    capability_frame.pack(fill=tk.BOTH, expand=True, pady=(4, 0))
     capability_tree = ttk.Treeview(
         capability_frame,
         columns=("capability", "state", "detail"),
@@ -1795,7 +2003,7 @@ def main() -> int:
     # ------------------------------------------------------------------
     local_tab.columnconfigure(0, weight=1)
     local_tab.columnconfigure(1, weight=1)
-    local_tab.rowconfigure(1, weight=1)
+    local_tab.rowconfigure(3, weight=1)
 
     deck_controls = ttk.LabelFrame(
         local_tab,
@@ -1884,13 +2092,69 @@ def main() -> int:
     run_fatigue_button.grid(row=7, column=1, sticky="e", pady=(8, 0))
     analysis_buttons.extend((run_local_deck_button, run_fatigue_button))
 
+    local_dashboard_frame = ttk.Frame(local_tab)
+    local_dashboard_frame.grid(
+        row=1,
+        column=0,
+        columnspan=2,
+        sticky="ew",
+        pady=(8, 0),
+    )
+    local_bottom_var = tk.StringVar(value="Bottom: —")
+    local_top_var = tk.StringVar(value="Top: —")
+    local_shear_var = tk.StringVar(value="Shear: —")
+    local_fatigue_var = tk.StringVar(value="Fatigue: —")
+    for metric_index, (title, variable) in enumerate(
+        (
+            ("Bottom transverse", local_bottom_var),
+            ("Top transverse", local_top_var),
+            ("One-way shear", local_shear_var),
+            ("FLM3", local_fatigue_var),
+        )
+    ):
+        card = ttk.LabelFrame(
+            local_dashboard_frame,
+            text=title,
+            style="Card.TLabelframe",
+            padding=(10, 7),
+        )
+        card.grid(
+            row=0,
+            column=metric_index,
+            sticky="ew",
+            padx=(0 if metric_index == 0 else 4, 0),
+        )
+        local_dashboard_frame.columnconfigure(metric_index, weight=1)
+        ttk.Label(card, textvariable=variable, style="CardTitle.TLabel").pack(anchor="w")
+
+    local_chart_frame = ttk.LabelFrame(
+        local_tab,
+        text="Transverse deck response",
+        style="Card.TLabelframe",
+        padding=8,
+    )
+    local_chart_frame.grid(
+        row=2,
+        column=0,
+        columnspan=2,
+        sticky="ew",
+        pady=(8, 0),
+    )
+    local_chart_canvas = tk.Canvas(
+        local_chart_frame,
+        height=210,
+        background="#FFFFFF",
+        highlightthickness=0,
+    )
+    local_chart_canvas.pack(fill=tk.X)
+
     local_result_frame = ttk.LabelFrame(
         local_tab,
         text="Deck / fatigue results",
         padding=8,
     )
     local_result_frame.grid(
-        row=1,
+        row=3,
         column=0,
         columnspan=2,
         sticky="nsew",
@@ -1915,15 +2179,7 @@ def main() -> int:
     # ------------------------------------------------------------------
     # Verification tab
     # ------------------------------------------------------------------
-    verification_text = tk.Text(
-        verification_tab,
-        height=9,
-        wrap="word",
-        state=tk.DISABLED,
-    )
-    verification_text.pack(fill=tk.X)
-
-    verification_buttons = ttk.Frame(verification_tab, padding=(0, 12, 0, 0))
+    verification_buttons = ttk.Frame(verification_tab, padding=(0, 0, 0, 6))
     verification_buttons.pack(fill=tk.X)
     html_button = ttk.Button(verification_buttons, text="Save HTML report")
     html_button.pack(side=tk.LEFT, padx=(0, 6))
@@ -1933,23 +2189,24 @@ def main() -> int:
     print_button.pack(side=tk.LEFT, padx=6)
     export_button = ttk.Button(
         verification_buttons,
-        text="Export full MIDAS / STAAD campaign",
+        text="Export MIDAS / STAAD campaign",
+        style="Primary.TButton",
     )
-    export_button.pack(side=tk.LEFT, padx=6)
+    export_button.pack(side=tk.LEFT, padx=(12, 6))
 
     verification_import_buttons = ttk.Frame(
         verification_tab,
-        padding=(0, 8, 0, 0),
+        padding=(0, 0, 0, 8),
     )
     verification_import_buttons.pack(fill=tk.X)
     import_staad_button = ttk.Button(
         verification_import_buttons,
-        text="Import STAAD .ANL results",
+        text="Import STAAD .ANL",
     )
     import_staad_button.pack(side=tk.LEFT, padx=(0, 6))
     import_midas_button = ttk.Button(
         verification_import_buttons,
-        text="Import MIDAS result tables",
+        text="Import MIDAS tables",
     )
     import_midas_button.pack(side=tk.LEFT, padx=6)
     save_verification_evidence_button = ttk.Button(
@@ -1969,35 +2226,92 @@ def main() -> int:
         )
     )
 
-    package_tree = ttk.Treeview(
-        verification_tab,
-        columns=("case", "purpose"),
-        show="headings",
-        height=10,
+    verification_views = ttk.Notebook(verification_tab)
+    verification_views.pack(fill=tk.BOTH, expand=True)
+    verification_results_page = ttk.Frame(verification_views, padding=8)
+    verification_models_page = ttk.Frame(verification_views, padding=8)
+    verification_scope_page = ttk.Frame(verification_views, padding=8)
+    verification_views.add(verification_results_page, text="External comparison")
+    verification_views.add(verification_models_page, text="Exported cases")
+    verification_views.add(verification_scope_page, text="Acceptance scope")
+
+    verification_dashboard_frame = ttk.Frame(verification_results_page)
+    verification_dashboard_frame.pack(fill=tk.X, pady=(0, 6))
+    verification_status_metric_var = tk.StringVar(value="NOT IMPORTED")
+    verification_coverage_metric_var = tk.StringVar(value="—")
+    verification_error_metric_var = tk.StringVar(value="—")
+    for metric_index, (title, variable) in enumerate(
+        (
+            ("Comparison status", verification_status_metric_var),
+            ("Imported coverage", verification_coverage_metric_var),
+            ("Maximum relative error", verification_error_metric_var),
+        )
+    ):
+        card = ttk.LabelFrame(
+            verification_dashboard_frame,
+            text=title,
+            style="Card.TLabelframe",
+            padding=(10, 7),
+        )
+        card.grid(
+            row=0,
+            column=metric_index,
+            sticky="ew",
+            padx=(0 if metric_index == 0 else 4, 0),
+        )
+        verification_dashboard_frame.columnconfigure(metric_index, weight=1)
+        ttk.Label(card, textvariable=variable, style="CardTitle.TLabel").pack(anchor="w")
+
+    verification_error_canvas = tk.Canvas(
+        verification_results_page,
+        height=165,
+        background="#FFFFFF",
+        highlightthickness=0,
     )
-    package_tree.heading("case", text="Governing case")
-    package_tree.heading("purpose", text="Verification purpose")
-    package_tree.column("case", width=150, anchor=tk.CENTER)
-    package_tree.column("purpose", width=850, anchor=tk.W)
-    package_tree.pack(fill=tk.BOTH, expand=True, pady=(12, 0))
+    verification_error_canvas.pack(fill=tk.X, pady=(4, 8))
 
     verification_result_tree = ttk.Treeview(
-        verification_tab,
+        verification_results_page,
         columns=("result", "kind", "status", "max_error", "source"),
         show="headings",
-        height=8,
+        height=9,
     )
     verification_result_tree.heading("result", text="Imported result")
     verification_result_tree.heading("kind", text="Type")
     verification_result_tree.heading("status", text="Comparison")
     verification_result_tree.heading("max_error", text="Max rel. error")
     verification_result_tree.heading("source", text="Source")
-    verification_result_tree.column("result", width=360, anchor=tk.W)
+    verification_result_tree.column("result", width=390, anchor=tk.W)
     verification_result_tree.column("kind", width=120, anchor=tk.CENTER)
     verification_result_tree.column("status", width=120, anchor=tk.CENTER)
     verification_result_tree.column("max_error", width=130, anchor=tk.CENTER)
     verification_result_tree.column("source", width=160, anchor=tk.W)
-    verification_result_tree.pack(fill=tk.BOTH, expand=True, pady=(8, 0))
+    verification_result_tree.pack(fill=tk.BOTH, expand=True)
+
+    package_tree = ttk.Treeview(
+        verification_models_page,
+        columns=("case", "purpose"),
+        show="headings",
+        height=14,
+    )
+    package_tree.heading("case", text="Governing case")
+    package_tree.heading("purpose", text="Verification purpose")
+    package_tree.column("case", width=150, anchor=tk.CENTER)
+    package_tree.column("purpose", width=900, anchor=tk.W)
+    package_tree.pack(fill=tk.BOTH, expand=True)
+
+    verification_text = tk.Text(
+        verification_scope_page,
+        wrap="word",
+        state=tk.DISABLED,
+        relief="flat",
+        padx=16,
+        pady=14,
+        background="#FFFFFF",
+        foreground="#172033",
+        font=("Segoe UI", 10),
+    )
+    verification_text.pack(fill=tk.BOTH, expand=True)
 
     # ------------------------------------------------------------------
     # Research tab
@@ -2323,6 +2637,161 @@ def main() -> int:
         else:
             string_vars[key].set(f"{displayed_unit.from_metres(value_m):g}")
 
+    def refresh_project_preview(_event=None) -> None:
+        draw_bridge_preview(
+            project_preview_canvas,
+            bridge_preview_data(session.project),
+        )
+
+    def refresh_analysis_chart(_event=None) -> None:
+        result = session.last_lm1_search
+        if result is None:
+            draw_line_chart(
+                analysis_chart_canvas,
+                x_values=(),
+                series=(),
+                title="Governing longitudinal response",
+                y_unit="",
+            )
+            return
+        metric = analysis_chart_metric_var.get()
+        raw_girder = analysis_chart_girder_var.get().strip().upper()
+        try:
+            girder_index = int(raw_girder.removeprefix("G"))
+        except ValueError:
+            girder_index = 1
+        try:
+            diagram = analysis_girder_diagram(
+                result,
+                girder_index=girder_index,
+                metric=metric,
+            )
+        except (ValueError, RuntimeError):
+            draw_line_chart(
+                analysis_chart_canvas,
+                x_values=(),
+                series=(),
+                title=f"Governing {metric.lower()} diagram",
+                y_unit="",
+            )
+            return
+        draw_line_chart(
+            analysis_chart_canvas,
+            x_values=diagram.stations_m,
+            series=((f"G{girder_index} · case {diagram.case_id}", diagram.values),),
+            title=f"LM1 governing {diagram.metric.lower()} diagram",
+            y_unit=diagram.unit,
+        )
+
+    def refresh_design_dashboard(_event=None) -> None:
+        result = session.last_design_interpretation
+        if result is None:
+            design_worst_var.set("—")
+            design_governing_var.set("—")
+            design_blocker_var.set("—")
+            draw_bar_chart(
+                design_chart_canvas,
+                labels=(),
+                values=(),
+                title="Governing design utilization by girder",
+                unit="utilization",
+                threshold=1.0,
+            )
+            return
+        dashboard = design_dashboard_data(result)
+        design_worst_var.set(f"{dashboard.worst_utilization:.3f}")
+        design_governing_var.set(
+            "—"
+            if dashboard.governing_girder_index is None
+            else f"G{dashboard.governing_girder_index}"
+        )
+        design_blocker_var.set(str(dashboard.blocker_count))
+        draw_bar_chart(
+            design_chart_canvas,
+            labels=[f"G{item.girder_index}" for item in dashboard.girders],
+            values=[item.governing_utilization for item in dashboard.girders],
+            title="Governing ULS/SLS utilization by girder",
+            unit="utilization",
+            threshold=1.0,
+        )
+
+    def refresh_local_dashboard(_event=None) -> None:
+        deck = session.last_local_deck_design
+        fatigue = session.last_fatigue
+        if deck is None:
+            local_bottom_var.set("Bottom: —")
+            local_top_var.set("Top: —")
+            local_shear_var.set("Shear: —")
+            local_fatigue_var.set(
+                "Fatigue: —" if fatigue is None else f"Fatigue: {fatigue.status}"
+            )
+            draw_line_chart(
+                local_chart_canvas,
+                x_values=(),
+                series=(),
+                title="Transverse deck moment response",
+                y_unit="kNm/m",
+            )
+            return
+        dashboard = deck_dashboard_data(deck, fatigue)
+        local_bottom_var.set(
+            f"{dashboard.bottom_reinforcement} · util {dashboard.bottom_utilization:.3f}"
+        )
+        local_top_var.set(
+            f"{dashboard.top_reinforcement} · util {dashboard.top_utilization:.3f}"
+        )
+        local_shear_var.set(f"util {dashboard.shear_utilization:.3f}")
+        local_fatigue_var.set(dashboard.fatigue_status)
+        series = [
+            ("Permanent", dashboard.permanent_moments_knm_per_m),
+        ]
+        if dashboard.lm2_moments_knm_per_m is not None:
+            series.append(("Governing LM2", dashboard.lm2_moments_knm_per_m))
+        draw_line_chart(
+            local_chart_canvas,
+            x_values=dashboard.stations_y_m,
+            series=tuple(series),
+            title="Transverse deck moment response",
+            y_unit="kNm/m",
+        )
+
+    def refresh_verification_dashboard(_event=None) -> None:
+        report = session.last_verification_import
+        if report is None:
+            verification_status_metric_var.set("NOT IMPORTED")
+            verification_coverage_metric_var.set("—")
+            verification_error_metric_var.set("—")
+            draw_bar_chart(
+                verification_error_canvas,
+                labels=(),
+                values=(),
+                title="External-result relative error",
+                unit="%",
+            )
+            return
+        dashboard = verification_dashboard_data(report)
+        verification_status_metric_var.set(dashboard.status)
+        verification_coverage_metric_var.set(
+            f"{dashboard.imported_count}/{dashboard.requested_count}"
+        )
+        verification_error_metric_var.set(
+            "—"
+            if dashboard.max_relative_error is None
+            else f"{100.0 * dashboard.max_relative_error:.3f}%"
+        )
+        draw_bar_chart(
+            verification_error_canvas,
+            labels=[str(item.result_id) for item in dashboard.results],
+            values=[
+                0.0
+                if item.max_relative_error is None
+                else 100.0 * item.max_relative_error
+                for item in dashboard.results
+            ],
+            title=f"{dashboard.source_name} maximum relative error by result set",
+            unit="%",
+        )
+
     def populate_project(project) -> None:
         fields = ProjectBasicFields.from_project(project)
         string_vars["name"].set(fields.name)
@@ -2429,6 +2898,7 @@ def main() -> int:
             f"{layout.minimum_deck_width_m:.3f} m."
             + composite_guidance
         )
+        refresh_project_preview()
 
     def populate_preferences(preferences: ApplicationPreferences) -> None:
         string_vars["units"].set(preferences.units.value)
@@ -2652,10 +3122,21 @@ def main() -> int:
             else f"{displayed_unit.from_metres(fields.right_services_y_m):g}"
         )
 
+    def refresh_permanent_load_chart(_event=None) -> None:
+        audit_rows = session.permanent_load_audit()
+        draw_bar_chart(
+            permanent_load_canvas,
+            labels=[f"G{row.girder_index}" for row in audit_rows],
+            values=[row.total_equivalent_kn_m for row in audit_rows],
+            title="Characteristic permanent line load by girder",
+            unit="kN/m",
+        )
+
     def refresh_load_case_views() -> None:
         for item in permanent_audit_tree.get_children():
             permanent_audit_tree.delete(item)
-        for row in session.permanent_load_audit():
+        audit_rows = session.permanent_load_audit()
+        for row in audit_rows:
             permanent_audit_tree.insert(
                 "",
                 tk.END,
@@ -2671,6 +3152,7 @@ def main() -> int:
                     f"{row.total_equivalent_kn_m:.3f}",
                 ),
             )
+        refresh_permanent_load_chart()
 
         for item in action_scope_tree.get_children():
             action_scope_tree.delete(item)
@@ -2732,6 +3214,18 @@ def main() -> int:
             "Run analysis, then open Calculations to review the deterministic "
             "equation/substitution/result trace.",
         )
+        for variable in analysis_metric_vars.values():
+            variable.set("—")
+        design_selected_var.set(
+            "Select a girder result to inspect its reinforcement and governing checks."
+        )
+        for item in design_stage_tree.get_children():
+            design_stage_tree.delete(item)
+        design_section_canvas.delete("all")
+        refresh_analysis_chart()
+        refresh_design_dashboard()
+        refresh_local_dashboard()
+        refresh_verification_dashboard()
 
     def show_result(result) -> None:
         for item in effect_tree.get_children():
@@ -2751,6 +3245,21 @@ def main() -> int:
                     girder.torsion_knm.case_id,
                 ),
             )
+
+        dashboard = analysis_dashboard_data(result)
+        girder_values = tuple(f"G{item.girder_index}" for item in dashboard.girders)
+        analysis_chart_girder.configure(values=girder_values)
+        if analysis_chart_girder_var.get() not in girder_values and girder_values:
+            analysis_chart_girder_var.set(girder_values[0])
+        analysis_metric_vars["moment"].set(f"{dashboard.max_moment_knm:.2f} kNm")
+        analysis_metric_vars["shear"].set(f"{dashboard.max_shear_kn:.2f} kN")
+        analysis_metric_vars["torsion"].set(f"{dashboard.max_torsion_knm:.2f} kNm")
+        analysis_metric_vars["deflection"].set(
+            "—"
+            if dashboard.max_deflection_mm is None
+            else f"{dashboard.max_deflection_mm:.3f} mm"
+        )
+        refresh_analysis_chart()
 
         for item in deflection_tree.get_children():
             deflection_tree.delete(item)
@@ -3130,6 +3639,7 @@ def main() -> int:
                 ),
             )
         status_var.set("Local deck/slab design complete.")
+        refresh_local_dashboard()
         refresh_dashboard()
 
     def run_local_deck_workflow() -> None:
@@ -3228,6 +3738,7 @@ def main() -> int:
             if not result.blockers
             else "FLM3 analysis complete; fatigue resistance inputs remain."
         )
+        refresh_local_dashboard()
         refresh_dashboard()
 
     def run_fatigue_workflow() -> None:
@@ -3438,17 +3949,117 @@ def main() -> int:
 
         threading.Thread(target=worker, daemon=True).start()
 
+    def selected_design_girder_index() -> int | None:
+        selected = design_tree.selection()
+        if not selected:
+            return None
+        values = design_tree.item(selected[0], "values")
+        if not values:
+            return None
+        try:
+            return int(values[0])
+        except (TypeError, ValueError):
+            return None
+
+    def show_selected_design_result(_event=None) -> None:
+        girder_index = selected_design_girder_index()
+        result = session.last_design_interpretation
+        if girder_index is None or result is None:
+            return
+        row = next(
+            (item for item in result.girders if item.girder_index == girder_index),
+            None,
+        )
+        if row is None:
+            return
+
+        flex = row.design.uls_design.flexure
+        design_selected_var.set(
+            f"Girder {girder_index}: "
+            f"{row.selected_bars.bar_count}-Y{row.selected_bars.bar_diameter_mm:g} "
+            f"longitudinal bars; {row.selected_links.leg_count}L-Y"
+            f"{row.selected_links.link_diameter_mm:g}@{row.selected_links.spacing_mm:g} links. "
+            f"MEd={row.design.uls_design.design_effects.moment_knm:.2f} kNm, "
+            f"MRd={flex.resistance_knm:.2f} kNm, flexure util={flex.utilization:.3f}; "
+            f"shear util={row.design.shear_utilization:.3f}; "
+            f"crack util={row.design.crack.utilization:.3f}; "
+            f"deflection util={row.design.deflection.utilization:.3f}. "
+            f"Current status: {'PASS' if row.passes_current_checks else 'CHECK'}."
+        )
+        draw_reinforcement_section(
+            design_section_canvas,
+            bridge=bridge_preview_data(session.project),
+            bar_count=row.selected_bars.bar_count,
+            bar_label=(
+                f"{row.selected_bars.bar_count}-Y"
+                f"{row.selected_bars.bar_diameter_mm:g}"
+            ),
+            link_label=(
+                f"{row.selected_links.leg_count}L-Y"
+                f"{row.selected_links.link_diameter_mm:g}"
+                f"@{row.selected_links.spacing_mm:g}"
+            ),
+        )
+
+        for item in design_stage_tree.get_children():
+            design_stage_tree.delete(item)
+        for check in row.construction_stage_checks:
+            design_stage_tree.insert(
+                "",
+                tk.END,
+                values=(
+                    check.stage.value,
+                    f"{check.design_moment_knm:.2f}",
+                    f"{check.design_shear_kn:.2f}",
+                    f"{check.flexural_utilization:.3f}",
+                    f"{check.shear_utilization:.3f}",
+                    "PASS" if check.passes else "CHECK",
+                ),
+            )
+
+    def open_selected_design_calculations() -> None:
+        girder_index = selected_design_girder_index()
+        if girder_index is None:
+            messagebox.showinfo(
+                "Worked calculations",
+                "Select a girder result first.",
+            )
+            return
+        notebook.select(calculations_tab)
+        refresh_calculation_view()
+        preferred_item: str | None = None
+        block_item: str | None = None
+        target_title = f"Girder {girder_index} - longitudinal RC design"
+        for item_id, (block, step) in calculation_item_map.items():
+            if getattr(block, "title", "") != target_title:
+                continue
+            if step is None:
+                block_item = item_id
+            elif getattr(step, "label", "") == "Required longitudinal reinforcement":
+                preferred_item = item_id
+                break
+            elif preferred_item is None:
+                preferred_item = item_id
+        selected_item = preferred_item or block_item
+        if selected_item is not None:
+            calculation_tree.selection_set(selected_item)
+            calculation_tree.focus(selected_item)
+            calculation_tree.see(selected_item)
+            show_calculation_detail()
+
     def show_design_result(result) -> None:
         for item in design_tree.get_children():
             design_tree.delete(item)
+        inserted_design_items: list[str] = []
         for row in result.girders:
             flex = row.design.uls_design.flexure
             bars = row.selected_bars
             links = row.selected_links
-            design_tree.insert(
-                "",
-                tk.END,
-                values=(
+            inserted_design_items.append(
+                design_tree.insert(
+                    "",
+                    tk.END,
+                    values=(
                     row.girder_index,
                     f"{row.effective_depth_m * 1000.0:.1f}",
                     f"{row.design.uls_design.design_effects.moment_knm:.2f}",
@@ -3485,8 +4096,15 @@ def main() -> int:
                         + f"util={max(max(item.flexural_utilization, item.shear_utilization) for item in row.construction_stage_checks):.3f}"
                     ),
                     "PASS" if row.passes_current_checks else "CHECK",
-                ),
+                    ),
+                )
             )
+        refresh_design_dashboard()
+        if inserted_design_items:
+            design_tree.selection_set(inserted_design_items[0])
+            design_tree.focus(inserted_design_items[0])
+            design_tree.see(inserted_design_items[0])
+            show_selected_design_result()
         summary = result.status
         if result.action_combinations is not None:
             bearing = result.action_combinations.bearing
@@ -3718,6 +4336,8 @@ def main() -> int:
 
     def refresh_dashboard() -> None:
         refresh_overview()
+        refresh_project_preview()
+        refresh_verification_dashboard()
         for item in capability_tree.get_children():
             capability_tree.delete(item)
         dashboard = session.dashboard()
@@ -3745,7 +4365,7 @@ def main() -> int:
         _set_text(
             verification_text,
             (
-                "Stage 7 independent acceptance boundary\n\n"
+                "Independent structural acceptance boundary\n\n"
                 "The application can generate the exact MIDAS Civil .mct and STAAD.Pro "
                 ".std models used by the native analysis. Those files must be run in the "
                 "installed external programs and their genuine returned results checked "
@@ -3779,10 +4399,10 @@ def main() -> int:
                 "Required profile evidence includes traffic loading, load combinations, "
                 "flexure, shear, cracking, deflection, fatigue, detailing, transverse "
                 "distribution, independent benchmarking and torsion when it is in scope.\n\n"
-                "After Stage 7 external acceptance, Stage 8 closes the manifests; Stage 9 "
-                "defines justified random-variable distributions/bounds/correlations; "
-                "Stage 10 generates verified datasets, trains/validates the ANN and then "
-                "runs reliability analysis/RBDO."
+                "After genuine external acceptance, the applicable verification manifest "
+                "can be closed. The research phase then defines justified random-variable "
+                "distributions/bounds/correlations before generating verified datasets, "
+                "training/validating the ANN and running reliability analysis/RBDO."
             ),
         )
 
@@ -4207,6 +4827,7 @@ def main() -> int:
                     item.source_name,
                 ),
             )
+        refresh_verification_dashboard()
         status = "PASS" if report.passes else "REVIEW / FAIL"
         status_var.set(
             f"{report.source_name} Stage-5 import: {status}; "
@@ -4292,6 +4913,44 @@ def main() -> int:
                 f"({format_duration(elapsed)})."
             ),
         )
+
+    project_preview_canvas.bind("<Configure>", refresh_project_preview)
+    permanent_load_canvas.bind("<Configure>", refresh_permanent_load_chart)
+    analysis_chart_metric.bind("<<ComboboxSelected>>", refresh_analysis_chart)
+    analysis_chart_girder.bind("<<ComboboxSelected>>", refresh_analysis_chart)
+    analysis_chart_canvas.bind("<Configure>", refresh_analysis_chart)
+    design_chart_canvas.bind("<Configure>", refresh_design_dashboard)
+    design_tree.bind("<<TreeviewSelect>>", show_selected_design_result)
+    design_section_canvas.bind("<Configure>", show_selected_design_result)
+    design_show_calculation_button.configure(
+        command=open_selected_design_calculations
+    )
+    local_chart_canvas.bind("<Configure>", refresh_local_dashboard)
+    verification_error_canvas.bind("<Configure>", refresh_verification_dashboard)
+
+    def refresh_active_workspace_visuals(_event=None) -> None:
+        active_key = page_keys.get(notebook.select())
+        if active_key == "project":
+            refresh_project_preview()
+        elif active_key == "loads":
+            refresh_permanent_load_chart()
+        elif active_key == "analysis":
+            refresh_analysis_chart()
+        elif active_key == "design":
+            refresh_design_dashboard()
+            show_selected_design_result()
+        elif active_key == "deck":
+            refresh_local_dashboard()
+        elif active_key == "calculations":
+            refresh_calculation_view()
+        elif active_key == "verification":
+            refresh_verification_dashboard()
+
+    notebook.bind(
+        "<<NotebookTabChanged>>",
+        refresh_active_workspace_visuals,
+        add="+",
+    )
 
     calculation_tree.bind("<<TreeviewSelect>>", show_calculation_detail)
     calculation_refresh_button.configure(command=refresh_calculation_view)
