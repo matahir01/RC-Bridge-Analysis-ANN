@@ -279,6 +279,237 @@ def main() -> int:
         )
 
     # ------------------------------------------------------------------
+    # Overview workspace
+    # ------------------------------------------------------------------
+    overview_tab.columnconfigure(0, weight=1)
+    overview_tab.columnconfigure(1, weight=1)
+    overview_tab.rowconfigure(1, weight=1)
+
+    overview_project_var = tk.StringVar(value="")
+    overview_progress_var = tk.StringVar(value="0 / 0")
+    overview_design_var = tk.StringVar(value="Not run")
+    overview_verification_var = tk.StringVar(value="Not imported")
+    overview_performance_var = tk.StringVar(value="")
+    overview_performance_detail_var = tk.StringVar(value="")
+
+    overview_heading = ttk.Frame(overview_tab)
+    overview_heading.grid(row=0, column=0, columnspan=2, sticky="ew", pady=(0, 12))
+    ttk.Label(
+        overview_heading,
+        text="Project control centre",
+        style="HeaderTitle.TLabel",
+    ).pack(anchor="w")
+    ttk.Label(
+        overview_heading,
+        text=(
+            "Define the bridge, run the deterministic workflow, inspect worked "
+            "calculations and close the external verification loop from one workspace."
+        ),
+        style="Muted.TLabel",
+        wraplength=950,
+        justify=tk.LEFT,
+    ).pack(anchor="w", pady=(3, 0))
+
+    overview_metrics = ttk.Frame(overview_tab)
+    overview_metrics.grid(row=1, column=0, sticky="nsew", padx=(0, 8))
+    overview_metrics.columnconfigure(0, weight=1)
+    overview_metrics.columnconfigure(1, weight=1)
+
+    project_card = ttk.LabelFrame(
+        overview_metrics,
+        text="Current project",
+        style="Card.TLabelframe",
+        padding=14,
+    )
+    project_card.grid(row=0, column=0, columnspan=2, sticky="ew", pady=(0, 10))
+    ttk.Label(
+        project_card,
+        textvariable=overview_project_var,
+        style="CardTitle.TLabel",
+        wraplength=600,
+        justify=tk.LEFT,
+    ).pack(anchor="w")
+
+    progress_card = ttk.LabelFrame(
+        overview_metrics,
+        text="Workflow progress",
+        style="Card.TLabelframe",
+        padding=14,
+    )
+    progress_card.grid(row=1, column=0, sticky="nsew", padx=(0, 5), pady=(0, 10))
+    ttk.Label(
+        progress_card,
+        textvariable=overview_progress_var,
+        style="Metric.TLabel",
+    ).pack(anchor="w")
+    ttk.Label(
+        progress_card,
+        text="completed stages",
+        style="SurfaceMuted.TLabel",
+    ).pack(anchor="w")
+
+    design_card = ttk.LabelFrame(
+        overview_metrics,
+        text="Design status",
+        style="Card.TLabelframe",
+        padding=14,
+    )
+    design_card.grid(row=1, column=1, sticky="nsew", padx=(5, 0), pady=(0, 10))
+    ttk.Label(
+        design_card,
+        textvariable=overview_design_var,
+        style="Metric.TLabel",
+    ).pack(anchor="w")
+    ttk.Label(
+        design_card,
+        text="integrated ULS/SLS",
+        style="SurfaceMuted.TLabel",
+    ).pack(anchor="w")
+
+    verification_card = ttk.LabelFrame(
+        overview_metrics,
+        text="External verification",
+        style="Card.TLabelframe",
+        padding=14,
+    )
+    verification_card.grid(row=2, column=0, columnspan=2, sticky="ew", pady=(0, 10))
+    ttk.Label(
+        verification_card,
+        textvariable=overview_verification_var,
+        style="CardTitle.TLabel",
+        wraplength=600,
+        justify=tk.LEFT,
+    ).pack(anchor="w")
+
+    performance_card = ttk.LabelFrame(
+        overview_metrics,
+        text="Performance diagnostics",
+        style="Card.TLabelframe",
+        padding=14,
+    )
+    performance_card.grid(row=3, column=0, columnspan=2, sticky="ew")
+    ttk.Label(
+        performance_card,
+        textvariable=overview_performance_var,
+        style="CardTitle.TLabel",
+    ).pack(anchor="w")
+    ttk.Label(
+        performance_card,
+        textvariable=overview_performance_detail_var,
+        style="SurfaceMuted.TLabel",
+        wraplength=600,
+        justify=tk.LEFT,
+    ).pack(anchor="w", pady=(3, 0))
+
+    workflow_card = ttk.LabelFrame(
+        overview_tab,
+        text="Engineering workflow",
+        style="Card.TLabelframe",
+        padding=10,
+    )
+    workflow_card.grid(row=1, column=1, sticky="nsew", padx=(8, 0))
+    workflow_card.rowconfigure(0, weight=1)
+    workflow_card.columnconfigure(0, weight=1)
+    overview_stage_tree = ttk.Treeview(
+        workflow_card,
+        columns=("state", "detail"),
+        show="headings",
+        height=13,
+    )
+    overview_stage_tree.heading("state", text="Status")
+    overview_stage_tree.heading("detail", text="Stage / engineering note")
+    overview_stage_tree.column("state", width=90, anchor=tk.CENTER)
+    overview_stage_tree.column("detail", width=520, anchor=tk.W)
+    overview_stage_tree.grid(row=0, column=0, sticky="nsew")
+
+    overview_actions = ttk.Frame(overview_tab)
+    overview_actions.grid(row=2, column=0, columnspan=2, sticky="ew", pady=(12, 0))
+    overview_run_button = ttk.Button(
+        overview_actions,
+        text="Run Full Analysis & Design",
+        style="Primary.TButton",
+    )
+    overview_run_button.pack(side=tk.LEFT)
+    overview_calculations_button = ttk.Button(
+        overview_actions,
+        text="Review calculations",
+        style="Secondary.TButton",
+    )
+    overview_calculations_button.pack(side=tk.LEFT, padx=8)
+    overview_verification_button = ttk.Button(
+        overview_actions,
+        text="Open verification",
+        style="Secondary.TButton",
+    )
+    overview_verification_button.pack(side=tk.LEFT)
+    analysis_buttons.append(overview_run_button)
+
+    # ------------------------------------------------------------------
+    # Calculation review workspace
+    # ------------------------------------------------------------------
+    calculations_tab.columnconfigure(0, weight=2)
+    calculations_tab.columnconfigure(1, weight=3)
+    calculations_tab.rowconfigure(1, weight=1)
+
+    calculation_heading = ttk.Frame(calculations_tab)
+    calculation_heading.grid(row=0, column=0, columnspan=2, sticky="ew", pady=(0, 10))
+    ttk.Label(
+        calculation_heading,
+        text="Worked calculation review",
+        style="HeaderTitle.TLabel",
+    ).pack(side=tk.LEFT)
+    calculation_refresh_button = ttk.Button(
+        calculation_heading,
+        text="Refresh calculations",
+        style="Secondary.TButton",
+    )
+    calculation_refresh_button.pack(side=tk.RIGHT)
+
+    calculation_tree_frame = ttk.LabelFrame(
+        calculations_tab,
+        text="Calculation navigator",
+        style="Card.TLabelframe",
+        padding=8,
+    )
+    calculation_tree_frame.grid(row=1, column=0, sticky="nsew", padx=(0, 7))
+    calculation_tree_frame.rowconfigure(0, weight=1)
+    calculation_tree_frame.columnconfigure(0, weight=1)
+    calculation_tree = ttk.Treeview(
+        calculation_tree_frame,
+        columns=("status",),
+        show="tree headings",
+    )
+    calculation_tree.heading("#0", text="Block / step")
+    calculation_tree.heading("status", text="Status")
+    calculation_tree.column("#0", width=390, anchor=tk.W)
+    calculation_tree.column("status", width=90, anchor=tk.CENTER)
+    calculation_tree.grid(row=0, column=0, sticky="nsew")
+
+    calculation_detail_frame = ttk.LabelFrame(
+        calculations_tab,
+        text="Calculation detail",
+        style="Card.TLabelframe",
+        padding=10,
+    )
+    calculation_detail_frame.grid(row=1, column=1, sticky="nsew", padx=(7, 0))
+    calculation_detail_frame.rowconfigure(0, weight=1)
+    calculation_detail_frame.columnconfigure(0, weight=1)
+    calculation_detail = tk.Text(
+        calculation_detail_frame,
+        wrap="word",
+        relief="flat",
+        padx=14,
+        pady=12,
+        font=("Segoe UI", 10),
+        background="#FFFFFF",
+        foreground="#172033",
+        insertbackground="#172033",
+    )
+    calculation_detail.grid(row=0, column=0, sticky="nsew")
+    calculation_detail.configure(state=tk.DISABLED)
+    calculation_item_map: dict[str, tuple[object, object | None]] = {}
+
+    # ------------------------------------------------------------------
     # Project tab
     # ------------------------------------------------------------------
     project_tab.columnconfigure(0, weight=1)
