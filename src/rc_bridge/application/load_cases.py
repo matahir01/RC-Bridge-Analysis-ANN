@@ -374,17 +374,20 @@ def eurocode_variable_action_scope() -> tuple[VariableActionScope, ...]:
         ),
         VariableActionScope(
             "FLM3 fatigue traffic",
-            "engine implemented",
-            "Dedicated fatigue engine exists; not yet a one-click desktop run.",
+            "desktop workflow implemented / verification-gated",
+            (
+                "Native full-width FLM3 is connected to the selected longitudinal "
+                "reinforcement, concrete compression and vertical-link fatigue checks. "
+                "Project fatigue-category and lambda inputs remain explicit."
+            ),
         ),
         VariableActionScope(
             "LM2 local axle",
-            "integrated into global design / local deck blocked",
+            "integrated into global and local deck design",
             (
-                "The isolated axle is scanned across the carriageway and its compatible "
-                "gr1b girder effects enter the integrated design envelope. The local "
-                "deck/slab plate resistance check remains an explicit blocker until a "
-                "dedicated local plate model or verified external result is supplied."
+                "The isolated axle is scanned across the carriageway for gr1b girder "
+                "effects and is also dispersed into the native continuous transverse "
+                "deck-strip solver for local positive/negative flexure and one-way shear."
             ),
         ),
         VariableActionScope(
@@ -431,8 +434,12 @@ def eurocode_variable_action_scope() -> tuple[VariableActionScope, ...]:
         ),
         VariableActionScope(
             "Wind action",
-            "not wired",
-            "Wind loading and accompanying-action combinations are not yet connected.",
+            "static action integrated into support/bearing path",
+            (
+                "Static wind pressure/resultants are calculated from explicit project wind "
+                "speed, exposure and force coefficients. The transverse resultant enters "
+                "the bearing/support check; aerodynamic instability remains outside scope."
+            ),
         ),
         VariableActionScope(
             "Vehicle impact on safety barrier",
@@ -440,8 +447,8 @@ def eurocode_variable_action_scope() -> tuple[VariableActionScope, ...]:
             (
                 "Transverse accidental force and barrier-base moment are retained as "
                 "a separate accidental local check with optional verified resistance "
-                "inputs. The accompanying vertical wheel still requires the local deck "
-                "plate check and remains an explicit blocker."
+                "inputs. The accompanying vertical wheel is checked in the native "
+                "transverse deck-strip design."
             ),
         ),
         VariableActionScope(
