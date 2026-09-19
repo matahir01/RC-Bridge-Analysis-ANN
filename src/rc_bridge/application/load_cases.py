@@ -383,9 +383,24 @@ def eurocode_variable_action_scope() -> tuple[VariableActionScope, ...]:
             "No production desktop/local-deck LM2 workflow is currently connected.",
         ),
         VariableActionScope(
+            "LM3 special vehicles",
+            "not wired",
+            "Project-specific abnormal/special vehicle loading is not yet connected.",
+        ),
+        VariableActionScope(
+            "LM4 crowd loading",
+            "not wired",
+            "Crowd loading is not yet connected to the global bridge analysis.",
+        ),
+        VariableActionScope(
             "Braking / acceleration",
             "not wired",
             "Longitudinal traffic action is not yet included in application combinations.",
+        ),
+        VariableActionScope(
+            "Centrifugal traffic action",
+            "not wired",
+            "Curved-bridge centrifugal traffic action is not yet connected.",
         ),
         VariableActionScope(
             "Pedestrian / footway live load",
