@@ -47,6 +47,12 @@ from rc_bridge.application.verification_campaign import (
     build_unified_final_service_verification_model,
     write_application_verification_campaign,
 )
+from rc_bridge.application.verification_files import (
+    WrittenConsolidatedVerificationFiles,
+    WrittenVerificationPackage,
+    write_consolidated_governing_lm1_verification_files,
+    write_governing_lm1_verification_packages,
+)
 from rc_bridge.application.verification_import import (
     ApplicationVerificationImportReport,
     VerificationImportTolerance,
@@ -54,12 +60,6 @@ from rc_bridge.application.verification_import import (
     import_midas_table_verification_results,
     import_staad_anl_verification_results,
     write_verification_import_evidence,
-)
-from rc_bridge.application.verification_files import (
-    WrittenConsolidatedVerificationFiles,
-    WrittenVerificationPackage,
-    write_consolidated_governing_lm1_verification_files,
-    write_governing_lm1_verification_packages,
 )
 from rc_bridge.core.models import ProjectInput
 from rc_bridge.workflow.lm1_grillage_search import (
