@@ -3,6 +3,10 @@ from __future__ import annotations
 from html import escape
 from pathlib import Path
 
+from rc_bridge.analysis.physical_sections import (
+    composite_section_description,
+    girder_tributary_slab_widths_m,
+)
 from rc_bridge.application.dashboard import build_application_dashboard
 from rc_bridge.application.preferences import ApplicationPreferences
 from rc_bridge.core.models import ProjectInput
@@ -25,6 +29,13 @@ def application_html_report(
     geometry = project.geometry
     profile = geometry.girder_profile
     profile_name = "not defined" if profile is None else profile.section_type.value
+    composite = None
+    if profile is not None and geometry.composite_flange_depth_m > 0.0:
+        composite = composite_section_description(
+            geometry,
+            slab_width_m=max(girder_tributary_slab_widths_m(geometry)),
+            slab_width_basis="representative interior tributary slab width",
+        )
     dashboard = build_application_dashboard(
         project,
         has_native_lm1_analysis=True,
@@ -78,6 +89,24 @@ def application_html_report(
     project_name = escape(project.name)
     ec = prefs.eurocode
     analysis = prefs.analysis
+    composite_html = ""
+    if composite is not None:
+        false_slab_text = (
+            "weight-only"
+            if composite.false_slab_weight_only
+            else "included in composite stiffness"
+        )
+        composite_html = (
+            f"<div>Final composite form</div>"
+            f"<div>{escape(composite.final_section_form)}-section</div>"
+            f"<div>Representative participating flange (m)</div>"
+            f"<div>{_number(composite.flange_width_m)} × "
+            f"{_number(composite.participating_flange_depth_m)}</div>"
+            f"<div>Overall physical depth (m)</div>"
+            f"<div>{_number(composite.overall_depth_m)}</div>"
+            f"<div>Precast false slab in stiffness</div>"
+            f"<div>{escape(false_slab_text)}</div>"
+        )
     return f"""<!doctype html>
 <html lang="en">
 <head>
@@ -116,7 +145,8 @@ th {{ background: #eaf2f8; }}
 <div>Carriageway offset (m)</div><div>{_number(geometry.carriageway_offset_m)}</div>
 <div>Girder count</div><div>{int(geometry.girder_count)}</div>
 <div>Girder spacing (m)</div><div>{_number(geometry.girder_spacing_m)}</div>
-<div>Physical section</div><div>{escape(profile_name)}</div>
+<div>Precast physical section</div><div>{escape(profile_name)}</div>
+{composite_html}
 <div>Concrete fck (MPa)</div><div>{_number(project.materials.fck_mpa, 1)}</div>
 <div>Reinforcement fyk (MPa)</div><div>{_number(project.materials.fyk_mpa, 1)}</div>
 </div>
@@ -146,6 +176,11 @@ the characteristic traffic envelope itself.
 <div>Search strategy</div><div>{escape(result.search_strategy)}</div>
 <div>Longitudinal step (m)</div><div>{_number(result.longitudinal_step_m)}</div>
 <div>UDL patterns</div><div>{result.udl_pattern_count}</div>
+<div>Unique factorized grillage structures</div>
+<div>{result.prepared_structure_count}</div>
+<div>Reused factorization solves</div>
+<div>{result.reused_factorization_solve_count}</div>
+<div>Retained case models</div><div>{result.retained_case_count}</div>
 <div>Exhaustive tandem combinations</div>
 <div>{"yes" if result.tandem_combinations_exhaustive else "no"}</div>
 </div>
@@ -223,6 +258,16 @@ def write_native_lm1_pdf_report(
     prefs = preferences or ApplicationPreferences()
     dashboard = build_application_dashboard(project, has_native_lm1_analysis=True)
     geometry = project.geometry
+    composite = None
+    if (
+        geometry.girder_profile is not None
+        and geometry.composite_flange_depth_m > 0.0
+    ):
+        composite = composite_section_description(
+            geometry,
+            slab_width_m=max(girder_tributary_slab_widths_m(geometry)),
+            slab_width_basis="representative interior tributary slab width",
+        )
     styles = getSampleStyleSheet()
     small = ParagraphStyle(
         "Small",
@@ -247,8 +292,29 @@ def write_native_lm1_pdf_report(
         ["Spans (m)", ", ".join(_number(value) for value in geometry.span_lengths_m)],
         ["Deck / carriageway (m)", f"{_number(geometry.deck_width_m)} / {_number(geometry.carriageway_width_m)}"],
         ["Girders", f"{int(geometry.girder_count)} @ {_number(geometry.girder_spacing_m)} m"],
-        ["Concrete / steel (MPa)", f"{_number(project.materials.fck_mpa, 1)} / {_number(project.materials.fyk_mpa, 1)}"],
+        [
+            "Concrete / steel (MPa)",
+            (
+                f"{_number(project.materials.fck_mpa, 1)} / "
+                f"{_number(project.materials.fyk_mpa, 1)}"
+            ),
+        ],
     ]
+    if composite is not None:
+        project_rows.extend(
+            [
+                ["Precast section", composite.precast_section_type],
+                ["Final composite form", f"{composite.final_section_form}-section"],
+                [
+                    "Composite flange (m)",
+                    (
+                        f"{_number(composite.flange_width_m)} x "
+                        f"{_number(composite.participating_flange_depth_m)}"
+                    ),
+                ],
+                ["Overall physical depth (m)", _number(composite.overall_depth_m)],
+            ]
+        )
     project_table = Table(project_rows, colWidths=[55 * mm, 110 * mm])
     project_table.setStyle(
         TableStyle(
@@ -284,6 +350,28 @@ def write_native_lm1_pdf_report(
         )
     )
     story.extend([basis_table, Spacer(1, 4 * mm)])
+
+    story.append(Paragraph("Native LM1 search", styles["Heading2"]))
+    search_rows = [
+        ["Evaluated cases", str(result.evaluated_case_count)],
+        ["Unique factorized structures", str(result.prepared_structure_count)],
+        ["Reused factorization solves", str(result.reused_factorization_solve_count)],
+        ["Retained case models", str(result.retained_case_count)],
+        ["Search strategy", result.search_strategy],
+    ]
+    search_table = Table(search_rows, colWidths=[55 * mm, 110 * mm])
+    search_table.setStyle(
+        TableStyle(
+            [
+                ("GRID", (0, 0), (-1, -1), 0.25, colors.grey),
+                ("BACKGROUND", (0, 0), (0, -1), colors.whitesmoke),
+                ("FONTNAME", (0, 0), (0, -1), "Helvetica-Bold"),
+                ("FONTSIZE", (0, 0), (-1, -1), 8.0),
+                ("VALIGN", (0, 0), (-1, -1), "TOP"),
+            ]
+        )
+    )
+    story.extend([search_table, Spacer(1, 4 * mm)])
 
     story.append(Paragraph("Native LM1 governing effects", styles["Heading2"]))
     effect_rows = [["Girder", "y (m)", "|M| kNm", "M case", "|V| kN", "V case", "|T| kNm", "T case"]]
