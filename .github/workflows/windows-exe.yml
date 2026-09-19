@@ -7,6 +7,8 @@ on:
       - main
     paths:
       - "src/rc_bridge/application/**"
+      - "src/rc_bridge/analysis/**"
+      - "src/rc_bridge/workflow/**"
       - "pyproject.toml"
       - ".github/workflows/windows-exe.yml"
 
@@ -24,13 +26,15 @@ jobs:
       - name: Smoke-test installed application modules
         shell: pwsh
         run: >-
-          python -c "from rc_bridge.application.dashboard import build_application_dashboard;
+          python -c "from rc_bridge.analysis.prepared_grillage_solver import prepare_vertical_grillage;
+          from rc_bridge.application.dashboard import build_application_dashboard;
           from rc_bridge.application.preferences import ApplicationPreferences;
           from rc_bridge.application.project_editor import application_default_project;
           from rc_bridge.application.reporting import write_native_lm1_pdf_report;
           p=application_default_project(); prefs=ApplicationPreferences();
           assert p.geometry.girder_profile is not None;
           assert build_application_dashboard(p, has_native_lm1_analysis=False).capabilities;
+          assert callable(prepare_vertical_grillage);
           assert callable(write_native_lm1_pdf_report)"
 
       - name: Build standalone desktop executable

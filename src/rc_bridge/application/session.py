@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -99,6 +100,8 @@ class BridgeApplicationSession:
         grid_spacing_m: float | None = None,
         longitudinal_step_m: float | None = None,
         max_exhaustive_tandem_combinations: int | None = None,
+        progress_callback: Callable[[int, int], None] | None = None,
+        cancel_check: Callable[[], bool] | None = None,
     ) -> ProjectNativeLM1GrillageSearchResult:
         if self.project.geometry.girder_profile is None:
             raise ValueError(
@@ -131,6 +134,9 @@ class BridgeApplicationSession:
             longitudinal_step_m=traffic_step,
             max_exhaustive_tandem_combinations=max_tandem,
             include_spanwise_udl_patterns=True,
+            progress_callback=progress_callback,
+            cancel_check=cancel_check,
+            retain_all_cases=False,
             name=f"{self.project.name} - application native LM1",
         )
         self.last_lm1_search = result

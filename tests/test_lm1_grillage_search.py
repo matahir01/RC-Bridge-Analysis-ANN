@@ -3,6 +3,7 @@ import pytest
 from rc_bridge.analysis.elastic_deflection import (
     simply_supported_deflection_from_moment_diagram_mm,
 )
+from rc_bridge.analysis.grillage_solver import solve_vertical_grillage
 from rc_bridge.codes.common import LoadEffects
 from rc_bridge.codes.eurocode.combinations import (
     ServiceabilityPsiFactors,
@@ -23,6 +24,7 @@ from rc_bridge.workflow.grillage_verification_export import (
     GrillageStiffnessModifiers,
 )
 from rc_bridge.workflow.lm1_grillage_search import (
+    LM1SearchCancelled,
     build_governing_lm1_search_verification_packages,
     generate_lm1_search_placements,
     native_lm1_girder_moment_diagram,
@@ -153,6 +155,12 @@ def test_search_envelopes_moment_shear_and_torsion_independently_for_every_girde
     assert result.udl_pattern_count == 1
     assert result.search_strategy == "exhaustive-independent-tandem+full-length-udl"
     assert len(result.deflections) == 8
+    assert 0 < result.prepared_structure_count < result.evaluated_case_count
+    assert result.reused_factorization_solve_count == (
+        result.evaluated_case_count - result.prepared_structure_count
+    )
+    assert result.reused_factorization_solve_count > 0
+    assert result.retained_case_count == result.evaluated_case_count
 
     for girder in result.girders:
         case_effects = [
@@ -229,6 +237,73 @@ def test_search_envelopes_moment_shear_and_torsion_independently_for_every_girde
         )
         if deflection.node_id is None:
             assert deflection.member_id is not None
+
+
+def test_memory_bounded_search_retains_only_current_governing_case_models() -> None:
+    result = run_project_native_lm1_grillage_search(
+        _project(),
+        longitudinal_sections_by_span=(_longitudinal(),),
+        transverse_section=_transverse(),
+        transverse_stations_m=(7.5,),
+        longitudinal_step_m=7.5,
+        retain_all_cases=False,
+    )
+
+    assert result.evaluated_case_count > result.retained_case_count
+    assert not result.retained_all_evaluated_cases
+    assert set(result.governing_case_ids) == {
+        case.placement.case_id for case in result.cases
+    }
+    assert 0 < result.prepared_structure_count < result.evaluated_case_count
+
+
+def test_optimized_search_matches_dense_solver_for_retained_exact_models() -> None:
+    result = run_project_native_lm1_grillage_search(
+        _project(),
+        longitudinal_sections_by_span=(_longitudinal(),),
+        transverse_section=_transverse(),
+        transverse_stations_m=(7.5,),
+        longitudinal_step_m=15.0,
+    )
+
+    for case in result.cases[:4]:
+        dense = solve_vertical_grillage(case.model)
+        assert dense.total_vertical_reaction_kn == pytest.approx(
+            case.analysis.total_vertical_reaction_kn,
+            rel=1.0e-10,
+            abs=1.0e-8,
+        )
+        for expected, actual in zip(
+            dense.nodes,
+            case.analysis.nodes,
+            strict=True,
+        ):
+            assert actual.vertical_displacement_m == pytest.approx(
+                expected.vertical_displacement_m,
+                rel=1.0e-9,
+                abs=1.0e-11,
+            )
+
+
+def test_native_lm1_search_can_be_cancelled_between_cases() -> None:
+    completed: list[int] = []
+
+    def progress(done: int, total: int) -> None:
+        completed.append(done)
+
+    with pytest.raises(LM1SearchCancelled, match="cancelled after"):
+        run_project_native_lm1_grillage_search(
+            _project(),
+            longitudinal_sections_by_span=(_longitudinal(),),
+            transverse_section=_transverse(),
+            transverse_stations_m=(7.5,),
+            longitudinal_step_m=7.5,
+            progress_callback=progress,
+            cancel_check=lambda: bool(completed and completed[-1] >= 2),
+        )
+
+    assert completed[0] == 0
+    assert completed[-1] == 2
 
 
 def test_governing_cases_can_be_exported_as_identical_midas_and_staad_models() -> None:

@@ -2,9 +2,14 @@ from __future__ import annotations
 
 import tempfile
 import threading
+import time
 import webbrowser
 from pathlib import Path
 
+from rc_bridge.analysis.physical_sections import (
+    composite_section_description,
+    girder_tributary_slab_widths_m,
+)
 from rc_bridge.application.preferences import (
     AnalysisApplicationSettings,
     ApplicationPreferences,
@@ -17,6 +22,7 @@ from rc_bridge.application.project_editor import (
 )
 from rc_bridge.application.session import BridgeApplicationSession
 from rc_bridge.core.models import DesignCode, SectionType, SupportSystem
+from rc_bridge.workflow.lm1_grillage_search import LM1SearchCancelled
 
 
 def main() -> int:
@@ -40,6 +46,7 @@ def main() -> int:
     status_var = tk.StringVar(value="Ready")
     length_unit_var = tk.StringVar(value=displayed_unit.length_label)
     analysis_buttons: list[ttk.Button] = []
+    cancel_event = threading.Event()
 
     def svar(name: str, value: str = "") -> tk.StringVar:
         item = tk.StringVar(value=value)
@@ -70,7 +77,12 @@ def main() -> int:
 
     footer = ttk.Frame(root, padding=(10, 4, 10, 8))
     footer.pack(fill=tk.X)
-    progress = ttk.Progressbar(footer, mode="indeterminate", length=180)
+    progress = ttk.Progressbar(
+        footer,
+        mode="determinate",
+        maximum=100.0,
+        length=220,
+    )
     progress.pack(side=tk.RIGHT)
     ttk.Label(footer, textvariable=status_var).pack(side=tk.LEFT)
 
@@ -107,7 +119,7 @@ def main() -> int:
     layout_frame.grid(row=0, column=0, sticky="nsew", padx=(0, 6))
     material_frame = ttk.LabelFrame(project_tab, text="Materials & deck", padding=10)
     material_frame.grid(row=0, column=1, sticky="nsew", padx=6)
-    profile_frame = ttk.LabelFrame(project_tab, text="Physical girder section", padding=10)
+    profile_frame = ttk.LabelFrame(project_tab, text="Precast girder section", padding=10)
     profile_frame.grid(row=0, column=2, sticky="nsew", padx=(6, 0))
 
     add_entry(layout_frame, row=0, label="Project name", key="name", width=28)
@@ -201,7 +213,7 @@ def main() -> int:
         variable=bvar("in_situ_composite", True),
     ).grid(row=7, column=0, columnspan=2, sticky="w", pady=3)
 
-    ttk.Label(profile_frame, text="Section type").grid(
+    ttk.Label(profile_frame, text="Precast section type").grid(
         row=0, column=0, sticky="w", padx=(0, 8), pady=3
     )
     ttk.Combobox(
@@ -370,6 +382,12 @@ def main() -> int:
         justify=tk.LEFT,
     ).pack(side=tk.LEFT, fill=tk.X, expand=True)
 
+    cancel_button = ttk.Button(
+        analysis_header,
+        text="Cancel analysis",
+        state=tk.DISABLED,
+    )
+    cancel_button.pack(side=tk.RIGHT, padx=(8, 0))
     run_button = ttk.Button(analysis_header, text="Run native LM1")
     run_button.pack(side=tk.RIGHT)
     analysis_buttons.append(run_button)
@@ -702,11 +720,47 @@ def main() -> int:
         )
         length_unit_var.set(displayed_unit.length_label)
         layout = project.geometry.girder_layout
+        composite_guidance = ""
+        if (
+            project.geometry.girder_profile is not None
+            and project.geometry.composite_flange_depth_m > 0.0
+        ):
+            slab_widths = girder_tributary_slab_widths_m(project.geometry)
+            representative_width = max(slab_widths)
+            description = composite_section_description(
+                project.geometry,
+                slab_width_m=representative_width,
+                slab_width_basis="representative interior tributary slab width",
+            )
+            false_slab_depth_mm = (
+                1000.0
+                * float(
+                    project.geometry.deck_construction.precast_false_slab_depth_m
+                )
+            )
+            false_slab_note = (
+                f"{false_slab_depth_mm:g} mm false slab remains weight-only "
+                "in stiffness."
+                if description.false_slab_weight_only
+                else (
+                    f"{false_slab_depth_mm:g} mm false slab is included in "
+                    "composite stiffness."
+                )
+            )
+            composite_guidance = (
+                f" Precast {description.precast_section_type} section → final composite "
+                f"{description.final_section_form}-section; participating deck flange "
+                f"{description.flange_width_m:.3f} m × "
+                f"{description.participating_flange_depth_m:.3f} m; "
+                f"overall physical depth = {description.overall_depth_m:.3f} m. "
+                f"{false_slab_note}"
+            )
         guidance_var.set(
             "Layout guidance: "
             f"edge overhang = {layout.implied_edge_overhang_m:.3f} m; "
             f"minimum deck width for current girder lines = "
             f"{layout.minimum_deck_width_m:.3f} m."
+            + composite_guidance
         )
 
     def populate_preferences(preferences: ApplicationPreferences) -> None:
@@ -788,9 +842,12 @@ def main() -> int:
 
         search_status_var.set(
             f"Completed {result.evaluated_case_count} LM1 cases using "
-            f"{result.search_strategy}; {len(result.governing_case_ids)} "
-            "governing verification cases retained."
+            f"{result.search_strategy}; factorized "
+            f"{result.prepared_structure_count} structural system(s), reused "
+            f"{result.reused_factorization_solve_count} solve(s), and retained "
+            f"{result.retained_case_count} governing case model(s)."
         )
+        progress["value"] = 100.0
         status_var.set("Native LM1 analysis complete.")
         refresh_dashboard()
 
@@ -853,10 +910,43 @@ def main() -> int:
         state = tk.DISABLED if busy else tk.NORMAL
         for button in analysis_buttons:
             button.configure(state=state)
+        cancel_button.configure(state=tk.NORMAL if busy else tk.DISABLED)
         if busy:
-            progress.start(12)
-        else:
-            progress.stop()
+            progress["value"] = 0.0
+
+    def format_duration(seconds: float) -> str:
+        seconds = max(round(seconds), 0)
+        minutes, seconds = divmod(seconds, 60)
+        hours, minutes = divmod(minutes, 60)
+        if hours:
+            return f"{hours:d}:{minutes:02d}:{seconds:02d}"
+        return f"{minutes:02d}:{seconds:02d}"
+
+    def update_analysis_progress(
+        completed: int,
+        total: int,
+        started_at: float,
+    ) -> None:
+        if total <= 0:
+            return
+        percent = 100.0 * completed / total
+        progress["value"] = percent
+        elapsed = time.monotonic() - started_at
+        eta_text = "calculating"
+        if completed > 0:
+            eta = elapsed * (total - completed) / completed
+            eta_text = format_duration(eta)
+        message = (
+            f"LM1 case {completed:,} / {total:,} — {percent:5.1f}% — "
+            f"elapsed {format_duration(elapsed)} — ETA {eta_text}"
+        )
+        status_var.set(message)
+        search_status_var.set(message)
+
+    def cancel_analysis() -> None:
+        cancel_event.set()
+        cancel_button.configure(state=tk.DISABLED)
+        status_var.set("Cancelling native LM1 analysis after the current case...")
 
     def fail(title: str, message: str) -> None:
         set_busy(False)
@@ -936,12 +1026,45 @@ def main() -> int:
             )
             return
 
+        cancel_event.clear()
+        started_at = time.monotonic()
+        last_ui_update = [0.0]
         set_busy(True)
-        status_var.set("Running native full-width LM1 analysis...")
+        status_var.set("Preparing native full-width LM1 analysis...")
+
+        def progress_callback(completed: int, total: int) -> None:
+            now = time.monotonic()
+            if (
+                completed not in {0, total}
+                and now - last_ui_update[0] < 0.20
+            ):
+                return
+            last_ui_update[0] = now
+            root.after(
+                0,
+                lambda current=completed, count=total: update_analysis_progress(
+                    current,
+                    count,
+                    started_at,
+                ),
+            )
 
         def worker() -> None:
             try:
-                result = session.run_native_lm1()
+                result = session.run_native_lm1(
+                    progress_callback=progress_callback,
+                    cancel_check=cancel_event.is_set,
+                )
+            except LM1SearchCancelled as exc:
+                message = str(exc)
+
+                def cancelled() -> None:
+                    set_busy(False)
+                    status_var.set("Native LM1 analysis cancelled.")
+                    search_status_var.set(message)
+
+                root.after(0, cancelled)
+                return
             except (OSError, TypeError, ValueError, RuntimeError) as exc:
                 message = str(exc)
                 root.after(
@@ -1113,6 +1236,7 @@ def main() -> int:
         command=lambda: populate_preferences(session.preferences)
     )
     run_button.configure(command=run_analysis)
+    cancel_button.configure(command=cancel_analysis)
     refresh_dashboard_button.configure(command=refresh_dashboard)
     html_button.configure(command=save_html_report)
     pdf_button.configure(command=save_pdf_report)
