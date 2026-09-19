@@ -1,6 +1,9 @@
 import pytest
 
-from rc_bridge.analysis.grillage_solver import solve_vertical_grillage
+from rc_bridge.analysis.grillage_solver import (
+    prepare_vertical_grillage,
+    solve_vertical_grillage,
+)
 from rc_bridge.core.models import BridgeGeometry, ProjectInput
 from rc_bridge.export.verification_model import (
     VerificationBeam,
@@ -185,3 +188,57 @@ def test_project_grillage_pressure_load_preserves_vertical_equilibrium_and_symme
     assert reactions[0] == pytest.approx(reactions[-1])
     assert reactions[1] == pytest.approx(reactions[-2])
     assert reactions[2] == pytest.approx(reactions[-3])
+
+
+def test_prepared_grillage_matches_fresh_solve_for_changed_load_case() -> None:
+    first = _line_model()
+    prepared = prepare_vertical_grillage(first)
+    second = VerificationModel(
+        name="same grillage different load",
+        nodes=first.nodes,
+        materials=first.materials,
+        sections=first.sections,
+        beams=first.beams,
+        supports=first.supports,
+        load_cases=(
+            VerificationLoadCase(
+                1,
+                "SECOND",
+                nodal_loads=(VerificationNodalLoad(node_id=2, fz_kn=-175.0),),
+            ),
+        ),
+    )
+
+    reused = solve_vertical_grillage(second, prepared=prepared)
+    fresh = solve_vertical_grillage(second)
+
+    assert reused.total_vertical_reaction_kn == pytest.approx(
+        fresh.total_vertical_reaction_kn
+    )
+    assert reused.vertical_equilibrium_residual_kn == pytest.approx(
+        fresh.vertical_equilibrium_residual_kn,
+        abs=1.0e-10,
+    )
+    assert [item.vertical_displacement_m for item in reused.nodes] == pytest.approx(
+        [item.vertical_displacement_m for item in fresh.nodes]
+    )
+    assert [item.i_vertical_bending_moment_knm for item in reused.members] == pytest.approx(
+        [item.i_vertical_bending_moment_knm for item in fresh.members]
+    )
+
+
+def test_prepared_grillage_rejects_changed_stiffness() -> None:
+    model = _line_model()
+    prepared = prepare_vertical_grillage(model)
+    changed = VerificationModel(
+        name=model.name,
+        nodes=model.nodes,
+        materials=(VerificationMaterial(1, "Concrete", 0.9 * _E_KN_M2),),
+        sections=model.sections,
+        beams=model.beams,
+        supports=model.supports,
+        load_cases=model.load_cases,
+    )
+
+    with pytest.raises(ValueError, match="does not match"):
+        solve_vertical_grillage(changed, prepared=prepared)
