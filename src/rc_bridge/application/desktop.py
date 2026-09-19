@@ -732,10 +732,20 @@ def main() -> int:
                 slab_width_m=representative_width,
                 slab_width_basis="representative interior tributary slab width",
             )
+            false_slab_depth_mm = (
+                1000.0
+                * float(
+                    project.geometry.deck_construction.precast_false_slab_depth_m
+                )
+            )
             false_slab_note = (
-                "75 mm false slab remains weight-only in stiffness."
+                f"{false_slab_depth_mm:g} mm false slab remains weight-only "
+                "in stiffness."
                 if description.false_slab_weight_only
-                else "False slab is included in composite stiffness."
+                else (
+                    f"{false_slab_depth_mm:g} mm false slab is included in "
+                    "composite stiffness."
+                )
             )
             composite_guidance = (
                 f" Precast {description.precast_section_type} section → final composite "
