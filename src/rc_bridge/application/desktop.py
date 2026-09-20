@@ -2344,11 +2344,13 @@ def main() -> int:
     verification_status_metric_var = tk.StringVar(value="NOT IMPORTED")
     verification_coverage_metric_var = tk.StringVar(value="—")
     verification_error_metric_var = tk.StringVar(value="—")
+    verification_acceptance_metric_var = tk.StringVar(value="PENDING")
     for metric_index, (title, variable) in enumerate(
         (
-            ("Comparison status", verification_status_metric_var),
+            ("Numerical status", verification_status_metric_var),
             ("Imported coverage", verification_coverage_metric_var),
             ("Maximum relative error", verification_error_metric_var),
+            ("Engineering acceptance", verification_acceptance_metric_var),
         )
     ):
         card = ttk.LabelFrame(
@@ -2976,6 +2978,7 @@ def main() -> int:
             verification_status_metric_var.set("NOT IMPORTED")
             verification_coverage_metric_var.set("—")
             verification_error_metric_var.set("—")
+            verification_acceptance_metric_var.set("PENDING")
             verification_equilibrium_var.set(
                 "Import a STAAD .ANL file to compare permanent equilibrium and LM1 envelopes."
             )
@@ -2990,21 +2993,24 @@ def main() -> int:
 
         dashboard = verification_dashboard_data(report)
         envelope = report.envelope_comparison
-        verification_status_metric_var.set(
-            (
-                "PASS" if envelope.passes else "REVIEW / FAIL"
-            )
-            if envelope is not None
-            else dashboard.status
-        )
+        verification_status_metric_var.set(dashboard.status)
+        verification_acceptance_metric_var.set("PENDING REVIEW")
         verification_coverage_metric_var.set(
             f"{dashboard.imported_count}/{dashboard.requested_count}"
         )
-        max_error = (
-            envelope.maximum_relative_difference
-            if envelope is not None
-            else dashboard.max_relative_error
-        )
+        candidate_errors = [
+            value
+            for value in (
+                dashboard.max_relative_error,
+                (
+                    None
+                    if envelope is None
+                    else envelope.maximum_relative_difference
+                ),
+            )
+            if value is not None
+        ]
+        max_error = max(candidate_errors) if candidate_errors else None
         verification_error_metric_var.set(
             "—" if max_error is None else f"{100.0 * max_error:.3f}%"
         )
@@ -3017,12 +3023,19 @@ def main() -> int:
                 )
             else:
                 diff = equilibrium.relative_difference
+                difference_text = (
+                    f"{100.0 * diff:+.3f}%"
+                    if diff is not None
+                    else (
+                        f"abs {equilibrium.absolute_difference:.3f} kN "
+                        f"(limit {equilibrium.allowable_absolute_difference:.3f} kN)"
+                    )
+                )
                 verification_equilibrium_var.set(
                     "Permanent equilibrium: "
                     f"native reactions = {equilibrium.native_total_reaction_kn:.3f} kN, "
                     f"{report.source_name} = {equilibrium.external_total_reaction_kn:.3f} kN, "
-                    f"difference = "
-                    f"{'—' if diff is None else f'{100.0 * diff:+.3f}%'}; "
+                    f"difference = {difference_text}; "
                     f"{'PASS' if equilibrium.passes else 'CHECK'}."
                 )
             labels = [
@@ -4712,7 +4725,7 @@ def main() -> int:
     def cancel_analysis() -> None:
         cancel_event.set()
         cancel_button.configure(state=tk.DISABLED)
-        status_var.set("Cancelling native LM1 analysis after the current case...")
+        status_var.set("Cancelling the current operation after the current step...")
 
     def fail(title: str, message: str) -> None:
         set_busy(False)
@@ -4728,6 +4741,7 @@ def main() -> int:
     ) -> None:
         """Run a potentially expensive application operation without blocking Tk."""
         started_at = time.monotonic()
+        cancel_event.clear()
         set_busy(True)
         status_var.set(status)
 
@@ -5394,9 +5408,14 @@ def main() -> int:
                         f"{item.native_value:.3f} {item.unit}",
                         f"{item.external_value:.3f} {item.unit}",
                         (
-                            "—"
-                            if difference is None
-                            else f"{100.0 * difference:+.2f}%"
+                            (
+                                f"{100.0 * difference:+.2f}%"
+                                if difference is not None
+                                else (
+                                    f"abs {item.absolute_difference:.3f} {item.unit} "
+                                    f"/ limit {item.allowable_absolute_difference:.3f}"
+                                )
+                            )
                         ),
                         "PASS" if item.passes else "CHECK",
                     ),
@@ -5431,30 +5450,15 @@ def main() -> int:
                 ),
             )
         refresh_verification_dashboard()
-        if report.envelope_comparison is not None:
-            envelope = report.envelope_comparison
-            max_difference = envelope.maximum_relative_difference
-            status_var.set(
-                f"{report.source_name} engineering envelopes: "
-                f"{'PASS' if envelope.passes else 'REVIEW / FAIL'}"
-                + (
-                    ""
-                    if max_difference is None
-                    else f"; max difference {100.0 * max_difference:.2f}%"
-                )
-                + (
-                    f". Raw diagnostic coverage: {len(report.result_sets)}/"
-                    f"{len(report.requested_result_ids)} result sets."
-                )
-            )
-        else:
-            status = "PASS" if report.passes else "REVIEW / FAIL"
-            status_var.set(
-                f"{report.source_name} Stage-5 import: {status}; "
-                f"{len(report.result_sets)}/{len(report.requested_result_ids)} result "
-                f"sets imported; {len(report.failed_result_ids)} failed and "
-                f"{len(report.missing_result_ids)} missing."
-            )
+        status_var.set(
+            f"{report.source_name} import "
+            f"{'COMPLETE' if report.import_complete else 'INCOMPLETE'}; "
+            f"detailed numerical "
+            f"{'PASS' if report.detailed_comparisons_pass else 'REVIEW / FAIL'}; "
+            f"envelope "
+            f"{('NOT RUN' if report.envelope_comparison_passes is None else ('PASS' if report.envelope_comparison_passes else 'REVIEW / FAIL'))}; "
+            f"engineering acceptance PENDING model/source-equivalence review."
+        )
         refresh_dashboard()
 
     def import_staad_verification_results() -> None:
@@ -5468,10 +5472,39 @@ def main() -> int:
         )
         if not path:
             return
+        def import_progress(stage: str, completed: int, total: int) -> None:
+            if total <= 0:
+                return
+            stage_ranges = {
+                "native": (0.0, 35.0, "Solving native result sets"),
+                "parse": (35.0, 30.0, "Parsing STAAD output"),
+                "external": (65.0, 5.0, "Indexing external results"),
+                "compare": (70.0, 30.0, "Comparing result sets"),
+            }
+            base, span, label = stage_ranges.get(
+                stage,
+                (0.0, 100.0, "Verification import"),
+            )
+            fraction = min(max(completed / total, 0.0), 1.0)
+            value = base + span * fraction
+
+            def update() -> None:
+                progress["value"] = value
+                status_var.set(
+                    f"{label}: {completed:,}/{total:,} "
+                    f"({100.0 * fraction:.1f}%)"
+                )
+
+            root.after(0, update)
+
         run_background_operation(
             title="STAAD verification import",
             status="Importing and comparing STAAD Stage-5 results...",
-            operation=lambda: session.import_stage5_staad_anl(path),
+            operation=lambda: session.import_stage5_staad_anl(
+                path,
+                progress_callback=import_progress,
+                cancel_check=cancel_event.is_set,
+            ),
             on_success=lambda report, elapsed: show_verification_import(report),
         )
 
