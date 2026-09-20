@@ -557,11 +557,59 @@ def build_application_calculation_trace(
                     ),
                     steps=(
                         CalculationStep(
+                            label="Design concrete strength",
+                            expression="fcd = alpha_cc fck / gamma_c",
+                            substitution=(
+                                f"{_f(float(project.materials.fck_mpa), 1)} / 1.50"
+                            ),
+                            result=f"{_f(fcd_mpa)} MPa",
+                            reference="EN 1992 material design strength",
+                            equation=_eq(
+                                _var("f", "cd"),
+                                fraction(
+                                    _product(_var("α", "cc"), _var("f", "ck")),
+                                    _var("γ", "c"),
+                                ),
+                            ),
+                            substitution_equation=_eq(
+                                _var("f", "cd"),
+                                fraction(
+                                    _num(float(project.materials.fck_mpa), 1),
+                                    number("1.50"),
+                                ),
+                            ),
+                        ),
+                        CalculationStep(
+                            label="Design reinforcement strength",
+                            expression="fyd = fyk / gamma_s",
+                            substitution=(
+                                f"{_f(float(project.materials.fyk_mpa), 1)} / 1.15"
+                            ),
+                            result=f"{_f(fyd_mpa)} MPa",
+                            reference="EN 1992 reinforcement design strength",
+                            equation=_eq(
+                                _var("f", "yd"),
+                                fraction(_var("f", "yk"), _var("γ", "s")),
+                            ),
+                            substitution_equation=_eq(
+                                _var("f", "yd"),
+                                fraction(
+                                    _num(float(project.materials.fyk_mpa), 1),
+                                    number("1.15"),
+                                ),
+                            ),
+                        ),
+                        CalculationStep(
                             label="Effective depth",
                             expression="d = effective tension-steel depth used by layered section solver",
                             substitution="from selected section geometry, cover and bar arrangement",
                             result=f"{_f(row.effective_depth_m * 1000.0, 1)} mm",
                             reference="EN 1992-2 / EC2 section design basis",
+                            equation=_eq(identifier("d"), text("effective tension-steel depth")),
+                            substitution_equation=_eq(
+                                identifier("d"),
+                                _num(row.effective_depth_m * 1000.0, 1),
+                            ),
                         ),
                         CalculationStep(
                             label="Required longitudinal reinforcement",
@@ -569,6 +617,14 @@ def build_application_calculation_trace(
                             substitution=f"MEd = {_f(row.design.uls_design.design_effects.moment_knm)} kNm",
                             result=f"{_f(flexure.required_steel_area_mm2, 0)} mm2",
                             reference="EN 1992-1-1 / EN 1992-2 flexure",
+                            equation=_eq(
+                                _var("M", "Rd"),
+                                _product(_var("A", "s"), _var("f", "yd"), identifier("z")),
+                            ),
+                            substitution_equation=_eq(
+                                _var("M", "Ed"),
+                                _num(row.design.uls_design.design_effects.moment_knm),
+                            ),
                         ),
                         CalculationStep(
                             label="Provided longitudinal reinforcement",
@@ -580,6 +636,75 @@ def build_application_calculation_trace(
                             result=f"{_f(row.selected_bars.provided_area_mm2, 0)} mm2",
                             reference="Selected reinforcement arrangement",
                             status="PASS" if row.selected_bars.provided_area_mm2 + 1e-9 >= flexure.required_steel_area_mm2 else "CHECK",
+                            equation=_eq(
+                                _var("A", "s,prov"),
+                                _product(
+                                    number(str(row.selected_bars.bar_count)),
+                                    fraction(
+                                        _product(identifier("π"), sup(identifier("ϕ"), 2)),
+                                        number("4"),
+                                    ),
+                                ),
+                            ),
+                            substitution_equation=_eq(
+                                _var("A", "s,prov"),
+                                _product(
+                                    number(str(row.selected_bars.bar_count)),
+                                    fraction(
+                                        _product(
+                                            identifier("π"),
+                                            sup(_num(row.selected_bars.bar_diameter_mm, 0), 2),
+                                        ),
+                                        number("4"),
+                                    ),
+                                ),
+                            ),
+                        ),
+                        CalculationStep(
+                            label="Tension steel force",
+                            expression="T = As,prov fyd",
+                            substitution=(
+                                f"{_f(row.selected_bars.provided_area_mm2, 0)} x "
+                                f"{_f(fyd_mpa)}"
+                            ),
+                            result=f"{_f(provided_flexure.steel_force_kn)} kN",
+                            reference="EC2 layered-section force equilibrium",
+                            equation=_eq(
+                                identifier("T"),
+                                _product(_var("A", "s,prov"), _var("f", "yd")),
+                            ),
+                            substitution_equation=_eq(
+                                identifier("T"),
+                                _product(
+                                    _num(row.selected_bars.provided_area_mm2, 0),
+                                    _num(fyd_mpa),
+                                ),
+                            ),
+                        ),
+                        CalculationStep(
+                            label="Compression block and lever arm",
+                            expression="z = d - yc",
+                            substitution=(
+                                f"{_f(row.effective_depth_m * 1000.0, 1)} - "
+                                f"{_f(provided_flexure.compression_centroid_from_top_m * 1000.0, 1)}"
+                            ),
+                            result=f"{_f(provided_flexure.lever_arm_m * 1000.0, 1)} mm",
+                            reference="Layered participating concrete compression block",
+                            equation=_eq(
+                                identifier("z"),
+                                row(identifier("d"), operator("−"), _var("y", "c")),
+                            ),
+                            substitution_equation=_eq(
+                                identifier("z"),
+                                row(
+                                    _num(row.effective_depth_m * 1000.0, 1),
+                                    operator("−"),
+                                    _num(
+                                        provided_flexure.compression_centroid_from_top_m * 1000.0,
+                                        1,
+                                    ),
+                                ),
+                            ),
                         ),
                         CalculationStep(
                             label="Flexural resistance",
@@ -591,6 +716,17 @@ def build_application_calculation_trace(
                             result=f"{_f(flexure.utilization)}",
                             reference="EN 1992-1-1 / EN 1992-2 flexure",
                             status="PASS" if flexure.utilization <= 1.0 + 1e-9 else "CHECK",
+                            equation=_eq(
+                                _var("η", "M"),
+                                fraction(_var("M", "Ed"), _var("M", "Rd")),
+                            ),
+                            substitution_equation=_eq(
+                                _var("η", "M"),
+                                fraction(
+                                    _num(row.design.uls_design.design_effects.moment_knm),
+                                    _num(flexure.resistance_knm),
+                                ),
+                            ),
                         ),
                         CalculationStep(
                             label="Shear resistance",
