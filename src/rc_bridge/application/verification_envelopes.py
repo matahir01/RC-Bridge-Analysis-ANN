@@ -87,7 +87,7 @@ def _stage5_case_identity(
     except json.JSONDecodeError as exc:
         raise ValueError("Stage-5 case_identity metadata is invalid JSON.") from exc
     if not isinstance(payload, list):
-        raise ValueError("Stage-5 case_identity metadata must be a list.")
+        raise TypeError("Stage-5 case_identity metadata must be a list.")
     return tuple(item for item in payload if isinstance(item, dict))
 
 
