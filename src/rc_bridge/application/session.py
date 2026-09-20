@@ -64,6 +64,7 @@ from rc_bridge.application.verification_files import (
 )
 from rc_bridge.application.verification_import import (
     ApplicationVerificationImportReport,
+    VerificationEngineeringReview,
     VerificationImportTolerance,
     WrittenVerificationImportEvidence,
     import_midas_table_verification_results,
@@ -645,6 +646,18 @@ class BridgeApplicationSession:
         )
         self.last_verification_import = report
         return report
+
+    def set_stage5_engineering_review(
+        self,
+        review: VerificationEngineeringReview,
+    ) -> ApplicationVerificationImportReport:
+        if self.last_verification_import is None:
+            raise RuntimeError(
+                "Import STAAD/MIDAS Stage-5 results before recording engineering acceptance."
+            )
+        updated = self.last_verification_import.with_engineering_review(review)
+        self.last_verification_import = updated
+        return updated
 
     def write_last_verification_evidence(
         self,
