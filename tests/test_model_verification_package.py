@@ -87,6 +87,15 @@ def test_model_verification_package_contains_midas_staad_manifest_and_exact_load
     assert "expected_results_csv" not in manifest["files"]
     assert "result_requests_csv" in manifest["files"]
     assert "external_results_template_csv" in manifest["files"]
+    audit = manifest["model_audit"]
+    assert len(audit["nodes"]) == len(_lm1_model().nodes)
+    assert len(audit["members"]) == len(_lm1_model().beams)
+    assert len(audit["materials"]) == len(_lm1_model().materials)
+    assert len(audit["sections"]) == len(_lm1_model().sections)
+    assert len(audit["supports"]) == len(_lm1_model().supports)
+    assert audit["supports"][0]["restraint_code"]
+    assert "acceptance_review_requirements" in manifest
+    assert len(manifest["acceptance_review_requirements"]) >= 8
 
 
 def test_one_call_lm1_package_preserves_source_traffic_placement_metadata() -> None:
