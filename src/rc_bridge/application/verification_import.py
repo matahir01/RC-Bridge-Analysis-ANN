@@ -452,11 +452,16 @@ def import_staad_anl_verification_results(
         progress_callback=parser_progress,
         cancel_check=cancel_check,
     )
-    external_database = VerificationResultDatabase.from_normalized_csvs(
-        external_by_id
+    index_progress = (
+        None
+        if progress_callback is None
+        else lambda completed, total: progress_callback("index", completed, total)
     )
-    if progress_callback is not None:
-        progress_callback("external", len(external_by_id), len(requested))
+    external_database = VerificationResultDatabase.from_normalized_csvs(
+        external_by_id,
+        progress_callback=index_progress,
+        cancel_check=cancel_check,
+    )
 
     imported: list[ImportedVerificationResultSet] = []
     missing: list[int] = []
