@@ -21,16 +21,16 @@ from rc_bridge.application.gui_presenters import (
     design_dashboard_data,
     verification_dashboard_data,
 )
-from rc_bridge.application.gui_ribbon import (
-    RibbonField,
-    RibbonSection,
-    open_scrollable_input_dialog,
-)
 from rc_bridge.application.gui_rendering import (
     draw_bar_chart,
     draw_bridge_preview,
     draw_line_chart,
     draw_reinforcement_section,
+)
+from rc_bridge.application.gui_ribbon import (
+    RibbonField,
+    RibbonSection,
+    open_scrollable_input_dialog,
 )
 from rc_bridge.application.gui_theme import configure_desktop_theme
 from rc_bridge.application.interface_contract import (
