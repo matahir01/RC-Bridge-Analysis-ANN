@@ -20,6 +20,39 @@ class RibbonSection:
     fields: tuple[RibbonField, ...]
 
 
+def _ribbon_field_keys(
+    sections: tuple[RibbonSection, ...],
+) -> tuple[set[str], set[str]]:
+    string_keys, bool_keys = _ribbon_field_keys(sections)
+    return string_keys, bool_keys
+
+
+def _capture_shared_values(
+    string_vars: dict[str, Any],
+    bool_vars: dict[str, Any],
+    *,
+    string_keys: set[str],
+    bool_keys: set[str],
+) -> tuple[dict[str, str], dict[str, bool]]:
+    return (
+        {key: string_vars[key].get() for key in string_keys},
+        {key: bool(bool_vars[key].get()) for key in bool_keys},
+    )
+
+
+def _restore_shared_values(
+    string_vars: dict[str, Any],
+    bool_vars: dict[str, Any],
+    *,
+    string_values: dict[str, str],
+    bool_values: dict[str, bool],
+) -> None:
+    for key, value in string_values.items():
+        string_vars[key].set(value)
+    for key, value in bool_values.items():
+        bool_vars[key].set(value)
+
+
 def open_scrollable_input_dialog(
     *,
     parent: Any,
@@ -178,14 +211,12 @@ def open_scrollable_input_dialog(
         dialog.destroy()
 
     def apply_and_close() -> None:
-        shared_strings_before = {
-            key: string_vars[key].get()
-            for key in string_keys
-        }
-        shared_bools_before = {
-            key: bool(bool_vars[key].get())
-            for key in bool_keys
-        }
+        shared_strings_before, shared_bools_before = _capture_shared_values(
+            string_vars,
+            bool_vars,
+            string_keys=string_keys,
+            bool_keys=bool_keys,
+        )
         for key, variable in dialog_string_vars.items():
             string_vars[key].set(variable.get())
         for key, variable in dialog_bool_vars.items():
@@ -194,17 +225,21 @@ def open_scrollable_input_dialog(
         try:
             applied = apply_callback()
         except Exception:
-            for key, value in shared_strings_before.items():
-                string_vars[key].set(value)
-            for key, value in shared_bools_before.items():
-                bool_vars[key].set(value)
+            _restore_shared_values(
+                string_vars,
+                bool_vars,
+                string_values=shared_strings_before,
+                bool_values=shared_bools_before,
+            )
             raise
 
         if applied is False:
-            for key, value in shared_strings_before.items():
-                string_vars[key].set(value)
-            for key, value in shared_bools_before.items():
-                bool_vars[key].set(value)
+            _restore_shared_values(
+                string_vars,
+                bool_vars,
+                string_values=shared_strings_before,
+                bool_values=shared_bools_before,
+            )
             return
         close_dialog()
 
