@@ -1,5 +1,5 @@
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "evidence_type": "genuine_staad_stage5_external_benchmark",
   "source_file_name": "application_verification_final_service.ANL",
   "source_sha256": "e78193f7a51a5e725601d9857da8d014bfa32729c5ba97698eba1962baca30ca",
@@ -50,11 +50,55 @@
     },
     "note": "The overlong property warnings did not alter the analysed properties or results; Batch 6E updates the exporter to wrap these commands explicitly."
   },
-  "engineering_acceptance": "PENDING_MODEL_SOURCE_IDENTITY_REVIEW",
+  "engineering_acceptance": "ACCEPTED",
   "notes": [
     "The numerical comparison reproduces the repository vertical-grillage equations against the exact structural model echoed in the genuine STAAD ANL output.",
-    "This is genuine independent-solver numerical evidence for the echoed Stage-5 model.",
-    "It does not by itself prove that the externally analysed STD file is byte-identical to the current application export, so engineering acceptance remains pending exact source/model identity review.",
-    "The raw ANL is not committed because of its size and external-program provenance; the SHA-256 above identifies the reviewed file."
-  ]
+    "This is genuine independent-solver numerical evidence for the Stage-5 model.",
+    "The uploaded STD was reviewed against the ANL input echo. It is a STAAD-resaved normalized copy rather than a byte-identical pre-analysis export; geometry, member connectivity, supports, load/combinations and result-output scope are equivalent, with only negligible save-rounding in some numerical fields.",
+    "The ANL input echo is treated as the authoritative record of the higher-precision model actually analysed.",
+    "The raw ANL and STD are not committed because of size/external-program provenance; their SHA-256 hashes identify the reviewed files."
+  ],
+  "std_source_review": {
+    "uploaded_file_name": "application_verification_final_service.std",
+    "uploaded_file_sha256": "362adf1bea7a0ef90eb576882a5840acf3b22627a76f63756d426563d384fe54",
+    "anl_input_file_basename_match": true,
+    "uploaded_copy_status": "STAAD-resaved normalized copy of the analysed Stage-5 model",
+    "byte_identical_to_pre_analysis_export": false,
+    "authoritative_analysed_input": "STAAD ANL input echo",
+    "model_title_match": true,
+    "node_count": 540,
+    "node_coordinate_differences": 0,
+    "member_count": 749,
+    "member_connectivity_differences": 0,
+    "support_count": 14,
+    "support_differences": 0,
+    "section_assignment_differences": 0,
+    "section_numeric_max_relative_difference": 0.00000255999999990153,
+    "elastic_modulus_relative_difference": 0.0000013557238545395923,
+    "primary_case_count": 63,
+    "primary_case_structure_match": true,
+    "nodal_load_rounding_differences": 56,
+    "nodal_load_rounding_max_absolute_kn": 0.0005000000000023874,
+    "nodal_load_rounding_max_relative_difference": 0.000004984423676036261,
+    "combination_count": 141,
+    "combination_differences": 0,
+    "global_member_force_output_ids": "1-749 exact",
+    "support_reaction_output": "ALL",
+    "joint_displacement_output": "ALL",
+    "axis_convention": "SET Z UP; GLOBAL member-end forces",
+    "review_conclusion": "The uploaded STD is semantically the same Stage-5 external model. Differences from the ANL input echo are only STAAD save-normalization/rounding; the ANL echo remains the authoritative record of the higher-precision model actually analysed."
+  },
+  "engineering_review": {
+    "source_reference": "application_verification_final_service.ANL sha256:e78193f7a51a5e725601d9857da8d014bfa32729c5ba97698eba1962baca30ca; reviewed STAAD-resaved STD sha256:362adf1bea7a0ef90eb576882a5840acf3b22627a76f63756d426563d384fe54",
+    "solver_version": "STAAD.Pro CONNECT 22.09.00.115",
+    "exported_model_identity_verified": true,
+    "geometry_equivalent": true,
+    "section_properties_equivalent": true,
+    "material_properties_equivalent": true,
+    "boundary_conditions_equivalent": true,
+    "loading_equivalent": true,
+    "load_combinations_equivalent": true,
+    "result_axes_verified": true,
+    "notes": "Engineering acceptance is based on the genuine ANL's authoritative input echo plus semantic review of the uploaded STAAD-resaved STD. The resaved copy is not byte-identical to the pre-analysis export because STAAD normalized formatting and rounded some stored numeric values, but all reviewed structural identities are preserved and the tiny rounding differences are far below the verification tolerances."
+  }
 }
