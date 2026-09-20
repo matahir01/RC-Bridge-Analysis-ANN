@@ -28,7 +28,7 @@ def open_scrollable_input_dialog(
     sections: tuple[RibbonSection, ...],
     string_vars: dict[str, Any],
     bool_vars: dict[str, Any],
-    apply_callback: Callable[[], None],
+    apply_callback: Callable[[], bool | None],
     width: int = 700,
     height: int = 680,
 ) -> Any:
@@ -143,12 +143,10 @@ def open_scrollable_input_dialog(
     footer.pack(fill=tk.X, pady=(2, 8))
 
     def apply_and_close() -> None:
-        try:
-            apply_callback()
-        except Exception:
-            # Existing callbacks display their own validation error and leave the
-            # shared variables available for correction. Keep the dialog open.
+        applied = apply_callback()
+        if applied is False:
             return
+        canvas.unbind_all("<MouseWheel>")
         dialog.grab_release()
         dialog.destroy()
 
