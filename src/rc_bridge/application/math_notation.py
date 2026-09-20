@@ -34,7 +34,7 @@ class MathExpr:
 
     kind: MathKind
     text: str = ""
-    children: tuple["MathExpr", ...] = ()
+    children: tuple[MathExpr, ...] = ()
 
     def __post_init__(self) -> None:
         leaf_kinds = {"identifier", "number", "operator", "text"}
@@ -61,7 +61,7 @@ def identifier(value: str) -> MathExpr:
     return MathExpr("identifier", text=str(value))
 
 
-def number(value: str | int | float) -> MathExpr:
+def number(value: str | float) -> MathExpr:
     return MathExpr("number", text=str(value))
 
 
@@ -96,7 +96,7 @@ def sub(base: MathExpr, script: MathExpr | str) -> MathExpr:
     return MathExpr("sub", children=(base, script_expr))
 
 
-def sup(base: MathExpr, script: MathExpr | str | int | float) -> MathExpr:
+def sup(base: MathExpr, script: MathExpr | str | float) -> MathExpr:
     script_expr = number(script) if not isinstance(script, MathExpr) else script
     return MathExpr("sup", children=(base, script_expr))
 
@@ -104,7 +104,7 @@ def sup(base: MathExpr, script: MathExpr | str | int | float) -> MathExpr:
 def subsup(
     base: MathExpr,
     subscript: MathExpr | str,
-    superscript: MathExpr | str | int | float,
+    superscript: MathExpr | str | float,
 ) -> MathExpr:
     sub_expr = identifier(subscript) if isinstance(subscript, str) else subscript
     sup_expr = number(superscript) if not isinstance(superscript, MathExpr) else superscript
