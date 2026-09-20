@@ -142,19 +142,22 @@ def open_scrollable_input_dialog(
     footer = ttk.Frame(content, style="Surface.TFrame")
     footer.pack(fill=tk.X, pady=(2, 8))
 
+    def close_dialog() -> None:
+        canvas.unbind_all("<MouseWheel>")
+        dialog.grab_release()
+        dialog.destroy()
+
     def apply_and_close() -> None:
         applied = apply_callback()
         if applied is False:
             return
-        canvas.unbind_all("<MouseWheel>")
-        dialog.grab_release()
-        dialog.destroy()
+        close_dialog()
 
     ttk.Button(
         footer,
         text="Cancel",
         style="Secondary.TButton",
-        command=dialog.destroy,
+        command=close_dialog,
     ).pack(side=tk.RIGHT)
     ttk.Button(
         footer,
@@ -162,13 +165,6 @@ def open_scrollable_input_dialog(
         style="Primary.TButton",
         command=apply_and_close,
     ).pack(side=tk.RIGHT, padx=(0, 8))
-
-    def close_dialog() -> None:
-        try:
-            canvas.unbind_all("<MouseWheel>")
-        finally:
-            dialog.grab_release()
-            dialog.destroy()
 
     dialog.protocol("WM_DELETE_WINDOW", close_dialog)
     dialog.bind("<Escape>", lambda _event: close_dialog())
