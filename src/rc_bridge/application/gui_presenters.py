@@ -7,13 +7,13 @@ from rc_bridge.application.design_checks import ApplicationDesignInterpretationS
 from rc_bridge.application.fatigue import FatigueApplicationResult
 from rc_bridge.application.local_deck import LocalDeckDesignResult
 from rc_bridge.application.verification_import import ApplicationVerificationImportReport
-from rc_bridge.export.verification_model import VerificationModel
 from rc_bridge.core.models import (
     IGirderProfile,
     ProjectInput,
     RectangularGirderProfile,
     TGirderProfile,
 )
+from rc_bridge.export.verification_model import VerificationModel
 from rc_bridge.workflow.lm1_grillage_search import (
     ProjectNativeLM1GrillageSearchResult,
     native_lm1_girder_moment_diagram,
