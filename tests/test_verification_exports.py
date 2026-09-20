@@ -7,8 +7,15 @@ from rc_bridge.core.models import BridgeGeometry, ProjectInput, SupportSystem
 from rc_bridge.export.midas_mct import export_midas_mct
 from rc_bridge.export.staad_std import export_staad_std
 from rc_bridge.export.verification_model import (
+    VerificationBeam,
+    VerificationLoadCase,
     VerificationLoadCombination,
     VerificationLoadCombinationTerm,
+    VerificationMaterial,
+    VerificationModel,
+    VerificationNode,
+    VerificationSection,
+    VerificationSupport,
 )
 from rc_bridge.workflow.project_continuous import GlobalBeamPointLoad, ProjectContinuousLoadCase
 from rc_bridge.workflow.verification_export import (
@@ -179,3 +186,50 @@ def test_verification_export_writes_static_load_combinations() -> None:
     assert "*LOADCOMB" in midas
     assert "NAME=ULS_TEST, GEN, ACTIVE, 0" in midas
     assert "ST, verification service load, 1.35" in midas
+
+
+
+def test_staad_member_property_lines_are_explicitly_wrapped_below_safe_length() -> None:
+    nodes = tuple(
+        VerificationNode(index + 1, float(index), 0.0, 0.0)
+        for index in range(26)
+    )
+    model = VerificationModel(
+        name="Long STAAD property line regression",
+        nodes=nodes,
+        materials=(
+            VerificationMaterial(
+                1,
+                "VerificationConcrete",
+                elastic_modulus_kn_m2=34_077_146.1992,
+            ),
+        ),
+        sections=(
+            VerificationSection(
+                1,
+                "Long numerical property",
+                area_m2=0.0625,
+                torsion_constant_m4=0.000550130208333,
+                iy_m4=0.000325520833333,
+                iz_m4=0.000325520833333,
+            ),
+        ),
+        beams=tuple(
+            VerificationBeam(index + 1, index + 1, index + 2, 1, 1)
+            for index in range(25)
+        ),
+        supports=(VerificationSupport(1, ux=True, uy=True, uz=True),),
+        load_cases=(VerificationLoadCase(1, "EMPTY"),),
+    )
+
+    text = export_staad_std(model)
+    property_block = text.split("MEMBER PROPERTY\n", 1)[1].split(
+        "DEFINE MATERIAL START\n",
+        1,
+    )[0]
+    property_lines = [line for line in property_block.splitlines() if line.strip()]
+
+    assert property_lines
+    assert any(line.endswith(" -") for line in property_lines)
+    assert max(map(len, property_lines)) <= 78
+    assert all("PRIS" in line or line.startswith(("AX ", "IX ", "IY ", "IZ ")) for line in property_lines)
