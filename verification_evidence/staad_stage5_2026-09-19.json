@@ -1,5 +1,5 @@
 {
-  "schema_version": 2,
+  "schema_version": 3,
   "evidence_type": "genuine_staad_stage5_external_benchmark",
   "source_file_name": "application_verification_final_service.ANL",
   "source_sha256": "e78193f7a51a5e725601d9857da8d014bfa32729c5ba97698eba1962baca30ca",
@@ -15,12 +15,6 @@
   "comparison_rows": 1029792,
   "numerical_result_sets_passed": 204,
   "numerical_failed_rows": 0,
-  "tolerance_policy": {
-    "relative": 0.02,
-    "absolute_force_kn": 0.1,
-    "absolute_moment_knm": 0.1,
-    "absolute_displacement_m": 0.00001
-  },
   "maximum_absolute_differences": {
     "support_reaction_kn": 0.0050038673707604175,
     "vertical_displacement_m": 5.015936165430473e-7,
@@ -56,7 +50,8 @@
     "This is genuine independent-solver numerical evidence for the Stage-5 model.",
     "The uploaded STD was reviewed against the ANL input echo. It is a STAAD-resaved normalized copy rather than a byte-identical pre-analysis export; geometry, member connectivity, supports, load/combinations and result-output scope are equivalent, with only negligible save-rounding in some numerical fields.",
     "The ANL input echo is treated as the authoritative record of the higher-precision model actually analysed.",
-    "The raw ANL and STD are not committed because of size/external-program provenance; their SHA-256 hashes identify the reviewed files."
+    "The raw ANL and STD are not committed because of size/external-program provenance; their SHA-256 hashes identify the reviewed files.",
+    "The original import used the earlier provisional 2%/0.1-unit policy. Batch 6 finalizes a tighter v1 acceptance policy of 0.1% plus one STAAD print increment (0.01 kN, 0.01 kNm, 0.001 mm); the entire accepted benchmark remains within that tighter policy."
   ],
   "std_source_review": {
     "uploaded_file_name": "application_verification_final_service.std",
@@ -100,5 +95,33 @@
     "load_combinations_equivalent": true,
     "result_axes_verified": true,
     "notes": "Engineering acceptance is based on the genuine ANL's authoritative input echo plus semantic review of the uploaded STAAD-resaved STD. The resaved copy is not byte-identical to the pre-analysis export because STAAD normalized formatting and rounded some stored numeric values, but all reviewed structural identities are preserved and the tiny rounding differences are far below the verification tolerances."
+  },
+  "initial_import_tolerance_policy": {
+    "relative": 0.02,
+    "absolute_force_kn": 0.1,
+    "absolute_moment_knm": 0.1,
+    "absolute_displacement_m": 0.00001
+  },
+  "accepted_v1_tolerance_policy": {
+    "relative": 0.001,
+    "absolute_force_kn": 0.01,
+    "absolute_moment_knm": 0.01,
+    "absolute_displacement_m": 0.000001,
+    "absolute_displacement_mm": 0.001,
+    "basis": [
+      "STAAD ANL support reactions and GLOBAL member-end forces are printed to 0.01 kN/kNm.",
+      "STAAD ANL joint translations are printed to 0.0001 cm, equivalent to 0.001 mm.",
+      "Absolute floors equal one external print increment so near-zero quantities remain meaningful.",
+      "The 0.1% relative limit is approximately four times the largest meaningful governing-envelope relative difference observed in this accepted run (0.02587%)."
+    ]
+  },
+  "accepted_v1_tolerance_recheck": {
+    "passes": true,
+    "proof_basis": "Every recorded component maximum absolute difference is below the corresponding final absolute tolerance floor; governing-envelope relative differences are also below 0.1%.",
+    "maximum_force_or_reaction_difference_kn": 0.005032255268076824,
+    "maximum_moment_or_torsion_difference_knm": 0.00532225351417992,
+    "maximum_displacement_difference_mm": 0.0005015936165430473,
+    "numerical_result_sets_passed": 204,
+    "numerical_failed_rows": 0
   }
 }
