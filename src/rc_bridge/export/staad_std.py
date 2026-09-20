@@ -62,6 +62,50 @@ def _staad_id_chunks(
     ]
 
 
+def _staad_continued_command_lines(
+    prefix: str,
+    clauses: list[str],
+    *,
+    max_line_length: int = 78,
+) -> list[str]:
+    """Wrap one STAAD free-format command using explicit hyphen continuations.
+
+    STAAD can auto-split overlong input lines, but it warns that the resulting
+    continuation may not be valid for every command. Verification exports should
+    therefore stay within a conservative line length and emit explicit
+    continuation markers instead of relying on STAAD's parser to repair them.
+    """
+
+    if max_line_length < 20:
+        raise ValueError("max_line_length is too small for STAAD commands.")
+    if not prefix.strip():
+        raise ValueError("STAAD command prefix cannot be empty.")
+
+    rendered: list[str] = []
+    current = prefix.strip()
+    nonempty = [clause.strip() for clause in clauses if clause.strip()]
+    for index, clause in enumerate(nonempty):
+        is_last = index == len(nonempty) - 1
+        candidate = f"{current} {clause}"
+        reserve = 0 if is_last else 2
+        if len(candidate) + reserve <= max_line_length:
+            current = candidate
+            continue
+
+        if len(current) + 2 > max_line_length:
+            raise ValueError(
+                "STAAD command prefix exceeds the configured safe line length."
+            )
+        rendered.append(current + " -")
+        current = clause
+
+    if len(current) > max_line_length:
+        raise ValueError(
+            "STAAD command clause exceeds the configured safe line length."
+        )
+    rendered.append(current)
+    return rendered
+
 def _support_command(support: VerificationSupport) -> str:
     restrained = (support.ux, support.uy, support.uz, support.rx, support.ry, support.rz)
     if all(restrained):
@@ -148,7 +192,12 @@ def export_staad_std(model: VerificationModel) -> str:
             member_ids,
             max_ids_per_command=12,
         ):
-            lines.append(f"{member_fragment} PRIS {' '.join(properties)}")
+            lines.extend(
+                _staad_continued_command_lines(
+                    f"{member_fragment} PRIS",
+                    properties,
+                )
+            )
 
     lines.append("DEFINE MATERIAL START")
     for material in model.materials:
