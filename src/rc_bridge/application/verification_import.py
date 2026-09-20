@@ -35,6 +35,11 @@ from rc_bridge.export.verification_model import (
     VerificationPointLoad,
     VerificationUniformLoad,
 )
+from rc_bridge.application.verification_envelopes import (
+    StaadEnvelopeComparisonReport,
+    compare_staad_lm1_envelopes,
+)
+from rc_bridge.workflow.lm1_grillage_search import ProjectNativeLM1GrillageSearchResult
 
 
 @dataclass(frozen=True)
@@ -107,11 +112,17 @@ class ApplicationVerificationImportReport:
 
     @property
     def passes(self) -> bool:
-        return (
+        detailed_pass = (
             bool(self.result_sets)
             and not self.missing_result_ids
             and all(item.passes for item in self.result_sets)
         )
+        envelope_pass = (
+            True
+            if self.envelope_comparison is None
+            else self.envelope_comparison.passes
+        )
+        return detailed_pass and envelope_pass
 
     @property
     def failed_result_ids(self) -> tuple[int, ...]:
