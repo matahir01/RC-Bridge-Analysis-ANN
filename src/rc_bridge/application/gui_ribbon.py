@@ -23,7 +23,18 @@ class RibbonSection:
 def _ribbon_field_keys(
     sections: tuple[RibbonSection, ...],
 ) -> tuple[set[str], set[str]]:
-    string_keys, bool_keys = _ribbon_field_keys(sections)
+    string_keys = {
+        field.key
+        for section in sections
+        for field in section.fields
+        if field.kind != "bool"
+    }
+    bool_keys = {
+        field.key
+        for section in sections
+        for field in section.fields
+        if field.kind == "bool"
+    }
     return string_keys, bool_keys
 
 
@@ -80,18 +91,7 @@ def open_scrollable_input_dialog(
     dialog.transient(parent)
     dialog.grab_set()
 
-    string_keys = {
-        field.key
-        for section in sections
-        for field in section.fields
-        if field.kind != "bool"
-    }
-    bool_keys = {
-        field.key
-        for section in sections
-        for field in section.fields
-        if field.kind == "bool"
-    }
+    string_keys, bool_keys = _ribbon_field_keys(sections)
     missing_strings = sorted(string_keys - string_vars.keys())
     missing_bools = sorted(bool_keys - bool_vars.keys())
     if missing_strings or missing_bools:
