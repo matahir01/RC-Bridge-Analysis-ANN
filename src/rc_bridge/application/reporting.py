@@ -766,7 +766,7 @@ def write_native_lm1_pdf_report(
     )
     heading2 = ParagraphStyle(
         "EngineeringHeading2",
-        parent=heading2,
+        parent=styles["Heading2"],
         fontName="Helvetica-Bold",
         fontSize=12.5,
         leading=15,
@@ -781,7 +781,7 @@ def write_native_lm1_pdf_report(
     )
     heading3 = ParagraphStyle(
         "EngineeringHeading3",
-        parent=heading3,
+        parent=styles["Heading3"],
         fontName="Helvetica-Bold",
         fontSize=10.5,
         leading=13,
