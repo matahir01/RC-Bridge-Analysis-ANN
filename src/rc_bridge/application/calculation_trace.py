@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from rc_bridge.analysis.physical_sections import girder_web_width_m
 from rc_bridge.application.design_checks import ApplicationDesignInterpretationSuite
 from rc_bridge.application.math_notation import (
     MathExpr,
@@ -516,6 +517,28 @@ def build_application_calculation_trace(
         for row in design_interpretation.girders:
             flexure = row.design.uls_design.flexure
             ved = abs(row.design.uls_design.design_effects.shear_kn)
+            provided_flexure = layered_singly_reinforced_resistance(
+                layers=row.design.concrete_layers,
+                effective_depth_m=row.effective_depth_m,
+                steel_area_mm2=row.selected_bars.provided_area_mm2,
+                fck_mpa=float(project.materials.fck_mpa),
+                fyk_mpa=float(project.materials.fyk_mpa),
+            )
+            fcd_mpa = float(project.materials.fck_mpa) / 1.50
+            fyd_mpa = float(project.materials.fyk_mpa) / 1.15
+            bw_mm = girder_web_width_m(project.geometry) * 1000.0
+            d_mm = row.effective_depth_m * 1000.0
+            k_shear = min(1.0 + (200.0 / d_mm) ** 0.5, 2.0)
+            rho_l = min(
+                row.selected_bars.provided_area_mm2 / (bw_mm * d_mm),
+                0.02,
+            )
+            vrdc_mpa = max(
+                (0.18 / 1.50)
+                * k_shear
+                * (100.0 * rho_l * float(project.materials.fck_mpa)) ** (1.0 / 3.0),
+                0.035 * k_shear**1.5 * float(project.materials.fck_mpa) ** 0.5,
+            )
             shear_resistance = (
                 ved / row.design.shear_utilization
                 if row.design.shear_utilization > 0.0
