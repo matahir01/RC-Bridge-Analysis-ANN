@@ -1,11 +1,13 @@
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass
 
 from rc_bridge.application.design_checks import ApplicationDesignInterpretationSuite
 from rc_bridge.application.fatigue import FatigueApplicationResult
 from rc_bridge.application.local_deck import LocalDeckDesignResult
 from rc_bridge.application.verification_import import ApplicationVerificationImportReport
+from rc_bridge.export.verification_model import VerificationModel
 from rc_bridge.core.models import (
     IGirderProfile,
     ProjectInput,
@@ -116,6 +118,15 @@ class DeckDashboardData:
     shear_utilization: float
     status: str
     fatigue_status: str
+
+
+@dataclass(frozen=True)
+class VerificationResultDefinition:
+    result_id: int
+    kind: str
+    category: str
+    name: str
+    definition: str
 
 
 @dataclass(frozen=True)
@@ -465,6 +476,66 @@ def deck_dashboard_data(
         status="PASS" if deck.passes else "CHECK",
         fatigue_status=fatigue_status,
     )
+
+
+def verification_result_definitions(
+    model: VerificationModel,
+) -> tuple[VerificationResultDefinition, ...]:
+    """Present every native/exported primary case and load combination."""
+
+    case_groups: dict[int, str] = {}
+    raw_identity = model.metadata.get("case_identity", "")
+    if raw_identity:
+        try:
+            payload = json.loads(raw_identity)
+        except json.JSONDecodeError:
+            payload = []
+        if isinstance(payload, list):
+            for item in payload:
+                if not isinstance(item, dict):
+                    continue
+                try:
+                    case_id = int(item["stage5_case_id"])
+                except (KeyError, TypeError, ValueError):
+                    continue
+                case_groups[case_id] = str(item.get("group", "primary"))
+
+    rows: list[VerificationResultDefinition] = []
+    for case in model.load_cases:
+        actions: list[str] = []
+        if abs(case.self_weight_gz_factor) > 1.0e-12:
+            actions.append(f"self-weight GZ x {case.self_weight_gz_factor:g}")
+        if case.uniform_loads:
+            actions.append(f"{len(case.uniform_loads)} member UDL(s)")
+        if case.point_loads:
+            actions.append(f"{len(case.point_loads)} member point load(s)")
+        if case.nodal_loads:
+            actions.append(f"{len(case.nodal_loads)} nodal load(s)")
+        rows.append(
+            VerificationResultDefinition(
+                result_id=case.load_case_id,
+                kind="Load case",
+                category=case_groups.get(case.load_case_id, "primary").upper(),
+                name=case.name,
+                definition=", ".join(actions) if actions else "zero/reference action case",
+            )
+        )
+
+    for combination in model.load_combinations:
+        terms = " + ".join(
+            f"{term.load_case_id} x {term.factor:g}"
+            for term in combination.terms
+        )
+        rows.append(
+            VerificationResultDefinition(
+                result_id=combination.combination_id,
+                kind="Load combination",
+                category=combination.category,
+                name=combination.name,
+                definition=terms,
+            )
+        )
+    return tuple(rows)
 
 
 def verification_dashboard_data(
