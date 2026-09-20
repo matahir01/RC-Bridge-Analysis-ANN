@@ -77,6 +77,49 @@ class ImportedVerificationResultSet:
 
 
 @dataclass(frozen=True)
+class VerificationEngineeringReview:
+    """Auditable non-numerical acceptance checks for one external verification run."""
+
+    source_reference: str = ""
+    solver_version: str = ""
+    exported_model_identity_verified: bool = False
+    geometry_equivalent: bool = False
+    section_properties_equivalent: bool = False
+    material_properties_equivalent: bool = False
+    boundary_conditions_equivalent: bool = False
+    loading_equivalent: bool = False
+    load_combinations_equivalent: bool = False
+    result_axes_verified: bool = False
+    notes: str = ""
+
+    @property
+    def complete(self) -> bool:
+        return (
+            bool(self.source_reference.strip())
+            and bool(self.solver_version.strip())
+            and not self.missing_checks()
+        )
+
+    def missing_checks(self) -> tuple[str, ...]:
+        checks = {
+            "exported_model_identity_verified": self.exported_model_identity_verified,
+            "geometry_equivalent": self.geometry_equivalent,
+            "section_properties_equivalent": self.section_properties_equivalent,
+            "material_properties_equivalent": self.material_properties_equivalent,
+            "boundary_conditions_equivalent": self.boundary_conditions_equivalent,
+            "loading_equivalent": self.loading_equivalent,
+            "load_combinations_equivalent": self.load_combinations_equivalent,
+            "result_axes_verified": self.result_axes_verified,
+        }
+        missing = [name for name, complete in checks.items() if not complete]
+        if not self.source_reference.strip():
+            missing.insert(0, "source_reference")
+        if not self.solver_version.strip():
+            missing.insert(1 if missing and missing[0] == "source_reference" else 0, "solver_version")
+        return tuple(missing)
+
+
+@dataclass(frozen=True)
 class ApplicationVerificationImportReport:
     source_name: str
     model_name: str
@@ -85,6 +128,7 @@ class ApplicationVerificationImportReport:
     missing_result_ids: tuple[int, ...]
     envelope_comparison: StaadEnvelopeComparisonReport | None = None
     combination_envelope_comparison: CombinationEnvelopeComparisonReport | None = None
+    engineering_review: VerificationEngineeringReview | None = None
 
     @property
     def imported_result_ids(self) -> tuple[int, ...]:
@@ -134,10 +178,29 @@ class ApplicationVerificationImportReport:
 
     @property
     def engineering_acceptance_pending(self) -> bool:
-        # Numerical agreement is necessary but not sufficient for independent
-        # engineering acceptance. Model/source provenance and modelling-equivalence
-        # review remain external acceptance steps.
-        return True
+        return self.engineering_review is None or not self.engineering_review.complete
+
+    @property
+    def engineering_accepted(self) -> bool:
+        return (
+            self.numerical_agreement_passes
+            and self.engineering_review is not None
+            and self.engineering_review.complete
+        )
+
+    @property
+    def engineering_acceptance_status(self) -> str:
+        if self.engineering_acceptance_pending:
+            return "PENDING REVIEW"
+        if not self.numerical_agreement_passes:
+            return "REVIEW / FAIL"
+        return "ACCEPTED"
+
+    def with_engineering_review(
+        self,
+        review: VerificationEngineeringReview,
+    ) -> ApplicationVerificationImportReport:
+        return replace(self, engineering_review=review)
 
     @property
     def passes(self) -> bool:
@@ -743,6 +806,37 @@ def write_verification_import_evidence(
             report.combination_envelope_comparison_passes
         ),
         "engineering_acceptance_pending": report.engineering_acceptance_pending,
+        "engineering_accepted": report.engineering_accepted,
+        "engineering_acceptance_status": report.engineering_acceptance_status,
+        "engineering_review": (
+            None
+            if report.engineering_review is None
+            else {
+                "source_reference": report.engineering_review.source_reference,
+                "solver_version": report.engineering_review.solver_version,
+                "exported_model_identity_verified": (
+                    report.engineering_review.exported_model_identity_verified
+                ),
+                "geometry_equivalent": report.engineering_review.geometry_equivalent,
+                "section_properties_equivalent": (
+                    report.engineering_review.section_properties_equivalent
+                ),
+                "material_properties_equivalent": (
+                    report.engineering_review.material_properties_equivalent
+                ),
+                "boundary_conditions_equivalent": (
+                    report.engineering_review.boundary_conditions_equivalent
+                ),
+                "loading_equivalent": report.engineering_review.loading_equivalent,
+                "load_combinations_equivalent": (
+                    report.engineering_review.load_combinations_equivalent
+                ),
+                "result_axes_verified": report.engineering_review.result_axes_verified,
+                "notes": report.engineering_review.notes,
+                "complete": report.engineering_review.complete,
+                "missing_checks": list(report.engineering_review.missing_checks()),
+            }
+        ),
         "requested_result_ids": list(report.requested_result_ids),
         "imported_result_ids": list(report.imported_result_ids),
         "missing_result_ids": list(report.missing_result_ids),
@@ -861,8 +955,9 @@ def write_verification_import_evidence(
         "verification_boundary": (
             "A numerical PASS confirms the imported external results match the native "
             "vertical-grillage model within the configured tolerances. Engineering "
-            "acceptance still requires confirmation that the externally run file was "
-            "the exported model and that software/version/model assumptions are equivalent."
+            "acceptance additionally requires an explicit review record confirming the "
+            "external source/model identity, software version, geometry, section/material "
+            "properties, boundaries, loads/combinations and result-axis equivalence."
         ),
     }
     summary_path = root / f"{stem}_summary.json"
