@@ -5365,6 +5365,22 @@ def main() -> int:
         add="+",
     )
 
+    ribbon_project_button.configure(command=open_project_ribbon_editor)
+    ribbon_section_button.configure(command=open_section_ribbon_editor)
+    ribbon_load_button.configure(command=open_load_ribbon_editor)
+    ribbon_actions_button.configure(command=open_actions_ribbon_editor)
+    ribbon_basis_button.configure(command=open_basis_ribbon_editor)
+    ribbon_analysis_settings_button.configure(
+        command=open_analysis_settings_ribbon_editor
+    )
+    ribbon_design_button.configure(command=open_design_ribbon_editor)
+    ribbon_deck_button.configure(command=open_deck_ribbon_editor)
+    ribbon_run_button.configure(command=run_full_workflow)
+    ribbon_verify_button.configure(
+        command=lambda: notebook.select(verification_tab)
+    )
+    ribbon_calculation_button.configure(command=open_calculation_workspace)
+
     calculation_tree.bind("<<TreeviewSelect>>", show_calculation_detail)
     calculation_refresh_button.configure(command=refresh_calculation_view)
     header_open_button.configure(command=open_project)
