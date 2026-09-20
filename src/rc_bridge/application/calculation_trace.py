@@ -729,12 +729,216 @@ def build_application_calculation_trace(
                             ),
                         ),
                         CalculationStep(
+                            label="Shear depth factor",
+                            expression="k = min[1 + sqrt(200/d), 2.0]",
+                            substitution=(
+                                f"min[1 + sqrt(200/{_f(d_mm, 1)}), 2.0]"
+                            ),
+                            result=f"{_f(k_shear)}",
+                            reference="EN 1992 concrete shear resistance",
+                            equation=_eq(
+                                identifier("k"),
+                                row(
+                                    text("min"),
+                                    operator("("),
+                                    _sum(
+                                        number("1"),
+                                        sqrt(fraction(number("200"), identifier("d"))),
+                                    ),
+                                    operator(","),
+                                    number("2.0"),
+                                    operator(")"),
+                                ),
+                            ),
+                            substitution_equation=_eq(
+                                identifier("k"),
+                                row(
+                                    text("min"),
+                                    operator("("),
+                                    _sum(
+                                        number("1"),
+                                        sqrt(fraction(number("200"), _num(d_mm, 1))),
+                                    ),
+                                    operator(","),
+                                    number("2.0"),
+                                    operator(")"),
+                                ),
+                            ),
+                        ),
+                        CalculationStep(
+                            label="Longitudinal reinforcement ratio",
+                            expression="rho_l = min[As/(bw d), 0.02]",
+                            substitution=(
+                                f"min[{_f(row.selected_bars.provided_area_mm2, 0)} / "
+                                f"({_f(bw_mm, 0)} x {_f(d_mm, 1)}), 0.02]"
+                            ),
+                            result=f"{_f(rho_l, 5)}",
+                            reference="EN 1992 concrete shear resistance",
+                            equation=_eq(
+                                _var("ρ", "l"),
+                                row(
+                                    text("min"),
+                                    operator("("),
+                                    fraction(
+                                        _var("A", "s"),
+                                        _product(_var("b", "w"), identifier("d")),
+                                    ),
+                                    operator(","),
+                                    number("0.02"),
+                                    operator(")"),
+                                ),
+                            ),
+                            substitution_equation=_eq(
+                                _var("ρ", "l"),
+                                row(
+                                    text("min"),
+                                    operator("("),
+                                    fraction(
+                                        _num(row.selected_bars.provided_area_mm2, 0),
+                                        _product(_num(bw_mm, 0), _num(d_mm, 1)),
+                                    ),
+                                    operator(","),
+                                    number("0.02"),
+                                    operator(")"),
+                                ),
+                            ),
+                        ),
+                        CalculationStep(
+                            label="Concrete shear stress resistance",
+                            expression=(
+                                "vRdc = max[(0.18/gamma_c) k (100 rho_l fck)^(1/3), "
+                                "0.035 k^(3/2) sqrt(fck)]"
+                            ),
+                            substitution=(
+                                f"max[0.12 x {_f(k_shear)} x "
+                                f"(100 x {_f(rho_l, 5)} x "
+                                f"{_f(float(project.materials.fck_mpa), 1)})^(1/3), "
+                                f"0.035 x {_f(k_shear)}^(3/2) x "
+                                f"sqrt({_f(float(project.materials.fck_mpa), 1)})]"
+                            ),
+                            result=f"{_f(vrdc_mpa)} MPa",
+                            reference="EN 1992 concrete shear resistance",
+                            equation=_eq(
+                                _var("v", "Rd,c"),
+                                row(
+                                    text("max"),
+                                    operator("("),
+                                    _product(
+                                        fraction(number("0.18"), _var("γ", "c")),
+                                        identifier("k"),
+                                        sup(
+                                            parenthesized(
+                                                _product(
+                                                    number("100"),
+                                                    _var("ρ", "l"),
+                                                    _var("f", "ck"),
+                                                )
+                                            ),
+                                            fraction(number("1"), number("3")),
+                                        ),
+                                    ),
+                                    operator(","),
+                                    _product(
+                                        number("0.035"),
+                                        sup(identifier("k"), fraction(number("3"), number("2"))),
+                                        sqrt(_var("f", "ck")),
+                                    ),
+                                    operator(")"),
+                                ),
+                            ),
+                        ),
+                        CalculationStep(
                             label="Shear resistance",
                             expression="utilization = |VEd| / VRd",
                             substitution=f"{_f(ved)} / {_f(shear_resistance)}",
                             result=f"{_f(row.design.shear_utilization)}",
                             reference="EN 1992-1-1 / EN 1992-2 shear",
                             status="PASS" if row.design.shear_utilization <= 1.0 + 1e-9 else "CHECK",
+                            equation=_eq(
+                                _var("η", "V"),
+                                fraction(absolute(_var("V", "Ed")), _var("V", "Rd")),
+                            ),
+                            substitution_equation=_eq(
+                                _var("η", "V"),
+                                fraction(_num(ved), _num(shear_resistance)),
+                            ),
+                        ),
+                        CalculationStep(
+                            label="Effective tension reinforcement ratio",
+                            expression="rho_p,eff = As / Ac,eff",
+                            substitution=(
+                                f"{_f(row.selected_bars.provided_area_mm2, 0)} / "
+                                f"{_f(row.design.crack.effective_tension_area_mm2, 0)}"
+                            ),
+                            result=f"{_f(row.design.crack.effective_reinforcement_ratio, 5)}",
+                            reference="EN 1992 crack-control effective tension zone",
+                            equation=_eq(
+                                _var("ρ", "p,eff"),
+                                fraction(_var("A", "s"), _var("A", "c,eff")),
+                            ),
+                            substitution_equation=_eq(
+                                _var("ρ", "p,eff"),
+                                fraction(
+                                    _num(row.selected_bars.provided_area_mm2, 0),
+                                    _num(row.design.crack.effective_tension_area_mm2, 0),
+                                ),
+                            ),
+                        ),
+                        CalculationStep(
+                            label="Maximum crack spacing",
+                            expression="sr,max from EC2 7.3.4 spacing expression",
+                            substitution=(
+                                f"c={_f(preferences.design.cover_mm, 1)} mm; "
+                                f"phi={_f(row.selected_bars.bar_diameter_mm, 0)} mm; "
+                                f"rho_p,eff={_f(row.design.crack.effective_reinforcement_ratio, 5)}"
+                            ),
+                            result=f"{_f(row.design.crack.max_crack_spacing_mm)} mm",
+                            reference="EN 1992 crack spacing",
+                            equation=_eq(
+                                _var("s", "r,max"),
+                                _sum(
+                                    _product(number("3.4"), identifier("c")),
+                                    fraction(
+                                        _product(
+                                            number("0.8"),
+                                            number("0.5"),
+                                            number("0.425"),
+                                            identifier("ϕ"),
+                                        ),
+                                        _var("ρ", "p,eff"),
+                                    ),
+                                ),
+                            ),
+                        ),
+                        CalculationStep(
+                            label="Crack width",
+                            expression="wk = sr,max (epsilon_sm - epsilon_cm)",
+                            substitution=(
+                                f"{_f(row.design.crack.max_crack_spacing_mm)} x "
+                                f"{_f(row.design.crack.strain_difference, 7)}"
+                            ),
+                            result=f"{_f(row.design.crack.crack_width_mm)} mm",
+                            reference="EN 1992 serviceability crack control",
+                            equation=_eq(
+                                _var("w", "k"),
+                                _product(
+                                    _var("s", "r,max"),
+                                    parenthesized(
+                                        row(
+                                            _var("ε", "sm"),
+                                            operator("−"),
+                                            _var("ε", "cm"),
+                                        )
+                                    ),
+                                ),
+                            ),
+                            substitution_equation=_eq(
+                                _var("w", "k"),
+                                _product(
+                                    _num(row.design.crack.max_crack_spacing_mm),
+                                    _num(row.design.crack.strain_difference, 7),
+                                ),
+                            ),
                         ),
                         CalculationStep(
                             label="Crack-width check",
@@ -746,6 +950,72 @@ def build_application_calculation_trace(
                             result=f"{_f(row.design.crack.utilization)} utilization",
                             reference="EN 1992 serviceability crack control",
                             status="PASS" if row.design.crack.utilization <= 1.0 + 1e-9 else "CHECK",
+                            equation=row(_var("w", "k"), operator("≤"), _var("w", "lim")),
+                            substitution_equation=row(
+                                _num(row.design.crack.crack_width_mm),
+                                operator("≤"),
+                                _num(preferences.eurocode.crack_limit_mm),
+                            ),
+                        ),
+                        CalculationStep(
+                            label="Effective concrete modulus for deflection",
+                            expression="Ec,eff = Ecm / (1 + phi)",
+                            substitution=(
+                                f"{_f(row.design.deflection.effective_concrete_modulus_mpa)} MPa "
+                                "(engine result after creep adjustment)"
+                            ),
+                            result=f"{_f(row.design.deflection.effective_concrete_modulus_mpa)} MPa",
+                            reference="EC2 serviceability effective modulus",
+                            equation=_eq(
+                                _var("E", "c,eff"),
+                                fraction(
+                                    _var("E", "cm"),
+                                    parenthesized(_sum(number("1"), identifier("φ"))),
+                                ),
+                            ),
+                        ),
+                        CalculationStep(
+                            label="EC2 tension-stiffening interpolation",
+                            expression="delta = zeta delta_II + (1-zeta) delta_I",
+                            substitution=(
+                                f"{_f(row.design.deflection.zeta)} x "
+                                f"{_f(row.design.deflection.fully_cracked_deflection_mm)} + "
+                                f"(1-{_f(row.design.deflection.zeta)}) x "
+                                f"{_f(row.design.deflection.uncracked_deflection_mm)}"
+                            ),
+                            result=f"{_f(row.design.deflection.interpolated_deflection_mm)} mm",
+                            reference="EN 1992 serviceability interpolation between states I and II",
+                            equation=_eq(
+                                identifier("δ"),
+                                _sum(
+                                    _product(identifier("ζ"), _var("δ", "II")),
+                                    _product(
+                                        parenthesized(
+                                            row(number("1"), operator("−"), identifier("ζ"))
+                                        ),
+                                        _var("δ", "I"),
+                                    ),
+                                ),
+                            ),
+                            substitution_equation=_eq(
+                                identifier("δ"),
+                                _sum(
+                                    _product(
+                                        _num(row.design.deflection.zeta),
+                                        _num(row.design.deflection.fully_cracked_deflection_mm),
+                                    ),
+                                    _product(
+                                        parenthesized(
+                                            row(
+                                                number("1"),
+                                                operator("−"),
+                                                _num(row.design.deflection.zeta),
+                                            )
+                                        ),
+                                        _num(row.design.deflection.uncracked_deflection_mm),
+                                    ),
+                                ),
+                            ),
                         ),
                         CalculationStep(
                             label="Deflection check",
@@ -757,6 +1027,19 @@ def build_application_calculation_trace(
                             result=f"{_f(row.design.deflection.utilization)} utilization",
                             reference="Project serviceability deflection criterion",
                             status="PASS" if row.design.deflection.utilization <= 1.0 + 1e-9 else "CHECK",
+                            equation=row(
+                                identifier("δ"),
+                                operator("≤"),
+                                fraction(identifier("L"), identifier("n")),
+                            ),
+                            substitution_equation=row(
+                                _num(row.design.deflection.interpolated_deflection_mm),
+                                operator("≤"),
+                                fraction(
+                                    _num(span_m * 1000.0, 0),
+                                    _num(preferences.eurocode.deflection_limit_span_ratio, 0),
+                                ),
+                            ),
                         ),
                     ),
                 )
