@@ -481,9 +481,14 @@ def verification_dashboard_data(
         )
         for item in report.result_sets
     )
+    envelope_status = (
+        None
+        if report.envelope_comparison is None
+        else ("PASS" if report.envelope_comparison.passes else "REVIEW / FAIL")
+    )
     return VerificationDashboardData(
         source_name=report.source_name,
-        status="PASS" if report.passes else "REVIEW / FAIL",
+        status=envelope_status or ("PASS" if report.passes else "REVIEW / FAIL"),
         imported_count=len(report.result_sets),
         requested_count=len(report.requested_result_ids),
         missing_count=len(report.missing_result_ids),
