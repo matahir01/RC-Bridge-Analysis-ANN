@@ -162,7 +162,7 @@ def open_scrollable_input_dialog(
                     width=field.width,
                 ).grid(row=row, column=1, sticky="ew", pady=4)
             else:
-                variable = string_vars[field.key]
+                variable = dialog_string_vars[field.key]
                 ttk.Entry(
                     frame,
                     textvariable=variable,
