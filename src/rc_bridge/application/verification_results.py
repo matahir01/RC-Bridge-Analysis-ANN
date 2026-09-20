@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass
 
 from rc_bridge.export.external_results import (
@@ -28,13 +29,24 @@ class VerificationResultDatabase:
     def from_normalized_csvs(
         cls,
         normalized_csv_by_result: dict[int, str],
+        *,
+        progress_callback: Callable[[int, int], None] | None = None,
+        cancel_check: Callable[[], bool] | None = None,
     ) -> VerificationResultDatabase:
         records_by_result: dict[int, tuple[VerificationResultValue, ...]] = {}
         member_end_index: dict[int, dict[int, dict[str, dict[str, float]]]] = {}
         node_displacement_index: dict[int, dict[int, float]] = {}
         support_reaction_index: dict[int, dict[int, float]] = {}
 
-        for result_id, csv_text in normalized_csv_by_result.items():
+        total = len(normalized_csv_by_result)
+        for index, (result_id, csv_text) in enumerate(
+            normalized_csv_by_result.items(),
+            start=1,
+        ):
+            if cancel_check is not None and cancel_check():
+                raise RuntimeError(
+                    "Verification import cancelled while indexing external results."
+                )
             records = parse_verification_results_csv(csv_text)
             records_by_result[result_id] = records
             members: dict[int, dict[str, dict[str, float]]] = {}
@@ -62,6 +74,8 @@ class VerificationResultDatabase:
             member_end_index[result_id] = members
             node_displacement_index[result_id] = displacements
             support_reaction_index[result_id] = reactions
+            if progress_callback is not None:
+                progress_callback(index, total)
 
         return cls(
             normalized_csv_by_result=dict(normalized_csv_by_result),
