@@ -4604,12 +4604,12 @@ def main() -> int:
         refresh_load_case_views()
         refresh_dashboard()
 
-    def apply_project() -> None:
+    def apply_project() -> bool:
         try:
             project = project_from_form()
         except (TypeError, ValueError) as exc:
             messagebox.showerror("Project input", str(exc))
-            return
+            return False
         if project != session.project:
             session.replace_project(project)
             clear_results()
@@ -4618,14 +4618,15 @@ def main() -> int:
         refresh_load_case_views()
         refresh_dashboard()
         status_var.set("Project definition applied.")
+        return True
 
-    def apply_load_cases() -> None:
+    def apply_load_cases() -> bool:
         try:
             project = project_from_form()
             updated = load_case_fields_from_form().apply(project)
         except (TypeError, ValueError) as exc:
             messagebox.showerror("Load cases", str(exc))
-            return
+            return False
         if updated != session.project:
             session.replace_project(updated)
             clear_results()
@@ -4634,15 +4635,16 @@ def main() -> int:
         refresh_load_case_views()
         refresh_dashboard()
         status_var.set("Permanent load cases applied.")
+        return True
 
-    def apply_basis() -> None:
+    def apply_basis() -> bool:
         nonlocal displayed_unit
         try:
             project = load_case_fields_from_form().apply(project_from_form())
             preferences = preferences_from_form()
         except (TypeError, ValueError) as exc:
             messagebox.showerror("Design basis", str(exc))
-            return
+            return False
         project_changed = project != session.project
         settings_changed = preferences.analysis != session.preferences.analysis
         if project_changed:
@@ -4659,6 +4661,314 @@ def main() -> int:
             clear_results()
         refresh_dashboard()
         status_var.set("Application design basis applied.")
+        return True
+
+    def _open_ribbon_editor(
+        title: str,
+        sections: tuple[RibbonSection, ...],
+        apply_callback,
+    ) -> None:
+        open_scrollable_input_dialog(
+            parent=root,
+            tk=tk,
+            ttk=ttk,
+            title=title,
+            sections=sections,
+            string_vars=string_vars,
+            bool_vars=bool_vars,
+            apply_callback=apply_callback,
+        )
+
+    def open_project_ribbon_editor() -> None:
+        _open_ribbon_editor(
+            "Project & Geometry",
+            (
+                RibbonSection(
+                    "Bridge layout",
+                    (
+                        RibbonField("name", "Project name"),
+                        RibbonField(
+                            "design_code",
+                            "Design code",
+                            "choice",
+                            tuple(item.value for item in DesignCode),
+                        ),
+                        RibbonField(
+                            "support_system",
+                            "Support system",
+                            "choice",
+                            tuple(item.value for item in SupportSystem),
+                        ),
+                        RibbonField("spans", "Span lengths"),
+                        RibbonField("deck_width", "Deck width"),
+                        RibbonField("carriageway_width", "Carriageway width"),
+                        RibbonField("carriageway_offset", "Carriageway offset"),
+                        RibbonField("girder_count", "Girder count"),
+                        RibbonField("girder_spacing", "Girder spacing"),
+                    ),
+                ),
+            ),
+            apply_project,
+        )
+
+    def open_section_ribbon_editor() -> None:
+        _open_ribbon_editor(
+            "Materials & Girder Section",
+            (
+                RibbonSection(
+                    "Materials and deck",
+                    (
+                        RibbonField("fck", "Concrete fck"),
+                        RibbonField("fyk", "Reinforcement fyk"),
+                        RibbonField("concrete_density", "Concrete density"),
+                        RibbonField("elastic_modulus", "Elastic modulus"),
+                        RibbonField("false_slab_depth", "False slab depth"),
+                        RibbonField("in_situ_depth", "In-situ deck depth"),
+                        RibbonField(
+                            "false_slab_composite",
+                            "False slab participates compositely",
+                            "bool",
+                        ),
+                        RibbonField(
+                            "in_situ_composite",
+                            "In-situ slab participates compositely",
+                            "bool",
+                        ),
+                    ),
+                ),
+                RibbonSection(
+                    "Physical precast section",
+                    (
+                        RibbonField(
+                            "section_type",
+                            "Section type",
+                            "choice",
+                            tuple(item.value for item in SectionType),
+                        ),
+                        RibbonField("rect_width", "Rectangular width"),
+                        RibbonField("rect_depth", "Rectangular depth"),
+                        RibbonField("t_flange_width", "T flange width"),
+                        RibbonField("t_flange_thickness", "T flange thickness"),
+                        RibbonField("t_web_width", "T web width"),
+                        RibbonField("t_total_depth", "T total depth"),
+                        RibbonField("i_top_width", "I top flange width"),
+                        RibbonField("i_top_thickness", "I top flange thickness"),
+                        RibbonField("i_web_width", "I web width"),
+                        RibbonField("i_web_depth", "I web depth"),
+                        RibbonField("i_bottom_width", "I bottom flange width"),
+                        RibbonField("i_bottom_thickness", "I bottom flange thickness"),
+                    ),
+                ),
+            ),
+            apply_project,
+        )
+
+    def open_basis_ribbon_editor() -> None:
+        _open_ribbon_editor(
+            "Design Basis",
+            (
+                RibbonSection(
+                    "Units and ULS factors",
+                    (
+                        RibbonField(
+                            "units",
+                            "Display units",
+                            "choice",
+                            tuple(item.value for item in UnitDisplay),
+                        ),
+                        RibbonField("gamma_g_unfavourable", "gamma G unfavourable"),
+                        RibbonField("gamma_g_favourable", "gamma G favourable"),
+                        RibbonField("gamma_q_traffic", "gamma Q traffic"),
+                        RibbonField("gamma_q_nontraffic", "gamma Q non-traffic"),
+                    ),
+                ),
+                RibbonSection(
+                    "SLS and serviceability",
+                    (
+                        RibbonField("psi1_traffic", "psi1 traffic"),
+                        RibbonField("psi2_traffic", "psi2 traffic"),
+                        RibbonField("psi1_lm2", "psi1 LM2"),
+                        RibbonField("psi0_thermal_uls", "psi0 thermal ULS"),
+                        RibbonField("psi0_thermal_sls", "psi0 thermal SLS"),
+                        RibbonField("psi1_thermal", "psi1 thermal"),
+                        RibbonField("psi2_thermal", "psi2 thermal"),
+                        RibbonField("crack_limit", "Crack-width limit"),
+                        RibbonField("deflection_ratio", "Deflection span ratio"),
+                    ),
+                ),
+            ),
+            apply_basis,
+        )
+
+    def open_analysis_settings_ribbon_editor() -> None:
+        _open_ribbon_editor(
+            "Analysis Settings",
+            (
+                RibbonSection(
+                    "Native grillage / moving-load search",
+                    (
+                        RibbonField("grid_spacing", "Maximum grillage spacing"),
+                        RibbonField("traffic_step", "Traffic movement step"),
+                        RibbonField("max_tandem", "Maximum exhaustive tandem combinations"),
+                    ),
+                ),
+            ),
+            apply_basis,
+        )
+
+    def open_load_ribbon_editor() -> None:
+        _open_ribbon_editor(
+            "Permanent Loads",
+            (
+                RibbonSection(
+                    "Surfacing",
+                    (
+                        RibbonField("load_surfacing_thickness", "Surfacing thickness"),
+                        RibbonField("load_surfacing_density", "Surfacing density"),
+                        RibbonField(
+                            "load_surfacing_extent",
+                            "Surfacing extent",
+                            "choice",
+                            tuple(item.value for item in SurfacingExtent),
+                        ),
+                    ),
+                ),
+                RibbonSection(
+                    "Barrier and services line actions",
+                    (
+                        RibbonField("load_left_barrier", "Left barrier load"),
+                        RibbonField("load_right_barrier", "Right barrier load"),
+                        RibbonField("load_left_services", "Left services load"),
+                        RibbonField("load_right_services", "Right services load"),
+                        RibbonField("load_left_services_y", "Left services y-coordinate"),
+                        RibbonField("load_right_services_y", "Right services y-coordinate"),
+                    ),
+                ),
+            ),
+            apply_load_cases,
+        )
+
+    def open_actions_ribbon_editor() -> None:
+        _open_ribbon_editor(
+            "Additional Actions",
+            (
+                RibbonSection(
+                    "Traffic groups",
+                    (
+                        RibbonField("action_braking_enabled", "Enable braking", "bool"),
+                        RibbonField("action_braking_length", "Braking loaded length"),
+                        RibbonField("action_braking_alpha_Q1", "Braking alpha Q1"),
+                        RibbonField("action_braking_alpha_q1", "Braking alpha q1"),
+                        RibbonField("action_gr2_ts_factor", "gr2 tandem factor"),
+                        RibbonField("action_gr2_udl_factor", "gr2 UDL factor"),
+                        RibbonField("action_pedestrian_enabled", "Enable pedestrian", "bool"),
+                        RibbonField("action_pedestrian_q", "Pedestrian q"),
+                        RibbonField("action_pedestrian_reduced_q", "Reduced pedestrian q"),
+                        RibbonField("action_left_footway", "Left footway width"),
+                        RibbonField("action_right_footway", "Right footway width"),
+                        RibbonField("action_lm2_enabled", "Enable LM2", "bool"),
+                        RibbonField("action_lm2_beta", "LM2 beta"),
+                        RibbonField("action_lm2_x_step", "LM2 longitudinal step"),
+                        RibbonField("action_lm2_y_step", "LM2 transverse step"),
+                    ),
+                ),
+                RibbonSection(
+                    "Thermal, barrier and construction",
+                    (
+                        RibbonField("action_thermal_enabled", "Enable thermal", "bool"),
+                        RibbonField("action_thermal_alpha", "Thermal expansion coefficient"),
+                        RibbonField("action_thermal_expansion", "Uniform expansion"),
+                        RibbonField("action_thermal_contraction", "Uniform contraction"),
+                        RibbonField("action_thermal_gradient_heat", "Heating gradient"),
+                        RibbonField("action_thermal_gradient_cool", "Cooling gradient"),
+                        RibbonField("action_thermal_restraint", "Thermal restraint"),
+                        RibbonField("action_barrier_enabled", "Enable barrier accidental", "bool"),
+                        RibbonField("action_barrier_force", "Barrier force"),
+                        RibbonField("action_barrier_height", "Barrier load height"),
+                        RibbonField("action_construction_enabled", "Enable construction action", "bool"),
+                        RibbonField("action_construction_udl", "Construction UDL"),
+                    ),
+                ),
+                RibbonSection(
+                    "Wind and bearing capacities",
+                    (
+                        RibbonField("action_wind_enabled", "Enable wind", "bool"),
+                        RibbonField("action_wind_velocity", "Wind velocity"),
+                        RibbonField("action_wind_density", "Air density"),
+                        RibbonField("action_wind_exposure", "Exposure factor"),
+                        RibbonField("action_wind_transverse_cf", "Transverse force coefficient"),
+                        RibbonField("action_wind_vertical_cf", "Vertical force coefficient"),
+                        RibbonField("action_wind_height", "Wind reference height"),
+                        RibbonField("action_bearing_force_capacity", "Bearing longitudinal capacity"),
+                        RibbonField("action_bearing_transverse_capacity", "Bearing transverse capacity"),
+                        RibbonField("action_bearing_movement_capacity", "Bearing movement capacity"),
+                    ),
+                ),
+            ),
+            apply_basis,
+        )
+
+    def open_design_ribbon_editor() -> None:
+        _open_ribbon_editor(
+            "Girder Design Settings",
+            (
+                RibbonSection(
+                    "Durability and reinforcement",
+                    (
+                        RibbonField("design_cover", "Nominal cover"),
+                        RibbonField("design_durability_cover", "Durability cover"),
+                        RibbonField("design_cover_deviation", "Cover deviation"),
+                        RibbonField("design_aggregate", "Maximum aggregate size"),
+                        RibbonField("design_link_diameter", "Nominal link diameter"),
+                        RibbonField("design_cot_theta", "cot theta"),
+                        RibbonField("design_creep", "Creep coefficient"),
+                        RibbonField("design_beta", "Effective stiffness beta"),
+                        RibbonField("design_crack_kt", "Crack kt"),
+                        RibbonField(
+                            "design_crack_combination",
+                            "Crack combination",
+                            "choice",
+                            tuple(item.value for item in SLSCombinationChoice),
+                        ),
+                        RibbonField(
+                            "design_deflection_combination",
+                            "Deflection combination",
+                            "choice",
+                            tuple(item.value for item in SLSCombinationChoice),
+                        ),
+                    ),
+                ),
+            ),
+            apply_basis,
+        )
+
+    def open_deck_ribbon_editor() -> None:
+        _open_ribbon_editor(
+            "Deck & Fatigue Settings",
+            (
+                RibbonSection(
+                    "Local deck design",
+                    (
+                        RibbonField("deck_dispersion_ratio", "Load dispersion ratio"),
+                        RibbonField("deck_additional_dispersion", "Additional dispersion"),
+                        RibbonField("deck_nominal_bar_diameter", "Nominal deck bar diameter"),
+                    ),
+                ),
+                RibbonSection(
+                    "FLM3 fatigue",
+                    (
+                        RibbonField("fatigue_movement_step", "Vehicle movement step"),
+                        RibbonField("fatigue_section_step", "Section evaluation step"),
+                        RibbonField("fatigue_axle_factor", "Fatigue axle factor"),
+                        RibbonField("fatigue_lambda_s", "Longitudinal steel lambda_s"),
+                        RibbonField("fatigue_strength", "Longitudinal fatigue strength"),
+                        RibbonField("fatigue_link_lambda_s", "Link lambda_s"),
+                        RibbonField("fatigue_link_strength", "Link fatigue strength"),
+                    ),
+                ),
+            ),
+            apply_basis,
+        )
 
     def run_analysis() -> None:
         try:
