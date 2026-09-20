@@ -26,7 +26,10 @@ from rc_bridge.export.midas_mct import midas_result_name_map
 from rc_bridge.export.model_verification_package import (
     build_model_verification_export_package,
 )
-from rc_bridge.export.staad_anl import parse_staad_anl_results
+from rc_bridge.export.staad_anl import (
+    parse_staad_anl_result_sets,
+    parse_staad_anl_results,
+)
 from rc_bridge.export.table_mapping import (
     midas_civil_horizontal_grillage_profile,
     normalize_external_result_tables,
@@ -422,21 +425,20 @@ def import_staad_anl_verification_results(
     expected = native_expected_results_by_id(model, requested)
     policy = tolerance or VerificationImportTolerance()
 
+    external_by_id = parse_staad_anl_result_sets(
+        staad_anl_text,
+        model,
+        result_ids=requested,
+    )
+
     imported: list[ImportedVerificationResultSet] = []
     missing: list[int] = []
     for result_id in requested:
         kind, result_model, expected_csv = expected[result_id]
-        try:
-            external_csv = parse_staad_anl_results(
-                staad_anl_text,
-                model,
-                load_case_id=result_id,
-            )
-        except ValueError as exc:
-            if "does not contain selected-load results" in str(exc):
-                missing.append(result_id)
-                continue
-            raise
+        external_csv = external_by_id.get(result_id)
+        if external_csv is None:
+            missing.append(result_id)
+            continue
         imported.append(
             _assemble_result_set(
                 result_id=result_id,
