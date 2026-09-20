@@ -924,36 +924,77 @@ def write_native_lm1_pdf_report(
         for block in calculation_trace.blocks:
             story.append(Paragraph(escape(block.title), heading3))
             story.append(Paragraph(escape(block.scope), small))
-            trace_rows = [["Reference", "Calculation / substitution", "Result"]]
+            trace_rows = [["Reference", "Worked calculation", "Result / check"]]
             for step in block.steps:
-                calc_text = (
-                    f"<b>{escape(step.label)}</b><br/>"
-                    f"{escape(step.expression)}<br/>"
-                    f"= {escape(step.substitution)}"
+                calculation_cell: list = [
+                    Paragraph(escape(step.label), calc_label_style),
+                    Paragraph("EQUATION", equation_caption_style),
+                ]
+                if step.equation is not None:
+                    calculation_cell.append(
+                        MathFormulaFlowable(step.equation, font_size=9.5)
+                    )
+                else:
+                    calculation_cell.append(
+                        Paragraph(escape(step.expression), small)
+                    )
+
+                calculation_cell.append(
+                    Paragraph("NUMERICAL SUBSTITUTION", equation_caption_style)
                 )
-                result_text = f"<b>{escape(step.result)}</b>"
+                if step.substitution_equation is not None:
+                    calculation_cell.append(
+                        MathFormulaFlowable(
+                            step.substitution_equation,
+                            font_size=9.0,
+                        )
+                    )
+                else:
+                    calculation_cell.append(
+                        Paragraph(escape(step.substitution), small)
+                    )
+
+                result_cell: list = [
+                    Paragraph(escape(step.result), result_style)
+                ]
                 if step.status:
-                    result_text += f"<br/><b>{escape(step.status)}</b>"
+                    status_colour = "#1f6b45" if step.status == "PASS" else "#9a5a16"
+                    result_cell.append(
+                        Paragraph(
+                            f'<font color="{status_colour}"><b>{escape(step.status)}</b></font>',
+                            small,
+                        )
+                    )
+
                 trace_rows.append(
                     [
-                        Paragraph(escape(step.reference), small),
-                        Paragraph(calc_text, small),
-                        Paragraph(result_text, small),
+                        Paragraph(escape(step.reference), reference_style),
+                        calculation_cell,
+                        result_cell,
                     ]
                 )
             trace_table = Table(
                 trace_rows,
-                colWidths=[42 * mm, 101 * mm, 37 * mm],
+                colWidths=[35 * mm, 110 * mm, 35 * mm],
                 repeatRows=1,
+                hAlign="LEFT",
             )
             trace_table.setStyle(
                 TableStyle(
                     [
-                        ("GRID", (0, 0), (-1, -1), 0.25, colors.grey),
-                        ("BACKGROUND", (0, 0), (-1, 0), colors.whitesmoke),
+                        ("GRID", (0, 0), (-1, -1), 0.35, line_colour),
+                        ("BACKGROUND", (0, 0), (-1, 0), navy),
+                        ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
                         ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
-                        ("FONTSIZE", (0, 0), (-1, -1), 7.0),
+                        ("FONTSIZE", (0, 0), (-1, 0), 7.5),
+                        ("ALIGN", (0, 0), (-1, 0), "LEFT"),
+                        ("BACKGROUND", (0, 1), (0, -1), pale_reference),
+                        ("BACKGROUND", (-1, 1), (-1, -1), pale_result),
                         ("VALIGN", (0, 0), (-1, -1), "TOP"),
+                        ("LEFTPADDING", (0, 0), (-1, -1), 5),
+                        ("RIGHTPADDING", (0, 0), (-1, -1), 5),
+                        ("TOPPADDING", (0, 1), (-1, -1), 6),
+                        ("BOTTOMPADDING", (0, 1), (-1, -1), 6),
                     ]
                 )
             )
