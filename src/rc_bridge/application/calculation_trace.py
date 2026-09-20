@@ -458,6 +458,22 @@ def build_application_calculation_trace(
                         substitution=" + ".join(_f(value) for value in components),
                         result=f"{_f(row.total_equivalent_kn_m)} kN/m",
                         reference="Project permanent-action model and physical self-weight",
+                        equation=_eq(
+                            _var("G", "k"),
+                            _sum(
+                                _var("g", "girder"),
+                                _var("g", "false"),
+                                _var("g", "insitu"),
+                                _var("g", "surf"),
+                                _var("g", "bar"),
+                                _var("g", "serv"),
+                                _var("g", "other"),
+                            ),
+                        ),
+                        substitution_equation=_eq(
+                            _var("G", "k"),
+                            _sum(*(_num(value) for value in components)),
+                        ),
                     ),
                 ),
             )
