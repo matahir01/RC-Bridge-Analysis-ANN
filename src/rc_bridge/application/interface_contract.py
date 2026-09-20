@@ -155,11 +155,22 @@ def build_application_view_snapshot(
             if envelope_status is None
             else ("PASS" if envelope_status else "FAIL / REVIEW")
         )
+        combination_envelope_status = getattr(
+            verification,
+            "combination_envelope_comparison_passes",
+            None,
+        )
+        combination_envelope_text = (
+            "not run"
+            if combination_envelope_status is None
+            else ("PASS" if combination_envelope_status else "FAIL / REVIEW")
+        )
         verification_summary = (
             f"{verification.source_name}: import {import_status} "
             f"({imported}/{requested}); detailed numerical agreement "
             f"{'PASS' if verification.detailed_comparisons_pass else 'FAIL / REVIEW'}; "
-            f"engineering envelope {envelope_text}; overall numerical {numerical_status}. "
+            f"engineering envelope {envelope_text}; combination envelope "
+            f"{combination_envelope_text}; overall numerical {numerical_status}. "
             "Engineering acceptance remains PENDING model/source-equivalence review."
         )
 
