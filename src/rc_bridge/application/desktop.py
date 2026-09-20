@@ -5476,7 +5476,7 @@ def main() -> int:
             stage_ranges = {
                 "native": (0.0, 35.0, "Solving native result sets"),
                 "parse": (35.0, 30.0, "Parsing STAAD output"),
-                "external": (65.0, 5.0, "Indexing external results"),
+                "index": (65.0, 5.0, "Indexing external results"),
                 "compare": (70.0, 30.0, "Comparing result sets"),
             }
             base, span, label = stage_ranges.get(
