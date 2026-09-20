@@ -18,11 +18,13 @@ from rc_bridge.application.math_notation import (
     number,
     operator,
     parenthesized,
-    row as math_row,
     sqrt,
     sub,
     sup,
     text,
+)
+from rc_bridge.application.math_notation import (
+    row as math_row,
 )
 from rc_bridge.application.preferences import ApplicationPreferences
 from rc_bridge.core.models import ProjectInput
