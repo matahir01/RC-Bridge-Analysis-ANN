@@ -8,10 +8,10 @@ from rc_bridge.export.verification_model import (
     VerificationLoadCase,
     VerificationMaterial,
     VerificationModel,
+    VerificationNode,
     VerificationSection,
     VerificationSupport,
     VerificationUniformLoad,
-    VerificationNode,
 )
 from rc_bridge.workflow.lm1_grillage_search import (
     LM1GirderGoverningDeflection,
