@@ -12,6 +12,10 @@ from rc_bridge.analysis.prepared_grillage_solver import (
     prepare_vertical_grillage,
     solve_prepared_vertical_grillage,
 )
+from rc_bridge.application.verification_envelopes import (
+    StaadEnvelopeComparisonReport,
+    compare_staad_lm1_envelopes,
+)
 from rc_bridge.export.external_results import (
     ExternalResultComparisonReport,
     ExternalResultCoverageReport,
@@ -34,10 +38,6 @@ from rc_bridge.export.verification_model import (
     VerificationNodalLoad,
     VerificationPointLoad,
     VerificationUniformLoad,
-)
-from rc_bridge.application.verification_envelopes import (
-    StaadEnvelopeComparisonReport,
-    compare_staad_lm1_envelopes,
 )
 from rc_bridge.workflow.lm1_grillage_search import ProjectNativeLM1GrillageSearchResult
 
@@ -701,5 +701,5 @@ def write_verification_import_evidence(
         comparisons_csv=comparisons_path,
         normalized_result_files=tuple(normalized_files),
         expected_result_files=tuple(expected_files),
-    )from rc_bridge.workflow.lm1_grillage_search import ProjectNativeLM1GrillageSearchResult
+    )
 
