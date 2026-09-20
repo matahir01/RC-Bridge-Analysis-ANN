@@ -139,6 +139,23 @@ def build_application_view_snapshot(
     if verification is None:
         verification_summary = "No external Stage-5 result import yet."
         verification_state = "pending"
+    elif verification.envelope_comparison is not None:
+        envelope = verification.envelope_comparison
+        verification_state = "complete" if envelope.passes else "review"
+        max_difference = envelope.maximum_relative_difference
+        verification_summary = (
+            f"{verification.source_name}: governing-envelope "
+            f"{'PASS' if envelope.passes else 'REVIEW'}"
+            + (
+                ""
+                if max_difference is None
+                else f"; max difference {100.0 * max_difference:.2f}%"
+            )
+            + (
+                f". Raw diagnostic sets: {len(verification.result_sets)}/"
+                f"{len(verification.requested_result_ids)} imported."
+            )
+        )
     elif verification.passes:
         verification_summary = (
             f"{verification.source_name}: numerical comparison PASS "

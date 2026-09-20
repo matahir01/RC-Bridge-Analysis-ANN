@@ -135,6 +135,35 @@ def configure_desktop_theme(root, ttk) -> DesktopPalette:
         foreground=[("disabled", "#F4F7FB")],
     )
     style.configure(
+        "Ribbon.TButton",
+        background=palette.surface,
+        foreground=palette.ink,
+        bordercolor=palette.border,
+        padding=(12, 10),
+        anchor="center",
+        font=("Segoe UI Semibold", 9),
+    )
+    style.map(
+        "Ribbon.TButton",
+        background=[("active", palette.surface_muted)],
+        foreground=[("active", palette.primary)],
+    )
+    style.configure(
+        "RibbonGroup.TLabelframe",
+        background=palette.surface,
+        bordercolor=palette.border,
+        relief="solid",
+        borderwidth=1,
+        padding=(5, 3),
+    )
+    style.configure(
+        "RibbonGroup.TLabelframe.Label",
+        background=palette.surface,
+        foreground=palette.ink_muted,
+        font=("Segoe UI", 8),
+    )
+
+    style.configure(
         "Secondary.TButton",
         background=palette.surface,
         foreground=palette.primary,

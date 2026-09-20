@@ -606,6 +606,7 @@ class BridgeApplicationSession:
             staad_anl_text=source.read_text(encoding="utf-8", errors="replace"),
             source_name="STAAD.Pro",
             tolerance=tolerance,
+            lm1=self.last_lm1_search,
         )
         self.last_verification_import = report
         return report
@@ -663,7 +664,7 @@ class BridgeApplicationSession:
         *,
         base_name: str = "application_verification",
     ) -> WrittenVerificationCampaign:
-        """Export the complete available Stage-7 MIDAS/STAAD verification campaign."""
+        """Export the complete available MIDAS/STAAD verification campaign."""
 
         if self.last_lm1_search is None:
             raise RuntimeError(
