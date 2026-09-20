@@ -305,6 +305,70 @@ def build_model_verification_export_package(
         "member_count": len(model.beams),
         "section_count": len(model.sections),
         "support_count": len(model.supports),
+        "model_audit": {
+            "nodes": [
+                {
+                    "node_id": node.node_id,
+                    "x_m": node.x_m,
+                    "y_m": node.y_m,
+                    "z_m": node.z_m,
+                }
+                for node in model.nodes
+            ],
+            "members": [
+                {
+                    "member_id": beam.member_id,
+                    "node_i": beam.node_i,
+                    "node_j": beam.node_j,
+                    "material_id": beam.material_id,
+                    "section_id": beam.section_id,
+                    "beta_angle_deg": beam.beta_angle_deg,
+                }
+                for beam in model.beams
+            ],
+            "materials": [
+                {
+                    "material_id": material.material_id,
+                    "name": material.name,
+                    "elastic_modulus_kn_m2": material.elastic_modulus_kn_m2,
+                    "poisson_ratio": material.poisson_ratio,
+                    "weight_density_kn_m3": material.weight_density_kn_m3,
+                    "thermal_expansion_per_c": material.thermal_expansion_per_c,
+                }
+                for material in model.materials
+            ],
+            "sections": [
+                {
+                    "section_id": section.section_id,
+                    "name": section.name,
+                    "area_m2": section.area_m2,
+                    "torsion_constant_m4": section.torsion_constant_m4,
+                    "iy_m4": section.iy_m4,
+                    "iz_m4": section.iz_m4,
+                    "shear_area_y_m2": section.shear_area_y_m2,
+                    "shear_area_z_m2": section.shear_area_z_m2,
+                }
+                for section in model.sections
+            ],
+            "supports": [
+                {
+                    "node_id": support.node_id,
+                    "restraint_code": support.restraint_code,
+                }
+                for support in model.supports
+            ],
+        },
+        "acceptance_review_requirements": [
+            "confirm the analysed external model is the exported model without unreviewed edits",
+            "confirm node coordinates, member connectivity and bridge geometry",
+            "confirm member section properties and assignments",
+            "confirm analysis material properties",
+            "confirm supports/releases/restraints",
+            "confirm primary load magnitudes, directions and positions",
+            "confirm load-combination membership and factors",
+            "confirm result axes/sign conventions and semantic component mapping",
+            "record external solver version and source/run reference",
+        ],
         "load_cases": [case.name for case in model.load_cases],
         "load_combinations": [
             {

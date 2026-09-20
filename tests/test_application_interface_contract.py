@@ -98,4 +98,29 @@ def test_snapshot_never_marks_external_verification_complete_from_envelope_only(
     assert verification.state == "review"
     assert "detailed numerical agreement FAIL / REVIEW" in verification.detail
     assert "engineering envelope PASS" in verification.detail
-    assert "Engineering acceptance remains PENDING" in verification.detail
+    assert "Engineering acceptance PENDING REVIEW" in verification.detail
+
+
+
+def test_snapshot_marks_verification_complete_only_after_engineering_acceptance() -> None:
+    session = _session()
+    session.last_verification_import = SimpleNamespace(
+        source_name="STAAD.Pro",
+        result_sets=(object(), object()),
+        requested_result_ids=(1, 2),
+        import_complete=True,
+        detailed_comparisons_pass=True,
+        envelope_comparison_passes=True,
+        combination_envelope_comparison_passes=True,
+        numerical_agreement_passes=True,
+        engineering_accepted=True,
+        engineering_acceptance_status="ACCEPTED",
+        engineering_review=None,
+    )
+
+    snapshot = build_application_view_snapshot(session)
+    verification = next(stage for stage in snapshot.stages if stage.key == "verification")
+
+    assert verification.state == "complete"
+    assert "overall numerical PASS" in verification.detail
+    assert "Engineering acceptance ACCEPTED" in verification.detail

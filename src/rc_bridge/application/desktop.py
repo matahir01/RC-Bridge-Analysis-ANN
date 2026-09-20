@@ -57,6 +57,7 @@ from rc_bridge.application.project_editor import (
     application_default_project,
 )
 from rc_bridge.application.session import BridgeApplicationSession
+from rc_bridge.application.verification_import import VerificationEngineeringReview
 from rc_bridge.core.models import DesignCode, SectionType, SupportSystem
 from rc_bridge.workflow.lm1_grillage_search import LM1SearchCancelled
 from rc_bridge.workflow.project_bridge import SLSCombinationChoice
@@ -2313,6 +2314,11 @@ def main() -> int:
         text="Import MIDAS tables",
     )
     import_midas_button.pack(side=tk.LEFT, padx=6)
+    engineering_review_button = ttk.Button(
+        verification_import_buttons,
+        text="Engineering review",
+    )
+    engineering_review_button.pack(side=tk.LEFT, padx=6)
     save_verification_evidence_button = ttk.Button(
         verification_import_buttons,
         text="Save comparison evidence",
@@ -2326,6 +2332,7 @@ def main() -> int:
             export_button,
             import_staad_button,
             import_midas_button,
+            engineering_review_button,
             save_verification_evidence_button,
         )
     )
@@ -2995,7 +3002,7 @@ def main() -> int:
         envelope = report.envelope_comparison
         combination_envelope = report.combination_envelope_comparison
         verification_status_metric_var.set(dashboard.status)
-        verification_acceptance_metric_var.set("PENDING REVIEW")
+        verification_acceptance_metric_var.set(report.engineering_acceptance_status)
         verification_coverage_metric_var.set(
             f"{dashboard.imported_count}/{dashboard.requested_count}"
         )
@@ -4693,7 +4700,8 @@ def main() -> int:
                             f"{'PASS' if session.last_verification_import.passes else 'REVIEW / FAIL'}; "
                             f"{len(session.last_verification_import.result_sets)}/"
                             f"{len(session.last_verification_import.requested_result_ids)} "
-                            "Stage-5 result sets imported."
+                            "Stage-5 result sets imported; engineering acceptance "
+                            f"{session.last_verification_import.engineering_acceptance_status}."
                         )
                     )
                 )
@@ -5518,7 +5526,7 @@ def main() -> int:
             f"{('NOT RUN' if report.envelope_comparison_passes is None else ('PASS' if report.envelope_comparison_passes else 'REVIEW / FAIL'))}; "
             f"combination envelope "
             f"{('NOT RUN' if report.combination_envelope_comparison_passes is None else ('PASS' if report.combination_envelope_comparison_passes else 'REVIEW / FAIL'))}; "
-            f"engineering acceptance PENDING model/source-equivalence review."
+            f"engineering acceptance {report.engineering_acceptance_status}."
         )
         refresh_dashboard()
 
@@ -5604,6 +5612,176 @@ def main() -> int:
             ),
             on_success=lambda report, elapsed: show_verification_import(report),
         )
+
+    def open_engineering_review() -> None:
+        report = session.last_verification_import
+        if report is None:
+            messagebox.showinfo(
+                "Engineering acceptance review",
+                "Import STAAD or MIDAS Stage-5 results first.",
+            )
+            return
+
+        existing = report.engineering_review
+        dialog = tk.Toplevel(root)
+        dialog.title("Engineering acceptance review")
+        dialog.geometry("720x680")
+        dialog.minsize(620, 560)
+        dialog.transient(root)
+        dialog.grab_set()
+
+        outer = ttk.Frame(dialog, padding=14)
+        outer.pack(fill=tk.BOTH, expand=True)
+        ttk.Label(
+            outer,
+            text=(
+                "Record the non-numerical checks required before external results can "
+                "count as accepted engineering evidence. Tick a check only after it has "
+                "been verified against the exported Stage-5 model."
+            ),
+            style="Muted.TLabel",
+            wraplength=660,
+            justify=tk.LEFT,
+        ).pack(fill=tk.X, pady=(0, 12))
+
+        metadata = ttk.LabelFrame(
+            outer,
+            text="External source",
+            padding=10,
+        )
+        metadata.pack(fill=tk.X, pady=(0, 10))
+        source_reference_var = tk.StringVar(
+            value="" if existing is None else existing.source_reference
+        )
+        solver_version_var = tk.StringVar(
+            value="" if existing is None else existing.solver_version
+        )
+        ttk.Label(metadata, text="Source reference / file / run ID").grid(
+            row=0, column=0, sticky="w", padx=(0, 8), pady=4
+        )
+        ttk.Entry(metadata, textvariable=source_reference_var, width=54).grid(
+            row=0, column=1, sticky="ew", pady=4
+        )
+        ttk.Label(metadata, text="Solver version").grid(
+            row=1, column=0, sticky="w", padx=(0, 8), pady=4
+        )
+        ttk.Entry(metadata, textvariable=solver_version_var, width=54).grid(
+            row=1, column=1, sticky="ew", pady=4
+        )
+        metadata.columnconfigure(1, weight=1)
+
+        checks_frame = ttk.LabelFrame(
+            outer,
+            text="Model / result equivalence checks",
+            padding=10,
+        )
+        checks_frame.pack(fill=tk.X, pady=(0, 10))
+        check_specs = (
+            (
+                "exported_model_identity_verified",
+                "The analysed external model is the exported Stage-5 model, with no unreviewed edits.",
+            ),
+            (
+                "geometry_equivalent",
+                "Node coordinates, member connectivity and bridge geometry are equivalent.",
+            ),
+            (
+                "section_properties_equivalent",
+                "Section A/J/Iy/Iz and member assignments are equivalent.",
+            ),
+            (
+                "material_properties_equivalent",
+                "Material stiffness and other analysis material properties are equivalent.",
+            ),
+            (
+                "boundary_conditions_equivalent",
+                "Supports, releases/restraints and boundary conditions are equivalent.",
+            ),
+            (
+                "loading_equivalent",
+                "Primary load magnitudes, directions, positions and self-weight definitions are equivalent.",
+            ),
+            (
+                "load_combinations_equivalent",
+                "Load-combination IDs, factors and included primary cases are equivalent.",
+            ),
+            (
+                "result_axes_verified",
+                "External result axes/sign conventions and native semantic mappings are verified.",
+            ),
+        )
+        review_vars: dict[str, tk.BooleanVar] = {}
+        for row, (key, label) in enumerate(check_specs):
+            value = False if existing is None else bool(getattr(existing, key))
+            variable = tk.BooleanVar(value=value)
+            review_vars[key] = variable
+            ttk.Checkbutton(
+                checks_frame,
+                text=label,
+                variable=variable,
+            ).grid(row=row, column=0, sticky="w", pady=3)
+
+        notes_frame = ttk.LabelFrame(outer, text="Review notes", padding=8)
+        notes_frame.pack(fill=tk.BOTH, expand=True)
+        notes_text = tk.Text(notes_frame, height=6, wrap="word")
+        notes_text.pack(fill=tk.BOTH, expand=True)
+        if existing is not None and existing.notes:
+            notes_text.insert("1.0", existing.notes)
+
+        actions = ttk.Frame(outer)
+        actions.pack(fill=tk.X, pady=(12, 0))
+
+        def apply_review() -> None:
+            review = VerificationEngineeringReview(
+                source_reference=source_reference_var.get().strip(),
+                solver_version=solver_version_var.get().strip(),
+                exported_model_identity_verified=review_vars[
+                    "exported_model_identity_verified"
+                ].get(),
+                geometry_equivalent=review_vars["geometry_equivalent"].get(),
+                section_properties_equivalent=review_vars[
+                    "section_properties_equivalent"
+                ].get(),
+                material_properties_equivalent=review_vars[
+                    "material_properties_equivalent"
+                ].get(),
+                boundary_conditions_equivalent=review_vars[
+                    "boundary_conditions_equivalent"
+                ].get(),
+                loading_equivalent=review_vars["loading_equivalent"].get(),
+                load_combinations_equivalent=review_vars[
+                    "load_combinations_equivalent"
+                ].get(),
+                result_axes_verified=review_vars["result_axes_verified"].get(),
+                notes=notes_text.get("1.0", tk.END).strip(),
+            )
+            updated = session.set_stage5_engineering_review(review)
+            dialog.grab_release()
+            dialog.destroy()
+            show_verification_import(updated)
+            if review.complete:
+                status_var.set(
+                    "Engineering review complete; final acceptance is "
+                    f"{updated.engineering_acceptance_status}."
+                )
+            else:
+                status_var.set(
+                    "Engineering review saved but remains incomplete: "
+                    + ", ".join(review.missing_checks())
+                    + "."
+                )
+
+        ttk.Button(actions, text="Cancel", command=dialog.destroy).pack(
+            side=tk.RIGHT, padx=(6, 0)
+        )
+        ttk.Button(
+            actions,
+            text="Apply review",
+            style="Primary.TButton",
+            command=apply_review,
+        ).pack(side=tk.RIGHT)
+
+        dialog.bind("<Escape>", lambda _event: dialog.destroy())
 
     def save_verification_evidence() -> None:
         if session.last_verification_import is None:
@@ -5723,6 +5901,7 @@ def main() -> int:
     export_button.configure(command=export_verification)
     import_staad_button.configure(command=import_staad_verification_results)
     import_midas_button.configure(command=import_midas_verification_results)
+    engineering_review_button.configure(command=open_engineering_review)
     save_verification_evidence_button.configure(command=save_verification_evidence)
 
     menu = tk.Menu(root)
@@ -5779,6 +5958,10 @@ def main() -> int:
     verification_menu.add_command(
         label="Import MIDAS result tables...",
         command=import_midas_verification_results,
+    )
+    verification_menu.add_command(
+        label="Engineering acceptance review...",
+        command=open_engineering_review,
     )
     verification_menu.add_command(
         label="Save comparison evidence...",
