@@ -26,10 +26,7 @@ from rc_bridge.export.midas_mct import midas_result_name_map
 from rc_bridge.export.model_verification_package import (
     build_model_verification_export_package,
 )
-from rc_bridge.export.staad_anl import (
-    parse_staad_anl_result_sets,
-    parse_staad_anl_results,
-)
+from rc_bridge.export.staad_anl import parse_staad_anl_result_sets
 from rc_bridge.export.table_mapping import (
     midas_civil_horizontal_grillage_profile,
     normalize_external_result_tables,
