@@ -23,7 +23,18 @@ class RibbonSection:
 def _ribbon_field_keys(
     sections: tuple[RibbonSection, ...],
 ) -> tuple[set[str], set[str]]:
-    string_keys, bool_keys = _ribbon_field_keys(sections)
+    string_keys = {
+        field.key
+        for section in sections
+        for field in section.fields
+        if field.kind != "bool"
+    }
+    bool_keys = {
+        field.key
+        for section in sections
+        for field in section.fields
+        if field.kind == "bool"
+    }
     return string_keys, bool_keys
 
 
