@@ -307,6 +307,20 @@ def _combination_blocks(
                         ),
                         result=f"{_f(row.uls.moment_knm)} kNm",
                         reference="EN 1990 persistent design situation; EN 1991-2 traffic action",
+                        equation=_eq(
+                            _var("M", "Ed"),
+                            _sum(
+                                _product(_var("γ", "G"), _var("M", "Gk")),
+                                _product(_var("γ", "Q"), _var("M", "Qk")),
+                            ),
+                        ),
+                        substitution_equation=_eq(
+                            _var("M", "Ed"),
+                            _sum(
+                                _product(number(f"{ec.gamma_g_unfavourable:g}"), _num(g_m)),
+                                _product(number(f"{ec.gamma_q_traffic:g}"), _num(q_m)),
+                            ),
+                        ),
                     ),
                     CalculationStep(
                         label="ULS shear",
@@ -317,6 +331,20 @@ def _combination_blocks(
                         ),
                         result=f"{_f(row.uls.shear_kn)} kN",
                         reference="EN 1990 persistent design situation; EN 1991-2 traffic action",
+                        equation=_eq(
+                            _var("V", "Ed"),
+                            _sum(
+                                _product(_var("γ", "G"), _var("V", "Gk")),
+                                _product(_var("γ", "Q"), _var("V", "Qk")),
+                            ),
+                        ),
+                        substitution_equation=_eq(
+                            _var("V", "Ed"),
+                            _sum(
+                                _product(number(f"{ec.gamma_g_unfavourable:g}"), _num(g_v)),
+                                _product(number(f"{ec.gamma_q_traffic:g}"), _num(q_v)),
+                            ),
+                        ),
                     ),
                     CalculationStep(
                         label="SLS characteristic moment",
@@ -324,6 +352,14 @@ def _combination_blocks(
                         substitution=f"{_f(g_m)} + {_f(q_m)}",
                         result=f"{_f(row.sls_characteristic.moment_knm)} kNm",
                         reference="EN 1990 characteristic serviceability combination",
+                        equation=_eq(
+                            identifier("M"),
+                            _sum(_var("M", "Gk"), _var("M", "Qk")),
+                        ),
+                        substitution_equation=_eq(
+                            identifier("M"),
+                            _sum(_num(g_m), _num(q_m)),
+                        ),
                     ),
                     CalculationStep(
                         label="SLS frequent moment",
@@ -333,6 +369,20 @@ def _combination_blocks(
                         ),
                         result=f"{_f(row.sls_frequent.moment_knm)} kNm",
                         reference="EN 1990 frequent serviceability combination",
+                        equation=_eq(
+                            identifier("M"),
+                            _sum(
+                                _var("M", "Gk"),
+                                _product(_var("ψ", "1"), _var("M", "Qk")),
+                            ),
+                        ),
+                        substitution_equation=_eq(
+                            identifier("M"),
+                            _sum(
+                                _num(g_m),
+                                _product(number(f"{ec.psi1_traffic:g}"), _num(q_m)),
+                            ),
+                        ),
                     ),
                     CalculationStep(
                         label="SLS quasi-permanent moment",
@@ -342,6 +392,20 @@ def _combination_blocks(
                         ),
                         result=f"{_f(row.sls_quasi_permanent.moment_knm)} kNm",
                         reference="EN 1990 quasi-permanent serviceability combination",
+                        equation=_eq(
+                            identifier("M"),
+                            _sum(
+                                _var("M", "Gk"),
+                                _product(_var("ψ", "2"), _var("M", "Qk")),
+                            ),
+                        ),
+                        substitution_equation=_eq(
+                            identifier("M"),
+                            _sum(
+                                _num(g_m),
+                                _product(number(f"{ec.psi2_traffic:g}"), _num(q_m)),
+                            ),
+                        ),
                     ),
                 ),
             )
