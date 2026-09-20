@@ -221,28 +221,64 @@ def _write_normalized(
     return stream.getvalue()
 
 
-def parse_staad_anl_results(
+def _requested_result_ids(
+    model: VerificationModel,
+    result_ids: tuple[int, ...] | None,
+) -> tuple[int, ...]:
+    available = {
+        *(case.load_case_id for case in model.load_cases),
+        *(combination.combination_id for combination in model.load_combinations),
+    }
+    if result_ids is None:
+        requested = tuple(sorted(available))
+    else:
+        requested = tuple(int(item) for item in result_ids)
+    if not requested:
+        raise ValueError("At least one STAAD result ID is required.")
+    if len(requested) != len(set(requested)):
+        raise ValueError("STAAD result IDs cannot contain duplicates.")
+    unknown = sorted(set(requested) - available)
+    if unknown:
+        raise ValueError(
+            "Unknown verification result ID(s): "
+            + ", ".join(str(item) for item in unknown)
+        )
+    return requested
+
+
+def _parse_staad_anl_result_rows(
     text: str,
     model: VerificationModel,
     *,
-    load_case_id: int | None = None,
-) -> str:
-    """Parse STAAD ``.ANL`` reactions, displacements and GLOBAL member-end forces.
+    result_ids: tuple[int, ...],
+) -> tuple[
+    dict[int, list[tuple[str, str, str, str, str, float, str]]],
+    dict[int, set[str]],
+]:
+    """Parse all requested primary cases/combinations from one STAAD ANL pass.
 
-    The parser targets the result blocks requested by :func:`export_staad_std`:
-    ``PRINT SUPPORT REACTION``, ``PRINT JOINT DISPLACEMENTS`` and
-    ``PRINT MEMBER FORCES GLOBAL``. Member forces are accepted only from output
-    explicitly labelled ``(GLOBAL)``. Reported units are read from the ANL headings
-    and converted to the package convention of kN, m and kNm.
+    STAAD paginates large result tables by repeating section headings while omitting
+    the member/joint identifier on continuation rows. The parser deliberately keeps
+    the current joint/member/load context across repeated page headings and resets it
+    only at the actual ``END OF LATEST ANALYSIS RESULT`` boundary.
     """
+
     if not text.strip():
         raise ValueError("STAAD ANL text is empty.")
-    selected_load = _selected_load_case_id(model, load_case_id)
+
+    requested = set(result_ids)
     beams = {beam.member_id: beam for beam in model.beams}
     node_ids = {node.node_id for node in model.nodes}
     support_ids = {support.node_id for support in model.supports}
 
-    rows: list[tuple[str, str, str, str, str, float, str]] = []
+    rows_by_result: dict[
+        int,
+        list[tuple[str, str, str, str, str, float, str]],
+    ] = {result_id: [] for result_id in result_ids}
+    found_by_result: dict[int, set[str]] = {
+        result_id: set() for result_id in result_ids
+    }
+
     mode: str | None = None
     in_rows = False
     displacement_to_m: float | None = None
@@ -252,10 +288,6 @@ def parse_staad_anl_results(
     current_member: int | None = None
     current_load: int | None = None
 
-    found_displacement = False
-    found_reaction = False
-    found_member_force = False
-
     for raw_line in text.replace("\x0c", "\n").splitlines():
         line = raw_line.strip()
         upper = line.upper()
@@ -264,34 +296,47 @@ def parse_staad_anl_results(
         if displacement_match is not None:
             unit_token = displacement_match.group(1).upper()
             if unit_token not in _LENGTH_TO_M:
-                raise ValueError(f"Unsupported STAAD displacement unit {unit_token!r}.")
+                raise ValueError(
+                    f"Unsupported STAAD displacement unit {unit_token!r}."
+                )
+            if mode != "displacement":
+                current_joint = None
             mode = "displacement"
             in_rows = False
             displacement_to_m = _LENGTH_TO_M[unit_token]
             section_units = None
-            current_joint = None
             continue
 
         if "SUPPORT REACTIONS" in upper:
+            if mode != "reaction":
+                current_joint = None
             mode = "reaction"
             in_rows = False
             section_units = _parse_unit_pair(line)
-            current_joint = None
             continue
 
         if "MEMBER END FORCES" in upper:
+            if mode != "member":
+                current_member = None
+                current_load = None
+                member_global_confirmed = False
             mode = "member"
             in_rows = False
             section_units = _parse_unit_pair(line)
-            member_global_confirmed = "(GLOBAL)" in upper
-            current_member = None
-            current_load = None
+            member_global_confirmed = (
+                member_global_confirmed or "(GLOBAL)" in upper
+            )
             continue
 
         if "END OF LATEST ANALYSIS RESULT" in upper:
             mode = None
             in_rows = False
             section_units = None
+            displacement_to_m = None
+            member_global_confirmed = False
+            current_joint = None
+            current_member = None
+            current_load = None
             continue
 
         if mode in {"reaction", "member"}:
@@ -326,7 +371,9 @@ def parse_staad_anl_results(
 
         if mode == "displacement":
             if displacement_to_m is None:
-                raise ValueError("STAAD displacement block does not declare a length unit.")
+                raise ValueError(
+                    "STAAD displacement block does not declare a length unit."
+                )
             if len(tokens) == 8:
                 current_joint = _parse_int(tokens[0])
                 row_load = _parse_int(tokens[1])
@@ -336,20 +383,32 @@ def parse_staad_anl_results(
                 values = tokens[1:]
             else:
                 continue
-            if row_load != selected_load:
+            if row_load not in requested:
                 continue
             if current_joint not in node_ids:
-                raise ValueError(f"STAAD displacement references unknown node {current_joint}.")
+                raise ValueError(
+                    f"STAAD displacement references unknown node {current_joint}."
+                )
             z_trans = _parse_float(values[2]) * displacement_to_m
-            rows.append(
-                ("node_displacement", str(current_joint), "", "", "DZ", z_trans, "m")
+            rows_by_result[row_load].append(
+                (
+                    "node_displacement",
+                    str(current_joint),
+                    "",
+                    "",
+                    "DZ",
+                    z_trans,
+                    "m",
+                )
             )
-            found_displacement = True
+            found_by_result[row_load].add("node_displacement")
             continue
 
         if mode == "reaction":
             if section_units is None:
-                raise ValueError("STAAD support-reaction block does not declare force units.")
+                raise ValueError(
+                    "STAAD support-reaction block does not declare force units."
+                )
             if len(tokens) == 8:
                 current_joint = _parse_int(tokens[0])
                 row_load = _parse_int(tokens[1])
@@ -359,22 +418,37 @@ def parse_staad_anl_results(
                 values = tokens[1:]
             else:
                 continue
-            if row_load != selected_load:
+            if row_load not in requested:
                 continue
             if current_joint not in support_ids:
-                raise ValueError(f"STAAD reaction references unknown support node {current_joint}.")
+                raise ValueError(
+                    f"STAAD reaction references unknown support node {current_joint}."
+                )
             fz_kn = _parse_float(values[2]) * section_units.force_to_kn
-            rows.append(("support_reaction", str(current_joint), "", "", "FZ", fz_kn, "kN"))
-            found_reaction = True
+            rows_by_result[row_load].append(
+                (
+                    "support_reaction",
+                    str(current_joint),
+                    "",
+                    "",
+                    "FZ",
+                    fz_kn,
+                    "kN",
+                )
+            )
+            found_by_result[row_load].add("support_reaction")
             continue
 
         if mode == "member":
             if not member_global_confirmed:
                 raise ValueError(
-                    "STAAD member-end forces must be printed in GLOBAL axes before normalization."
+                    "STAAD member-end forces must be printed in GLOBAL axes "
+                    "before normalization."
                 )
             if section_units is None:
-                raise ValueError("STAAD member-force block does not declare force/length units.")
+                raise ValueError(
+                    "STAAD member-force block does not declare force/length units."
+                )
             if len(tokens) == 9:
                 current_member = _parse_int(tokens[0])
                 current_load = _parse_int(tokens[1])
@@ -384,15 +458,21 @@ def parse_staad_anl_results(
                 current_load = _parse_int(tokens[0])
                 joint_id = _parse_int(tokens[1])
                 values = tokens[2:]
-            elif len(tokens) == 7 and current_member is not None and current_load is not None:
+            elif (
+                len(tokens) == 7
+                and current_member is not None
+                and current_load is not None
+            ):
                 joint_id = _parse_int(tokens[0])
                 values = tokens[1:]
             else:
                 continue
-            if current_load != selected_load:
+            if current_load not in requested:
                 continue
             if current_member not in beams:
-                raise ValueError(f"STAAD member force references unknown member {current_member}.")
+                raise ValueError(
+                    f"STAAD member force references unknown member {current_member}."
+                )
             beam = beams[current_member]
             if joint_id == beam.node_i:
                 end = "I"
@@ -400,8 +480,8 @@ def parse_staad_anl_results(
                 end = "J"
             else:
                 raise ValueError(
-                    f"STAAD member {current_member} result references joint {joint_id}, which is "
-                    "not an end node of that verification member."
+                    f"STAAD member {current_member} result references joint "
+                    f"{joint_id}, which is not an end node of that verification member."
                 )
             fz_kn = _parse_float(values[2]) * section_units.force_to_kn
             mx_knm = _parse_float(values[3]) * section_units.moment_to_knm
@@ -413,7 +493,7 @@ def parse_staad_anl_results(
                 mx_knm=mx_knm,
                 my_knm=my_knm,
             )
-            rows.extend(
+            rows_by_result[current_load].extend(
                 [
                     (
                         "member_end_force",
@@ -444,17 +524,62 @@ def parse_staad_anl_results(
                     ),
                 ]
             )
-            found_member_force = True
+            found_by_result[current_load].add("member_end_force")
 
-    missing_blocks = []
-    if model.nodes and not found_displacement:
+    return rows_by_result, found_by_result
+
+
+def parse_staad_anl_result_sets(
+    text: str,
+    model: VerificationModel,
+    *,
+    result_ids: tuple[int, ...] | None = None,
+) -> dict[int, str]:
+    """Normalize every requested STAAD primary load case and load combination.
+
+    The output mapping is keyed by the exact verification result ID. A result ID is
+    included whenever at least one requested result row is present; downstream
+    coverage checking then distinguishes complete result sets from partial output.
+    """
+
+    requested = _requested_result_ids(model, result_ids)
+    rows_by_result, _ = _parse_staad_anl_result_rows(
+        text,
+        model,
+        result_ids=requested,
+    )
+    return {
+        result_id: _write_normalized(rows)
+        for result_id, rows in rows_by_result.items()
+        if rows
+    }
+
+
+def parse_staad_anl_results(
+    text: str,
+    model: VerificationModel,
+    *,
+    load_case_id: int | None = None,
+) -> str:
+    """Parse one STAAD primary case/combination into the normalized result schema."""
+
+    selected_load = _selected_load_case_id(model, load_case_id)
+    rows_by_result, found_by_result = _parse_staad_anl_result_rows(
+        text,
+        model,
+        result_ids=(selected_load,),
+    )
+    found = found_by_result[selected_load]
+    missing_blocks: list[str] = []
+    if model.nodes and "node_displacement" not in found:
         missing_blocks.append("joint displacement")
-    if model.supports and not found_reaction:
+    if model.supports and "support_reaction" not in found:
         missing_blocks.append("support reaction")
-    if model.beams and not found_member_force:
+    if model.beams and "member_end_force" not in found:
         missing_blocks.append("global member-end force")
     if missing_blocks:
         raise ValueError(
-            "STAAD ANL does not contain selected-load results for: " + ", ".join(missing_blocks)
+            "STAAD ANL does not contain selected-load results for: "
+            + ", ".join(missing_blocks)
         )
-    return _write_normalized(rows)
+    return _write_normalized(rows_by_result[selected_load])
