@@ -3,6 +3,7 @@ import json
 import pytest
 
 from rc_bridge.application.verification_import import (
+    VerificationEngineeringReview,
     VerificationImportTolerance,
     combined_load_case,
     import_midas_table_verification_results,
@@ -95,6 +96,9 @@ def test_midas_import_compares_load_cases_and_combinations_in_one_pass(tmp_path)
     )
 
     assert report.passes is True
+    assert report.engineering_acceptance_pending is True
+    assert report.engineering_accepted is False
+    assert report.engineering_acceptance_status == "PENDING REVIEW"
     assert report.combination_envelope_comparison is not None
     assert report.combination_envelope_comparison.passes is True
     assert report.imported_result_ids == (1, 10001)
@@ -197,3 +201,79 @@ def test_external_result_ids_cannot_overlap_load_case_ids() -> None:
                 ),
             ),
         )
+
+
+
+def _complete_engineering_review() -> VerificationEngineeringReview:
+    return VerificationEngineeringReview(
+        source_reference="STAAD run 2026-09-20 / exported Stage-5 STD",
+        solver_version="STAAD.Pro CONNECT Edition",
+        exported_model_identity_verified=True,
+        geometry_equivalent=True,
+        section_properties_equivalent=True,
+        material_properties_equivalent=True,
+        boundary_conditions_equivalent=True,
+        loading_equivalent=True,
+        load_combinations_equivalent=True,
+        result_axes_verified=True,
+        notes="Reviewed against the exported verification package.",
+    )
+
+
+def test_engineering_acceptance_requires_complete_review_and_numerical_pass(tmp_path) -> None:
+    model = _zero_model()
+    reactions, displacements, forces = _midas_tables(model)
+    report = import_midas_table_verification_results(
+        model,
+        reaction_table=reactions,
+        displacement_table=displacements,
+        member_force_table=forces,
+        tolerance=VerificationImportTolerance(relative_tolerance=0.0),
+    )
+
+    incomplete = VerificationEngineeringReview(
+        source_reference="MIDAS result export",
+        solver_version="MIDAS Civil",
+        geometry_equivalent=True,
+    )
+    reviewed = report.with_engineering_review(incomplete)
+    assert reviewed.engineering_acceptance_pending is True
+    assert reviewed.engineering_accepted is False
+    assert "loading_equivalent" in incomplete.missing_checks()
+
+    accepted = report.with_engineering_review(_complete_engineering_review())
+    assert accepted.engineering_acceptance_pending is False
+    assert accepted.engineering_accepted is True
+    assert accepted.engineering_acceptance_status == "ACCEPTED"
+
+    written = write_verification_import_evidence(
+        accepted,
+        tmp_path,
+        base_name="accepted_stage5",
+    )
+    summary = json.loads(written.summary_json.read_text(encoding="utf-8"))
+    assert summary["engineering_accepted"] is True
+    assert summary["engineering_acceptance_status"] == "ACCEPTED"
+    assert summary["engineering_review"]["complete"] is True
+    assert summary["engineering_review"]["missing_checks"] == []
+
+
+def test_complete_engineering_review_cannot_override_numerical_failure() -> None:
+    model = _zero_model()
+    reactions, displacements, forces = _midas_tables(model)
+    bad_forces = forces.replace(",0,0,0\n", ",0,10,0\n", 1)
+    report = import_midas_table_verification_results(
+        model,
+        reaction_table=reactions,
+        displacement_table=displacements,
+        member_force_table=bad_forces,
+        tolerance=VerificationImportTolerance(
+            relative_tolerance=0.0,
+            absolute_moment_knm=0.0,
+        ),
+    ).with_engineering_review(_complete_engineering_review())
+
+    assert report.numerical_agreement_passes is False
+    assert report.engineering_acceptance_pending is False
+    assert report.engineering_accepted is False
+    assert report.engineering_acceptance_status == "REVIEW / FAIL"
