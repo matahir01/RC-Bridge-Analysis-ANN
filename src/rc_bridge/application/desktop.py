@@ -5408,13 +5408,11 @@ def main() -> int:
                         f"{item.native_value:.3f} {item.unit}",
                         f"{item.external_value:.3f} {item.unit}",
                         (
-                            (
-                                f"{100.0 * difference:+.2f}%"
-                                if difference is not None
-                                else (
-                                    f"abs {item.absolute_difference:.3f} {item.unit} "
-                                    f"/ limit {item.allowable_absolute_difference:.3f}"
-                                )
+                            f"{100.0 * difference:+.2f}%"
+                            if difference is not None
+                            else (
+                                f"abs {item.absolute_difference:.3f} {item.unit} "
+                                f"/ limit {item.allowable_absolute_difference:.3f}"
                             )
                         ),
                         "PASS" if item.passes else "CHECK",
