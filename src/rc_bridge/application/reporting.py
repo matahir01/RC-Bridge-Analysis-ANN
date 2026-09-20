@@ -656,12 +656,11 @@ actions retain their actual extents in the deterministic permanent-load routines
 
 <h2>Verification boundary</h2>
 <p class="warn">
-These are native deterministic analysis results. Passing automated tests or producing
-MIDAS/STAAD model files is not independent structural validation. Final production
-acceptance requires the application-generated governing models to be run in independent
-structural software and the genuine returned results to pass the project verification
-criteria. ANN/reliability/RBDO ground-truth generation remains locked until the exact
-solver profile satisfies its verification manifest.
+The deterministic Stage-5 solver profile now has genuine STAAD external evidence and
+an accepted source/model review. MIDAS cross-verification is deferred to V2 and is not
+a deterministic-v1 release gate. ANN/reliability/RBDO ground-truth generation remains
+locked until the current v1 verification manifest and outstanding project/code acceptance
+checks are complete.
 </p>
 </body>
 </html>
