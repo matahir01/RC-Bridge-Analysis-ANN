@@ -4,6 +4,12 @@ from dataclasses import dataclass
 
 from rc_bridge.analysis.physical_sections import girder_web_width_m
 from rc_bridge.application.design_checks import ApplicationDesignInterpretationSuite
+from rc_bridge.application.fatigue import FatigueApplicationResult
+from rc_bridge.application.load_cases import (
+    application_combination_summary,
+    permanent_load_audit,
+)
+from rc_bridge.application.local_deck import LocalDeckDesignResult
 from rc_bridge.application.math_notation import (
     MathExpr,
     absolute,
@@ -12,21 +18,15 @@ from rc_bridge.application.math_notation import (
     number,
     operator,
     parenthesized,
-    row,
+    row as math_row,
     sqrt,
     sub,
     sup,
     text,
 )
-from rc_bridge.design.eurocode_layered_section import layered_singly_reinforced_resistance
-from rc_bridge.application.fatigue import FatigueApplicationResult
-from rc_bridge.application.load_cases import (
-    application_combination_summary,
-    permanent_load_audit,
-)
-from rc_bridge.application.local_deck import LocalDeckDesignResult
 from rc_bridge.application.preferences import ApplicationPreferences
 from rc_bridge.core.models import ProjectInput
+from rc_bridge.design.eurocode_layered_section import layered_singly_reinforced_resistance
 from rc_bridge.workflow.lm1_grillage_search import ProjectNativeLM1GrillageSearchResult
 
 
@@ -85,7 +85,7 @@ def _var(name: str, script: str | None = None) -> MathExpr:
 
 
 def _eq(left: MathExpr, right: MathExpr) -> MathExpr:
-    return row(left, operator("="), right)
+    return math_row(left, operator("="), right)
 
 
 def _sum(*items: MathExpr) -> MathExpr:
@@ -94,7 +94,7 @@ def _sum(*items: MathExpr) -> MathExpr:
         if index:
             parts.append(operator("+"))
         parts.append(item)
-    return row(*parts)
+    return math_row(*parts)
 
 
 def _product(*items: MathExpr) -> MathExpr:
@@ -103,7 +103,7 @@ def _product(*items: MathExpr) -> MathExpr:
         if index:
             parts.append(operator("×"))
         parts.append(item)
-    return row(*parts)
+    return math_row(*parts)
 
 
 def _analysis_formulation_block(
@@ -180,11 +180,11 @@ def _analysis_formulation_block(
                 result=f"{_f(ei_kn_m2)} kN m2",
                 reference="Native vertical grillage element",
                 equation=_eq(
-                    row(identifier("E"), _var("I", "y")),
+                    math_row(identifier("E"), _var("I", "y")),
                     _product(identifier("E"), _var("I", "y")),
                 ),
                 substitution_equation=_eq(
-                    row(identifier("E"), _var("I", "y")),
+                    math_row(identifier("E"), _var("I", "y")),
                     _product(_num(e_kn_m2), _num(section.iy_m4, 9)),
                 ),
             ),
@@ -195,11 +195,11 @@ def _analysis_formulation_block(
                 result=f"{_f(gj_kn_m2)} kN m2",
                 reference="Native vertical grillage element",
                 equation=_eq(
-                    row(identifier("G"), identifier("J")),
+                    math_row(identifier("G"), identifier("J")),
                     _product(identifier("G"), identifier("J")),
                 ),
                 substitution_equation=_eq(
-                    row(identifier("G"), identifier("J")),
+                    math_row(identifier("G"), identifier("J")),
                     _product(_num(g_kn_m2), _num(section.torsion_constant_m4, 9)),
                 ),
             ),
@@ -234,7 +234,7 @@ def _analysis_formulation_block(
                 reference="Saint-Venant torsion in native grillage member",
                 equation=_eq(
                     _var("k", "t"),
-                    fraction(row(identifier("G"), identifier("J")), identifier("L")),
+                    fraction(math_row(identifier("G"), identifier("J")), identifier("L")),
                 ),
                 substitution_equation=_eq(
                     _var("k", "t"),
@@ -248,7 +248,7 @@ def _analysis_formulation_block(
                 result="nodal w, Rx and Ry",
                 reference="Native sparse grillage solver",
                 equation=_eq(
-                    row(identifier("K"), identifier("u")),
+                    math_row(identifier("K"), identifier("u")),
                     identifier("F"),
                 ),
             ),
@@ -260,7 +260,7 @@ def _analysis_formulation_block(
                 reference="Native grillage member-force recovery",
                 equation=_eq(
                     _var("q", "e"),
-                    row(
+                    math_row(
                         _var("k", "e"),
                         _var("u", "e"),
                         operator("−"),
@@ -692,11 +692,11 @@ def build_application_calculation_trace(
                             reference="Layered participating concrete compression block",
                             equation=_eq(
                                 identifier("z"),
-                                row(identifier("d"), operator("−"), _var("y", "c")),
+                                math_row(identifier("d"), operator("−"), _var("y", "c")),
                             ),
                             substitution_equation=_eq(
                                 identifier("z"),
-                                row(
+                                math_row(
                                     _num(row.effective_depth_m * 1000.0, 1),
                                     operator("−"),
                                     _num(
@@ -738,7 +738,7 @@ def build_application_calculation_trace(
                             reference="EN 1992 concrete shear resistance",
                             equation=_eq(
                                 identifier("k"),
-                                row(
+                                math_row(
                                     text("min"),
                                     operator("("),
                                     _sum(
@@ -752,7 +752,7 @@ def build_application_calculation_trace(
                             ),
                             substitution_equation=_eq(
                                 identifier("k"),
-                                row(
+                                math_row(
                                     text("min"),
                                     operator("("),
                                     _sum(
@@ -776,7 +776,7 @@ def build_application_calculation_trace(
                             reference="EN 1992 concrete shear resistance",
                             equation=_eq(
                                 _var("ρ", "l"),
-                                row(
+                                math_row(
                                     text("min"),
                                     operator("("),
                                     fraction(
@@ -790,7 +790,7 @@ def build_application_calculation_trace(
                             ),
                             substitution_equation=_eq(
                                 _var("ρ", "l"),
-                                row(
+                                math_row(
                                     text("min"),
                                     operator("("),
                                     fraction(
@@ -820,7 +820,7 @@ def build_application_calculation_trace(
                             reference="EN 1992 concrete shear resistance",
                             equation=_eq(
                                 _var("v", "Rd,c"),
-                                row(
+                                math_row(
                                     text("max"),
                                     operator("("),
                                     _product(
@@ -924,7 +924,7 @@ def build_application_calculation_trace(
                                 _product(
                                     _var("s", "r,max"),
                                     parenthesized(
-                                        row(
+                                        math_row(
                                             _var("ε", "sm"),
                                             operator("−"),
                                             _var("ε", "cm"),
@@ -950,8 +950,8 @@ def build_application_calculation_trace(
                             result=f"{_f(row.design.crack.utilization)} utilization",
                             reference="EN 1992 serviceability crack control",
                             status="PASS" if row.design.crack.utilization <= 1.0 + 1e-9 else "CHECK",
-                            equation=row(_var("w", "k"), operator("≤"), _var("w", "lim")),
-                            substitution_equation=row(
+                            equation=math_row(_var("w", "k"), operator("≤"), _var("w", "lim")),
+                            substitution_equation=math_row(
                                 _num(row.design.crack.crack_width_mm),
                                 operator("≤"),
                                 _num(preferences.eurocode.crack_limit_mm),
@@ -991,7 +991,7 @@ def build_application_calculation_trace(
                                     _product(identifier("ζ"), _var("δ", "II")),
                                     _product(
                                         parenthesized(
-                                            row(number("1"), operator("−"), identifier("ζ"))
+                                            math_row(number("1"), operator("−"), identifier("ζ"))
                                         ),
                                         _var("δ", "I"),
                                     ),
@@ -1006,7 +1006,7 @@ def build_application_calculation_trace(
                                     ),
                                     _product(
                                         parenthesized(
-                                            row(
+                                            math_row(
                                                 number("1"),
                                                 operator("−"),
                                                 _num(row.design.deflection.zeta),
@@ -1027,12 +1027,12 @@ def build_application_calculation_trace(
                             result=f"{_f(row.design.deflection.utilization)} utilization",
                             reference="Project serviceability deflection criterion",
                             status="PASS" if row.design.deflection.utilization <= 1.0 + 1e-9 else "CHECK",
-                            equation=row(
+                            equation=math_row(
                                 identifier("δ"),
                                 operator("≤"),
                                 fraction(identifier("L"), identifier("n")),
                             ),
-                            substitution_equation=row(
+                            substitution_equation=math_row(
                                 _num(row.design.deflection.interpolated_deflection_mm),
                                 operator("≤"),
                                 fraction(
@@ -1056,7 +1056,7 @@ def build_application_calculation_trace(
                         result=f"{_f(max(check.flexural_utilization, check.shear_utilization))}",
                         reference="Construction-stage section active at time of loading",
                         status="PASS" if check.passes else "CHECK",
-                        equation=row(
+                        equation=math_row(
                             text("max"),
                             operator("("),
                             fraction(_var("M", "Ed"), _var("M", "Rd")),
@@ -1066,7 +1066,7 @@ def build_application_calculation_trace(
                             operator("≤"),
                             number("1.0"),
                         ),
-                        substitution_equation=row(
+                        substitution_equation=math_row(
                             text("max"),
                             operator("("),
                             _num(check.flexural_utilization),
@@ -1107,7 +1107,7 @@ def build_application_calculation_trace(
                         ),
                         reference="EN 1992 slab flexure/minimum reinforcement",
                         status="PASS" if deck.bottom_transverse.passes else "CHECK",
-                        equation=row(
+                        equation=math_row(
                             _var("A", "s,prov"),
                             operator("≥"),
                             text("max"),
@@ -1117,7 +1117,7 @@ def build_application_calculation_trace(
                             _var("A", "s,min"),
                             operator(")"),
                         ),
-                        substitution_equation=row(
+                        substitution_equation=math_row(
                             _num(deck.bottom_transverse.arrangement.provided_area_mm2_per_m, 0),
                             operator("≥"),
                             text("max"),
@@ -1141,7 +1141,7 @@ def build_application_calculation_trace(
                         ),
                         reference="EN 1992 slab flexure/minimum reinforcement",
                         status="PASS" if deck.top_transverse.passes else "CHECK",
-                        equation=row(
+                        equation=math_row(
                             _var("A", "s,prov"),
                             operator("≥"),
                             text("max"),
@@ -1151,7 +1151,7 @@ def build_application_calculation_trace(
                             _var("A", "s,min"),
                             operator(")"),
                         ),
-                        substitution_equation=row(
+                        substitution_equation=math_row(
                             _num(deck.top_transverse.arrangement.provided_area_mm2_per_m, 0),
                             operator("≥"),
                             text("max"),
@@ -1200,7 +1200,7 @@ def build_application_calculation_trace(
                     reference="EN 1991-2 FLM3 and EN 1992 fatigue resistance",
                     status="PASS" if row.fatigue.reinforcement.passes else "CHECK",
                     equation=_eq(
-                        row(identifier("Δ"), _var("σ", "s")),
+                        math_row(identifier("Δ"), _var("σ", "s")),
                         _num(row.reference_steel_stress_range_mpa),
                     ),
                 )
