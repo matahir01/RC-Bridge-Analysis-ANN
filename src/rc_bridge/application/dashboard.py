@@ -190,7 +190,7 @@ def build_application_dashboard(
                 detail=(
                     "Flexure, shear, cracking, deflection, fatigue and detailing engines "
                     "are implemented, but final production acceptance remains gated by "
-                    "independent MIDAS/STAAD evidence."
+                    "genuine independent-solver evidence for the exact project/profile."
                 ),
             )
         )
@@ -247,9 +247,10 @@ def build_application_dashboard(
                 name="Independent verification acceptance",
                 state=CapabilityState.VERIFICATION_REQUIRED,
                 detail=(
-                    "Run the application-generated files in installed MIDAS/STAAD, import "
-                    "genuine returned results and confirm axes, signs, model equivalence "
-                    "and justified tolerances."
+                    "Run the application-generated files in an installed independent solver, "
+                    "import genuine returned results and confirm axes, signs, model equivalence "
+                    "and justified tolerances. Deterministic v1 uses the STAAD acceptance path; "
+                    "MIDAS cross-verification is deferred to V2."
                 ),
             ),
             ApplicationCapability(
