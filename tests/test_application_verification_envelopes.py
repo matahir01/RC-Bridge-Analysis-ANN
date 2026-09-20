@@ -4,8 +4,8 @@ from dataclasses import replace
 import pytest
 
 from rc_bridge.application.verification_envelopes import (
-    compare_stage5_combination_envelopes,
     compare_staad_lm1_envelopes,
+    compare_stage5_combination_envelopes,
 )
 from rc_bridge.application.verification_results import VerificationResultDatabase
 from rc_bridge.application.verification_tolerance import VerificationImportTolerance
