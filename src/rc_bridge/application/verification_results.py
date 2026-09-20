@@ -146,6 +146,31 @@ class VerificationResultDatabase:
         _, value_mm, x_m = min(candidates, key=lambda item: item[0])
         return value_mm, x_m
 
+    def vertical_displacement_envelope_mm(
+        self,
+        result_id: int,
+        model: VerificationModel,
+        *,
+        y_m: float,
+        tolerance_m: float = 1.0e-9,
+    ) -> float:
+        nodes = {node.node_id: node for node in model.nodes}
+        values = self.node_displacement_index.get(result_id, {})
+        candidates = [
+            abs(displacement_m) * 1000.0
+            for node_id, displacement_m in values.items()
+            if (
+                (node := nodes.get(node_id)) is not None
+                and abs(float(node.y_m) - y_m) <= tolerance_m
+            )
+        ]
+        if not candidates:
+            raise ValueError(
+                f"External result {result_id} contains no vertical displacement "
+                "values for the selected girder line."
+            )
+        return max(candidates)
+
     def support_reaction_sum_kn(self, result_id: int) -> float:
         reactions = self.support_reaction_index.get(result_id, {})
         if not reactions:
