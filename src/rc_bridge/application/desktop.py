@@ -2373,11 +2373,68 @@ def main() -> int:
     )
     verification_error_canvas.pack(fill=tk.X, pady=(4, 8))
 
+    verification_comparison_views = ttk.Notebook(verification_results_page)
+    verification_comparison_views.pack(fill=tk.BOTH, expand=True)
+    verification_envelope_page = ttk.Frame(
+        verification_comparison_views,
+        padding=6,
+    )
+    verification_raw_page = ttk.Frame(
+        verification_comparison_views,
+        padding=6,
+    )
+    verification_comparison_views.add(
+        verification_envelope_page,
+        text="Engineering envelopes",
+    )
+    verification_comparison_views.add(
+        verification_raw_page,
+        text="Raw result-set checks",
+    )
+
+    verification_equilibrium_var = tk.StringVar(
+        value="Import a STAAD .ANL file to compare permanent equilibrium and LM1 envelopes."
+    )
+    ttk.Label(
+        verification_envelope_page,
+        textvariable=verification_equilibrium_var,
+        style="Muted.TLabel",
+        wraplength=1050,
+        justify=tk.LEFT,
+    ).pack(fill=tk.X, pady=(0, 6))
+
+    verification_envelope_tree = ttk.Treeview(
+        verification_envelope_page,
+        columns=(
+            "girder",
+            "quantity",
+            "case",
+            "native",
+            "external",
+            "diff",
+            "status",
+        ),
+        show="headings",
+        height=11,
+    )
+    for key, title, width_value in (
+        ("girder", "Girder", 80),
+        ("quantity", "Quantity", 110),
+        ("case", "Source case", 100),
+        ("native", "Native", 145),
+        ("external", "STAAD", 145),
+        ("diff", "Difference", 110),
+        ("status", "Status", 90),
+    ):
+        verification_envelope_tree.heading(key, text=title)
+        verification_envelope_tree.column(key, width=width_value, anchor=tk.CENTER)
+    verification_envelope_tree.pack(fill=tk.BOTH, expand=True)
+
     verification_result_tree = ttk.Treeview(
-        verification_results_page,
+        verification_raw_page,
         columns=("result", "kind", "status", "max_error", "source"),
         show="headings",
-        height=9,
+        height=11,
     )
     verification_result_tree.heading("result", text="Imported result")
     verification_result_tree.heading("kind", text="Type")
@@ -2864,6 +2921,9 @@ def main() -> int:
             verification_status_metric_var.set("NOT IMPORTED")
             verification_coverage_metric_var.set("—")
             verification_error_metric_var.set("—")
+            verification_equilibrium_var.set(
+                "Import a STAAD .ANL file to compare permanent equilibrium and LM1 envelopes."
+            )
             draw_bar_chart(
                 verification_error_canvas,
                 labels=(),
@@ -2872,28 +2932,75 @@ def main() -> int:
                 unit="%",
             )
             return
+
         dashboard = verification_dashboard_data(report)
-        verification_status_metric_var.set(dashboard.status)
+        envelope = report.envelope_comparison
+        verification_status_metric_var.set(
+            (
+                "PASS" if envelope.passes else "REVIEW / FAIL"
+            )
+            if envelope is not None
+            else dashboard.status
+        )
         verification_coverage_metric_var.set(
             f"{dashboard.imported_count}/{dashboard.requested_count}"
         )
+        max_error = (
+            envelope.maximum_relative_difference
+            if envelope is not None
+            else dashboard.max_relative_error
+        )
         verification_error_metric_var.set(
-            "—"
-            if dashboard.max_relative_error is None
-            else f"{100.0 * dashboard.max_relative_error:.3f}%"
+            "—" if max_error is None else f"{100.0 * max_error:.3f}%"
         )
-        draw_bar_chart(
-            verification_error_canvas,
-            labels=[str(item.result_id) for item in dashboard.results],
-            values=[
+
+        if envelope is not None:
+            equilibrium = envelope.permanent_equilibrium
+            if equilibrium is None:
+                verification_equilibrium_var.set(
+                    "Permanent-action equilibrium comparison is not available in this import."
+                )
+            else:
+                diff = equilibrium.relative_difference
+                verification_equilibrium_var.set(
+                    "Permanent equilibrium: "
+                    f"native reactions = {equilibrium.native_total_reaction_kn:.3f} kN, "
+                    f"{report.source_name} = {equilibrium.external_total_reaction_kn:.3f} kN, "
+                    f"difference = "
+                    f"{'—' if diff is None else f'{100.0 * diff:+.3f}%'}; "
+                    f"{'PASS' if equilibrium.passes else 'CHECK'}."
+                )
+            labels = [
+                f"G{item.girder_index}-{item.quantity[0]}"
+                for item in envelope.items
+            ]
+            values = [
                 0.0
-                if item.max_relative_error is None
-                else 100.0 * item.max_relative_error
-                for item in dashboard.results
-            ],
-            title=f"{dashboard.source_name} maximum relative error by result set",
-            unit="%",
-        )
+                if item.relative_difference is None
+                else 100.0 * abs(item.relative_difference)
+                for item in envelope.items
+            ]
+            draw_bar_chart(
+                verification_error_canvas,
+                labels=labels,
+                values=values,
+                title="Native vs STAAD governing-envelope relative difference",
+                unit="%",
+                threshold=100.0 * envelope.relative_tolerance,
+            )
+        else:
+            draw_bar_chart(
+                verification_error_canvas,
+                labels=[str(item.result_id) for item in dashboard.results],
+                values=[
+                    0.0
+                    if item.max_relative_error is None
+                    else 100.0 * item.max_relative_error
+                    for item in dashboard.results
+                ],
+                title=f"{dashboard.source_name} maximum relative error by result set",
+                unit="%",
+            )
 
     def populate_project(project) -> None:
         fields = ProjectBasicFields.from_project(project)
@@ -5212,6 +5319,33 @@ def main() -> int:
     def show_verification_import(report) -> None:
         for item in verification_result_tree.get_children():
             verification_result_tree.delete(item)
+        for item in verification_envelope_tree.get_children():
+            verification_envelope_tree.delete(item)
+
+        envelope = report.envelope_comparison
+        if envelope is not None:
+            verification_envelope_tree.tag_configure("pass", foreground="#177245")
+            verification_envelope_tree.tag_configure("check", foreground="#A73434")
+            for item in envelope.items:
+                difference = item.relative_difference
+                verification_envelope_tree.insert(
+                    "",
+                    tk.END,
+                    values=(
+                        f"G{item.girder_index}",
+                        item.quantity,
+                        item.source_case_id,
+                        f"{item.native_value:.3f} {item.unit}",
+                        f"{item.external_value:.3f} {item.unit}",
+                        (
+                            "—"
+                            if difference is None
+                            else f"{100.0 * difference:+.2f}%"
+                        ),
+                        "PASS" if item.passes else "CHECK",
+                    ),
+                    tags=("pass" if item.passes else "check",),
+                )
         by_id = {item.result_id: item for item in report.result_sets}
         for result_id in report.requested_result_ids:
             item = by_id.get(result_id)
