@@ -1,0 +1,60 @@
+{
+  "schema_version": 1,
+  "evidence_type": "genuine_staad_stage5_external_benchmark",
+  "source_file_name": "application_verification_final_service.ANL",
+  "source_sha256": "e78193f7a51a5e725601d9857da8d014bfa32729c5ba97698eba1962baca30ca",
+  "staad_version": "22.09.00.115",
+  "staad_run_date": "2026-09-19",
+  "model_title": "N_15_M_RC_GIRDER_PROJECT___STAGE_5_UNIFIED_FINAL_SERVICE_VERIFICATION",
+  "node_count": 540,
+  "member_count": 749,
+  "support_count": 14,
+  "primary_result_sets": 63,
+  "combination_result_sets": 141,
+  "total_result_sets": 204,
+  "comparison_rows": 1029792,
+  "numerical_result_sets_passed": 204,
+  "numerical_failed_rows": 0,
+  "tolerance_policy": {
+    "relative": 0.02,
+    "absolute_force_kn": 0.1,
+    "absolute_moment_knm": 0.1,
+    "absolute_displacement_m": 0.00001
+  },
+  "maximum_absolute_differences": {
+    "support_reaction_kn": 0.0050038673707604175,
+    "vertical_displacement_m": 5.015936165430473e-7,
+    "vertical_displacement_mm": 0.0005015936165430473,
+    "member_vertical_shear_kn": 0.005032255268076824,
+    "member_vertical_bending_knm": 0.00532225351417992,
+    "member_torsion_knm": 0.005004246409196611
+  },
+  "permanent_reaction_sum_native_kn": 2617.3500000012455,
+  "permanent_reaction_sum_staad_kn": 2617.35,
+  "governing_envelopes": {
+    "combination_items": 203,
+    "combination_items_passed": 203,
+    "same_governing_combination_count": 203,
+    "maximum_meaningful_relative_difference_percent": 0.02586969595624323,
+    "lm1_items": 28,
+    "lm1_items_passed": 28,
+    "same_governing_source_case_count": 28,
+    "lm1_maximum_meaningful_relative_difference_percent": 0.010847963098367096
+  },
+  "staad_output_diagnostics": {
+    "fatal_or_error_count": 0,
+    "warning_count": 21,
+    "warning_breakdown": {
+      "set_z_up_generic_command_compatibility_warning": 1,
+      "overlong_member_property_line_split_warning": 20
+    },
+    "note": "The overlong property warnings did not alter the analysed properties or results; Batch 6E updates the exporter to wrap these commands explicitly."
+  },
+  "engineering_acceptance": "PENDING_MODEL_SOURCE_IDENTITY_REVIEW",
+  "notes": [
+    "The numerical comparison reproduces the repository vertical-grillage equations against the exact structural model echoed in the genuine STAAD ANL output.",
+    "This is genuine independent-solver numerical evidence for the echoed Stage-5 model.",
+    "It does not by itself prove that the externally analysed STD file is byte-identical to the current application export, so engineering acceptance remains pending exact source/model identity review.",
+    "The raw ANL is not committed because of its size and external-program provenance; the SHA-256 above identifies the reviewed file."
+  ]
+}

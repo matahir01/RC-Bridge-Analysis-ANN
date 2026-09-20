@@ -122,19 +122,35 @@ def test_staad_export_chunks_member_ranges_for_properties_and_materials() -> Non
 
 def test_staad_export_chunks_strided_grillage_property_assignments() -> None:
     text = export_staad_std(_strided_section_model())
-    property_lines = [
-        line
-        for line in text.splitlines()
-        if " PRIS AX " in line
+    property_block = text.split("MEMBER PROPERTY\n", 1)[1].split(
+        "DEFINE MATERIAL START\n",
+        1,
+    )[0]
+    physical_lines = [line for line in property_block.splitlines() if line.strip()]
+
+    logical_commands: list[str] = []
+    current = ""
+    for line in physical_lines:
+        continuation = line.endswith(" -")
+        content = line[:-2] if continuation else line
+        current = f"{current} {content}".strip()
+        if not continuation:
+            logical_commands.append(current)
+            current = ""
+
+    property_commands = [
+        command for command in logical_commands if " PRIS " in command
     ]
 
-    assert len(property_lines) > 7
-    assert all(" IX " in line and " IY " in line and " IZ " in line for line in property_lines)
-    assert max(len(line) for line in property_lines) < 220
+    assert len(property_commands) > 7
     assert all(
-        "too long" not in line.lower()
-        for line in property_lines
+        " AX " in command
+        and " IX " in command
+        and " IY " in command
+        and " IZ " in command
+        for command in property_commands
     )
+    assert max(map(len, physical_lines)) <= 78
 
 
 def test_large_staad_model_chunks_global_member_force_requests() -> None:
