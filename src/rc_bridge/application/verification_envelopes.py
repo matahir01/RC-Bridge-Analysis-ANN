@@ -1,8 +1,12 @@
 from __future__ import annotations
 
 import json
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
+from rc_bridge.analysis.prepared_grillage_solver import (
+    prepare_vertical_grillage,
+    solve_prepared_vertical_grillage,
+)
 from rc_bridge.export.external_results import parse_verification_results_csv
 from rc_bridge.export.staad_anl import parse_staad_anl_results
 from rc_bridge.export.verification_model import VerificationModel
@@ -299,40 +303,26 @@ def compare_staad_lm1_envelopes(
     if permanent_identity is not None:
         stage5_case_id = int(permanent_identity["stage5_case_id"])
         external_csv = normalized(stage5_case_id)
-        native_reaction_csv = parse_staad_anl_results(
-            staad_anl_text,
-            model,
-            load_case_id=stage5_case_id,
-        )
         external_total = _sum_support_reactions(external_csv)
-        # Native total vertical load is recovered from the same Stage-5 load case by
-        # global equilibrium rather than from a simple tributary per-girder estimate.
         load_case = next(
             case for case in model.load_cases if case.load_case_id == stage5_case_id
         )
-        nodes = {node.node_id: node for node in model.nodes}
-        beams = {beam.member_id: beam for beam in model.beams}
-        total_vertical_load = 0.0
-        for load in load_case.nodal_loads:
-            total_vertical_load += load.fz_kn
-        for load in load_case.point_loads:
-            if load.direction == "GZ":
-                total_vertical_load += load.magnitude_kn
-        for load in load_case.uniform_loads:
-            if load.direction != "GZ":
-                continue
-            beam = beams[load.member_id]
-            ni = nodes[beam.node_i]
-            nj = nodes[beam.node_j]
-            member_length = (
-                (nj.x_m - ni.x_m) ** 2
-                + (nj.y_m - ni.y_m) ** 2
-                + (nj.z_m - ni.z_m) ** 2
-            ) ** 0.5
-            start = 0.0 if load.start_m is None else float(load.start_m)
-            end = member_length if load.end_m is None else float(load.end_m)
-            total_vertical_load += load.magnitude_kn_m * (end - start)
-        native_total = -total_vertical_load
+        permanent_model = replace(
+            model,
+            load_cases=(load_case,),
+            load_combinations=(),
+        )
+        prepared = prepare_vertical_grillage(permanent_model)
+        native_analysis = solve_prepared_vertical_grillage(
+            prepared,
+            permanent_model,
+        )
+        support_ids = {support.node_id for support in permanent_model.supports}
+        native_total = sum(
+            node.vertical_reaction_kn
+            for node in native_analysis.nodes
+            if node.node_id in support_ids
+        )
         eq_difference = _relative_difference(native_total, external_total)
         permanent_equilibrium = PermanentEquilibriumComparison(
             stage5_case_id=stage5_case_id,
