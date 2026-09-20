@@ -18,6 +18,7 @@ from rc_bridge.application.load_cases import (
     permanent_load_audit,
 )
 from rc_bridge.application.local_deck import LocalDeckDesignResult
+from rc_bridge.application.math_notation import MathFormulaFlowable, mathml
 from rc_bridge.application.preferences import ApplicationPreferences
 from rc_bridge.core.models import ProjectInput
 from rc_bridge.workflow.lm1_grillage_search import ProjectNativeLM1GrillageSearchResult
@@ -39,13 +40,25 @@ def calculation_trace_html(trace: CalculationTrace | None) -> str:
                 if step.status
                 else ""
             )
+            equation_html = (
+                mathml(step.equation)
+                if step.equation is not None
+                else f"<div class=\"formula-fallback\">{escape(step.expression)}</div>"
+            )
+            substitution_html = (
+                mathml(step.substitution_equation)
+                if step.substitution_equation is not None
+                else f"<div class=\"formula-fallback\">{escape(step.substitution)}</div>"
+            )
             rows.append(
                 "<tr>"
                 f"<td class=\"left ref\">{escape(step.reference)}</td>"
                 "<td class=\"left calc\">"
-                f"<strong>{escape(step.label)}</strong>"
-                f"<div class=\"formula\">{escape(step.expression)}</div>"
-                f"<div class=\"substitution\">= {escape(step.substitution)}</div>"
+                f"<strong class=\"calc-label\">{escape(step.label)}</strong>"
+                "<div class=\"equation-caption\">Equation</div>"
+                f"<div class=\"formula\">{equation_html}</div>"
+                "<div class=\"equation-caption\">Substitution</div>"
+                f"<div class=\"substitution\">{substitution_html}</div>"
                 "</td>"
                 f"<td class=\"left result\"><strong>{escape(step.result)}</strong>{status}</td>"
                 "</tr>"
