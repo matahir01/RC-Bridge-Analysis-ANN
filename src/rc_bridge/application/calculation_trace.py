@@ -3,6 +3,21 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from rc_bridge.application.design_checks import ApplicationDesignInterpretationSuite
+from rc_bridge.application.math_notation import (
+    MathExpr,
+    absolute,
+    fraction,
+    identifier,
+    number,
+    operator,
+    parenthesized,
+    row,
+    sqrt,
+    sub,
+    sup,
+    text,
+)
+from rc_bridge.design.eurocode_layered_section import layered_singly_reinforced_resistance
 from rc_bridge.application.fatigue import FatigueApplicationResult
 from rc_bridge.application.load_cases import (
     application_combination_summary,
@@ -22,6 +37,8 @@ class CalculationStep:
     result: str
     reference: str = ""
     status: str = ""
+    equation: MathExpr | None = None
+    substitution_equation: MathExpr | None = None
 
     def __post_init__(self) -> None:
         if not self.label.strip():
@@ -55,6 +72,203 @@ class CalculationTrace:
 
 def _f(value: float, digits: int = 3) -> str:
     return f"{float(value):.{digits}f}"
+
+
+def _num(value: float, digits: int = 3) -> MathExpr:
+    return number(_f(value, digits))
+
+
+def _var(name: str, script: str | None = None) -> MathExpr:
+    base = identifier(name)
+    return base if script is None else sub(base, script)
+
+
+def _eq(left: MathExpr, right: MathExpr) -> MathExpr:
+    return row(left, operator("="), right)
+
+
+def _sum(*items: MathExpr) -> MathExpr:
+    parts: list[MathExpr] = []
+    for index, item in enumerate(items):
+        if index:
+            parts.append(operator("+"))
+        parts.append(item)
+    return row(*parts)
+
+
+def _product(*items: MathExpr) -> MathExpr:
+    parts: list[MathExpr] = []
+    for index, item in enumerate(items):
+        if index:
+            parts.append(operator("×"))
+        parts.append(item)
+    return row(*parts)
+
+
+def _analysis_formulation_block(
+    result: ProjectNativeLM1GrillageSearchResult,
+) -> CalculationBlock | None:
+    """Expose one actual grillage-member stiffness path used by the native solver."""
+
+    if not result.cases:
+        return None
+    model = result.cases[0].model
+    nodes = {node.node_id: node for node in model.nodes}
+    representative = next(
+        (
+            beam
+            for beam in model.beams
+            if abs(nodes[beam.node_j].x_m - nodes[beam.node_i].x_m) > 1.0e-9
+            and abs(nodes[beam.node_j].y_m - nodes[beam.node_i].y_m) <= 1.0e-9
+        ),
+        None,
+    )
+    if representative is None:
+        return None
+
+    material = next(
+        item for item in model.materials if item.material_id == representative.material_id
+    )
+    section = next(
+        item for item in model.sections if item.section_id == representative.section_id
+    )
+    length_m = model.member_length_m(representative.member_id)
+    e_kn_m2 = material.elastic_modulus_kn_m2
+    nu = material.poisson_ratio
+    g_kn_m2 = e_kn_m2 / (2.0 * (1.0 + nu))
+    ei_kn_m2 = e_kn_m2 * section.iy_m4
+    gj_kn_m2 = g_kn_m2 * section.torsion_constant_m4
+    bending_stiffness = 12.0 * ei_kn_m2 / length_m**3
+    torsional_stiffness = gj_kn_m2 / length_m
+
+    return CalculationBlock(
+        title="Native grillage analysis - representative member formulation",
+        scope=(
+            f"Member {representative.member_id} is taken directly from a retained native "
+            "LM1 grillage model. The report exposes the stiffness quantities used by the "
+            "solver without recreating a separate analysis engine."
+        ),
+        steps=(
+            CalculationStep(
+                label="Concrete shear modulus",
+                expression="G = E / [2(1 + nu)]",
+                substitution=(
+                    f"{_f(e_kn_m2)} / [2(1 + {_f(nu)})]"
+                ),
+                result=f"{_f(g_kn_m2)} kN/m2",
+                reference="Linear-elastic isotropic material relation",
+                equation=_eq(
+                    identifier("G"),
+                    fraction(
+                        identifier("E"),
+                        _product(number("2"), parenthesized(_sum(number("1"), identifier("ν")))),
+                    ),
+                ),
+                substitution_equation=_eq(
+                    identifier("G"),
+                    fraction(
+                        _num(e_kn_m2),
+                        _product(number("2"), parenthesized(_sum(number("1"), _num(nu)))),
+                    ),
+                ),
+            ),
+            CalculationStep(
+                label="Vertical-bending rigidity",
+                expression="EI = E Iy",
+                substitution=f"{_f(e_kn_m2)} x {_f(section.iy_m4, 9)}",
+                result=f"{_f(ei_kn_m2)} kN m2",
+                reference="Native vertical grillage element",
+                equation=_eq(
+                    row(identifier("E"), _var("I", "y")),
+                    _product(identifier("E"), _var("I", "y")),
+                ),
+                substitution_equation=_eq(
+                    row(identifier("E"), _var("I", "y")),
+                    _product(_num(e_kn_m2), _num(section.iy_m4, 9)),
+                ),
+            ),
+            CalculationStep(
+                label="Saint-Venant torsional rigidity",
+                expression="GJ = G J",
+                substitution=f"{_f(g_kn_m2)} x {_f(section.torsion_constant_m4, 9)}",
+                result=f"{_f(gj_kn_m2)} kN m2",
+                reference="Native vertical grillage element",
+                equation=_eq(
+                    row(identifier("G"), identifier("J")),
+                    _product(identifier("G"), identifier("J")),
+                ),
+                substitution_equation=_eq(
+                    row(identifier("G"), identifier("J")),
+                    _product(_num(g_kn_m2), _num(section.torsion_constant_m4, 9)),
+                ),
+            ),
+            CalculationStep(
+                label="Representative vertical member stiffness coefficient",
+                expression="kww = 12 EI / L^3",
+                substitution=(
+                    f"12 x {_f(ei_kn_m2)} / {_f(length_m)}^3"
+                ),
+                result=f"{_f(bending_stiffness)} kN/m",
+                reference="Euler-Bernoulli grillage member stiffness matrix",
+                equation=_eq(
+                    _var("k", "ww"),
+                    fraction(
+                        _product(number("12"), identifier("E"), _var("I", "y")),
+                        sup(identifier("L"), 3),
+                    ),
+                ),
+                substitution_equation=_eq(
+                    _var("k", "ww"),
+                    fraction(
+                        _product(number("12"), _num(ei_kn_m2)),
+                        sup(_num(length_m), 3),
+                    ),
+                ),
+            ),
+            CalculationStep(
+                label="Representative torsional stiffness coefficient",
+                expression="kt = GJ / L",
+                substitution=f"{_f(gj_kn_m2)} / {_f(length_m)}",
+                result=f"{_f(torsional_stiffness)} kNm/rad",
+                reference="Saint-Venant torsion in native grillage member",
+                equation=_eq(
+                    _var("k", "t"),
+                    fraction(row(identifier("G"), identifier("J")), identifier("L")),
+                ),
+                substitution_equation=_eq(
+                    _var("k", "t"),
+                    fraction(_num(gj_kn_m2), _num(length_m)),
+                ),
+            ),
+            CalculationStep(
+                label="Global displacement solution",
+                expression="K u = F",
+                substitution="assembled sparse grillage system; constrained DOFs removed",
+                result="nodal w, Rx and Ry",
+                reference="Native sparse grillage solver",
+                equation=_eq(
+                    row(identifier("K"), identifier("u")),
+                    identifier("F"),
+                ),
+            ),
+            CalculationStep(
+                label="Recovered member-end actions",
+                expression="qe = ke ue - fe",
+                substitution="element displacement vector transformed back to local axes",
+                result="V, M and T at I/J ends",
+                reference="Native grillage member-force recovery",
+                equation=_eq(
+                    _var("q", "e"),
+                    row(
+                        _var("k", "e"),
+                        _var("u", "e"),
+                        operator("−"),
+                        _var("f", "e"),
+                    ),
+                ),
+            ),
+        ),
+    )
 
 
 def _combination_blocks(
@@ -151,6 +365,10 @@ def build_application_calculation_trace(
     """
 
     blocks: list[CalculationBlock] = []
+
+    analysis_block = _analysis_formulation_block(result)
+    if analysis_block is not None:
+        blocks.append(analysis_block)
 
     for row in permanent_load_audit(project):
         components = (
