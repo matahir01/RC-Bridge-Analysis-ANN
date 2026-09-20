@@ -430,27 +430,125 @@ def application_html_report(
 <meta charset="utf-8">
 <title>{project_name} - RC Bridge Analysis Report</title>
 <style>
-body {{ font-family: Arial, Helvetica, sans-serif; margin: 32px; color: #1f2933; }}
-h1, h2 {{ color: #102a43; }}
-.meta {{ display: grid; grid-template-columns: 260px 1fr; gap: 6px 18px; }}
+:root {{
+  --ink: #182635;
+  --navy: #17324d;
+  --navy-2: #244b6b;
+  --line: #aebdca;
+  --paper: #ffffff;
+  --wash: #f4f7f9;
+  --result: #f8fbf6;
+  --accent: #9a7b35;
+}}
+* {{ box-sizing: border-box; }}
+body {{
+  font-family: "Segoe UI", Arial, Helvetica, sans-serif;
+  max-width: 1180px;
+  margin: 28px auto;
+  padding: 34px 42px 48px;
+  color: var(--ink);
+  background: var(--paper);
+  box-shadow: 0 10px 30px rgba(18, 41, 61, 0.10);
+  line-height: 1.38;
+}}
+h1 {{
+  color: var(--navy);
+  margin: 0 0 4px;
+  padding-bottom: 10px;
+  border-bottom: 3px solid var(--navy);
+  letter-spacing: 0.01em;
+}}
+h2 {{
+  color: var(--navy);
+  margin-top: 30px;
+  padding: 7px 10px;
+  border-left: 5px solid var(--navy-2);
+  background: #f0f4f7;
+}}
+h3 {{ color: var(--navy-2); margin: 24px 0 4px; }}
+.meta {{
+  display: grid;
+  grid-template-columns: 260px 1fr;
+  gap: 6px 18px;
+  border: 1px solid var(--line);
+  padding: 12px 14px;
+  background: #fbfcfd;
+}}
+.meta > div:nth-child(odd) {{ font-weight: 600; color: #3a5268; }}
 table {{ border-collapse: collapse; width: 100%; margin: 14px 0 24px; }}
-th, td {{ border: 1px solid #bcccdc; padding: 7px 9px; text-align: right; }}
+th, td {{ border: 1px solid var(--line); padding: 7px 9px; text-align: right; }}
 th:first-child, td:first-child {{ text-align: center; }}
-th {{ background: #eaf2f8; }}
+th {{
+  background: var(--navy);
+  color: white;
+  font-weight: 600;
+}}
+tbody tr:nth-child(even):not(.calculation-sheet tr) {{ background: #fafcfd; }}
 .left {{ text-align: left; }}
-.note {{ border-left: 4px solid #829ab1; padding: 10px 14px; background: #f5f7fa; }}
-.warn {{ border-left: 4px solid #d97706; padding: 10px 14px; background: #fff7ed; }}
+.note {{
+  border-left: 4px solid #6e879c;
+  padding: 10px 14px;
+  background: var(--wash);
+}}
+.warn {{
+  border-left: 4px solid #b06f21;
+  padding: 10px 14px;
+  background: #fff8ec;
+}}
 .small {{ font-size: 0.9rem; color: #52606d; }}
+.calculation-sheet {{
+  table-layout: fixed;
+  border: 1.4px solid #70879a;
+  box-shadow: 0 1px 0 rgba(0,0,0,.03);
+}}
 .calculation-sheet td {{ vertical-align: top; }}
-.calculation-sheet .ref {{ width: 20%; }}
-.calculation-sheet .calc {{ width: 58%; }}
-.calculation-sheet .result {{ width: 22%; }}
-.formula {{ margin-top: 5px; font-family: "Courier New", monospace; }}
-.substitution {{ margin-top: 3px; font-family: "Courier New", monospace; color: #334e68; }}
+.calculation-sheet .ref {{
+  width: 18%;
+  background: #f3f5f7;
+  color: #455b6d;
+  font-size: 0.86rem;
+}}
+.calculation-sheet .calc {{ width: 62%; text-align: left; padding: 10px 14px; }}
+.calculation-sheet .result {{
+  width: 20%;
+  background: var(--result);
+  text-align: left;
+  font-size: 0.93rem;
+}}
+.calc-label {{ color: var(--navy); font-size: 0.98rem; }}
+.equation-caption {{
+  margin-top: 7px;
+  color: #748493;
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}}
+.formula, .substitution {{
+  margin: 2px 0 4px;
+  overflow-x: auto;
+}}
+.substitution {{ color: #334e68; }}
+.formula-fallback {{
+  font-family: "Cambria Math", "STIX Two Math", "Times New Roman", serif;
+  font-size: 1.03rem;
+}}
+math.engineering-math {{
+  font-family: "Cambria Math", "STIX Two Math", "STIXGeneral", "Times New Roman", serif;
+  font-size: 1.08rem;
+  margin: 2px 0;
+}}
+math.engineering-math[display="block"] {{ display: block; text-align: left; }}
 @media print {{
-  body {{ margin: 12mm; }}
+  body {{
+    max-width: none;
+    margin: 0;
+    padding: 10mm;
+    box-shadow: none;
+  }}
+  h2 {{ break-after: avoid; }}
+  h3 {{ break-after: avoid; }}
   .screen-only {{ display: none; }}
-  table {{ break-inside: avoid; }}
+  .calculation-sheet tr {{ break-inside: avoid; }}
 }}
 </style>
 </head>
