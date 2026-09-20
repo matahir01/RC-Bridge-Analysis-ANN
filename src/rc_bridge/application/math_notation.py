@@ -7,7 +7,6 @@ from typing import Literal
 from reportlab.pdfbase import pdfmetrics
 from reportlab.platypus import Flowable
 
-
 MathKind = Literal[
     "row",
     "identifier",
