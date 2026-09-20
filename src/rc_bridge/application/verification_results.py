@@ -28,7 +28,7 @@ class VerificationResultDatabase:
     def from_normalized_csvs(
         cls,
         normalized_csv_by_result: dict[int, str],
-    ) -> "VerificationResultDatabase":
+    ) -> VerificationResultDatabase:
         records_by_result: dict[int, tuple[VerificationResultValue, ...]] = {}
         member_end_index: dict[int, dict[int, dict[str, dict[str, float]]]] = {}
         node_displacement_index: dict[int, dict[int, float]] = {}
