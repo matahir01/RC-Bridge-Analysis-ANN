@@ -1056,6 +1056,26 @@ def build_application_calculation_trace(
                         result=f"{_f(max(check.flexural_utilization, check.shear_utilization))}",
                         reference="Construction-stage section active at time of loading",
                         status="PASS" if check.passes else "CHECK",
+                        equation=row(
+                            text("max"),
+                            operator("("),
+                            fraction(_var("M", "Ed"), _var("M", "Rd")),
+                            operator(","),
+                            fraction(_var("V", "Ed"), _var("V", "Rd")),
+                            operator(")"),
+                            operator("≤"),
+                            number("1.0"),
+                        ),
+                        substitution_equation=row(
+                            text("max"),
+                            operator("("),
+                            _num(check.flexural_utilization),
+                            operator(","),
+                            _num(check.shear_utilization),
+                            operator(")"),
+                            operator("≤"),
+                            number("1.0"),
+                        ),
                     )
                     for check in row.construction_stage_checks
                 )
@@ -1087,6 +1107,26 @@ def build_application_calculation_trace(
                         ),
                         reference="EN 1992 slab flexure/minimum reinforcement",
                         status="PASS" if deck.bottom_transverse.passes else "CHECK",
+                        equation=row(
+                            _var("A", "s,prov"),
+                            operator("≥"),
+                            text("max"),
+                            operator("("),
+                            _var("A", "s,req"),
+                            operator(","),
+                            _var("A", "s,min"),
+                            operator(")"),
+                        ),
+                        substitution_equation=row(
+                            _num(deck.bottom_transverse.arrangement.provided_area_mm2_per_m, 0),
+                            operator("≥"),
+                            text("max"),
+                            operator("("),
+                            _num(deck.bottom_transverse.required_area_mm2_per_m, 0),
+                            operator(","),
+                            _num(deck.bottom_transverse.minimum_area_mm2_per_m, 0),
+                            operator(")"),
+                        ),
                     ),
                     CalculationStep(
                         label="Top transverse reinforcement",
@@ -1101,6 +1141,26 @@ def build_application_calculation_trace(
                         ),
                         reference="EN 1992 slab flexure/minimum reinforcement",
                         status="PASS" if deck.top_transverse.passes else "CHECK",
+                        equation=row(
+                            _var("A", "s,prov"),
+                            operator("≥"),
+                            text("max"),
+                            operator("("),
+                            _var("A", "s,req"),
+                            operator(","),
+                            _var("A", "s,min"),
+                            operator(")"),
+                        ),
+                        substitution_equation=row(
+                            _num(deck.top_transverse.arrangement.provided_area_mm2_per_m, 0),
+                            operator("≥"),
+                            text("max"),
+                            operator("("),
+                            _num(deck.top_transverse.required_area_mm2_per_m, 0),
+                            operator(","),
+                            _num(deck.top_transverse.minimum_area_mm2_per_m, 0),
+                            operator(")"),
+                        ),
                     ),
                     CalculationStep(
                         label="One-way slab shear",
@@ -1112,6 +1172,17 @@ def build_application_calculation_trace(
                         result=f"{_f(deck.one_way_shear.utilization)}",
                         reference="EN 1992 concrete shear resistance",
                         status="PASS" if deck.one_way_shear.passes else "CHECK",
+                        equation=_eq(
+                            _var("η", "V"),
+                            fraction(_var("V", "Ed"), _var("V", "Rd,c")),
+                        ),
+                        substitution_equation=_eq(
+                            _var("η", "V"),
+                            fraction(
+                                _num(deck.one_way_shear.design_shear_kn_per_m),
+                                _num(deck.one_way_shear.concrete_resistance_kn_per_m),
+                            ),
+                        ),
                     ),
                 ),
             )
@@ -1128,6 +1199,10 @@ def build_application_calculation_trace(
                     result=f"{_f(row.fatigue.reinforcement.utilization)}",
                     reference="EN 1991-2 FLM3 and EN 1992 fatigue resistance",
                     status="PASS" if row.fatigue.reinforcement.passes else "CHECK",
+                    equation=_eq(
+                        row(identifier("Δ"), _var("σ", "s")),
+                        _num(row.reference_steel_stress_range_mpa),
+                    ),
                 )
             )
         if steps:
