@@ -686,6 +686,12 @@ def write_verification_import_evidence(
                         "relative_difference": (
                             report.envelope_comparison.permanent_equilibrium.relative_difference
                         ),
+                        "absolute_difference": (
+                            report.envelope_comparison.permanent_equilibrium.absolute_difference
+                        ),
+                        "allowable_absolute_difference": (
+                            report.envelope_comparison.permanent_equilibrium.allowable_absolute_difference
+                        ),
                         "passes": report.envelope_comparison.permanent_equilibrium.passes,
                     }
                 ),
@@ -699,6 +705,8 @@ def write_verification_import_evidence(
                         "external_value": item.external_value,
                         "unit": item.unit,
                         "relative_difference": item.relative_difference,
+                        "absolute_difference": item.absolute_difference,
+                        "allowable_absolute_difference": item.allowable_absolute_difference,
                         "passes": item.passes,
                         "note": item.note,
                     }
