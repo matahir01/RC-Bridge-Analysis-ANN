@@ -38,6 +38,7 @@ FROZEN_SESSION_OPERATIONS: tuple[str, ...] = (
     "build_stage5_verification_model",
     "import_stage5_staad_anl",
     "import_stage5_midas_tables",
+    "set_stage5_engineering_review",
     "write_last_verification_evidence",
 )
 
@@ -140,7 +141,10 @@ def build_application_view_snapshot(
         verification_summary = "No external Stage-5 result import yet."
         verification_state = "pending"
     else:
-        verification_state = "review"
+        engineering_accepted = bool(
+            getattr(verification, "engineering_accepted", False)
+        )
+        verification_state = "complete" if engineering_accepted else "review"
         imported = len(verification.result_sets)
         requested = len(verification.requested_result_ids)
         import_status = (
@@ -165,13 +169,29 @@ def build_application_view_snapshot(
             if combination_envelope_status is None
             else ("PASS" if combination_envelope_status else "FAIL / REVIEW")
         )
+        acceptance_status = getattr(
+            verification,
+            "engineering_acceptance_status",
+            "PENDING REVIEW",
+        )
+        review = getattr(verification, "engineering_review", None)
+        missing_review = (
+            ()
+            if review is None or not hasattr(review, "missing_checks")
+            else review.missing_checks()
+        )
+        missing_text = (
+            ""
+            if not missing_review
+            else " Missing review checks: " + ", ".join(missing_review) + "."
+        )
         verification_summary = (
             f"{verification.source_name}: import {import_status} "
             f"({imported}/{requested}); detailed numerical agreement "
             f"{'PASS' if verification.detailed_comparisons_pass else 'FAIL / REVIEW'}; "
             f"engineering envelope {envelope_text}; combination envelope "
             f"{combination_envelope_text}; overall numerical {numerical_status}. "
-            "Engineering acceptance remains PENDING model/source-equivalence review."
+            f"Engineering acceptance {acceptance_status}.{missing_text}"
         )
 
     stages = (
