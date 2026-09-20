@@ -383,8 +383,10 @@ class MathFormulaFlowable(Flowable):
         if natural.width <= availWidth:
             self._scale = 1.0
         else:
-            target = max(self.min_font_size / self.font_size, availWidth / natural.width)
-            self._scale = min(1.0, target)
+            # Always fit the available cell width. Very long substitutions are
+            # permitted to fall below the preferred minimum font size rather
+            # than overflowing into the result column.
+            self._scale = max(availWidth / natural.width, 0.05)
         width = min(availWidth, natural.width * self._scale)
         height = (natural.ascent + natural.descent) * self._scale + 2.0 * self.leading_padding
         self.width = width
