@@ -304,3 +304,288 @@ def compare_staad_lm1_envelopes(
         permanent_equilibrium=permanent_equilibrium,
         items=tuple(items),
     )
+
+
+@dataclass(frozen=True)
+class CombinationEnvelopeComparisonItem:
+    category: str
+    girder_index: int
+    quantity: str
+    native_governing_result_id: int
+    native_governing_result_name: str
+    external_governing_result_id: int
+    external_governing_result_name: str
+    native_value: float
+    external_value_at_native_result: float
+    external_envelope_value: float
+    unit: str
+    same_case_relative_difference: float | None
+    envelope_relative_difference: float | None
+    same_case_absolute_difference: float
+    envelope_absolute_difference: float
+    allowable_absolute_difference: float
+    governing_result_matches: bool
+    passes: bool
+
+
+@dataclass(frozen=True)
+class CombinationEnvelopeComparisonReport:
+    source_name: str
+    relative_tolerance: float
+    requested_combination_ids: tuple[int, ...]
+    missing_combination_ids: tuple[int, ...]
+    items: tuple[CombinationEnvelopeComparisonItem, ...]
+
+    @property
+    def passes(self) -> bool:
+        return (
+            bool(self.items)
+            and not self.missing_combination_ids
+            and all(item.passes for item in self.items)
+        )
+
+    @property
+    def maximum_relative_difference(self) -> float | None:
+        values = [
+            abs(value)
+            for item in self.items
+            for value in (
+                item.same_case_relative_difference,
+                item.envelope_relative_difference,
+            )
+            if value is not None
+        ]
+        return max(values) if values else None
+
+
+def _longitudinal_girder_lines(
+    model: VerificationModel,
+    *,
+    tolerance_m: float = 1.0e-9,
+) -> tuple[float, ...]:
+    nodes = {node.node_id: node for node in model.nodes}
+    values: set[float] = set()
+    for beam in model.beams:
+        ni = nodes[beam.node_i]
+        nj = nodes[beam.node_j]
+        if (
+            abs(float(ni.y_m) - float(nj.y_m)) <= tolerance_m
+            and abs(float(nj.x_m) - float(ni.x_m)) > tolerance_m
+        ):
+            values.add(round(float(ni.y_m), 12))
+    if not values:
+        raise ValueError("Stage-5 model contains no longitudinal girder lines.")
+    return tuple(sorted(values))
+
+
+def compare_stage5_combination_envelopes(
+    model: VerificationModel,
+    *,
+    native_results: VerificationResultDatabase,
+    external_results: VerificationResultDatabase,
+    result_ids: tuple[int, ...] | None = None,
+    tolerance: VerificationImportTolerance | None = None,
+    source_name: str = "External solver",
+) -> CombinationEnvelopeComparisonReport:
+    """Compare governing ULS/SLS combination envelopes by girder.
+
+    Detailed result-set comparison checks every returned row. This higher-level layer
+    independently identifies the governing combination for each girder response and
+    checks both the external value on the native governing combination and the external
+    governing envelope itself. A different governing combination is recorded but is not
+    automatically a failure when the envelope magnitude still agrees within tolerance.
+    """
+
+    policy = tolerance or VerificationImportTolerance()
+    selected = (
+        {item.combination_id for item in model.load_combinations}
+        if result_ids is None
+        else set(result_ids)
+    )
+    combinations = tuple(
+        item for item in model.load_combinations if item.combination_id in selected
+    )
+    requested = tuple(item.combination_id for item in combinations)
+    missing_set = {
+        item.combination_id
+        for item in combinations
+        if not native_results.has_result(item.combination_id)
+        or not external_results.has_result(item.combination_id)
+    }
+    missing = tuple(
+        item.combination_id
+        for item in combinations
+        if item.combination_id in missing_set
+    )
+    available = tuple(
+        item for item in combinations if item.combination_id not in missing_set
+    )
+    if not available:
+        return CombinationEnvelopeComparisonReport(
+            source_name=source_name,
+            relative_tolerance=policy.relative_tolerance,
+            requested_combination_ids=requested,
+            missing_combination_ids=missing,
+            items=(),
+        )
+
+    by_category: dict[str, list] = {}
+    for combination in available:
+        by_category.setdefault(combination.category, []).append(combination)
+
+    girder_lines = _longitudinal_girder_lines(model)
+    items: list[CombinationEnvelopeComparisonItem] = []
+    for category, category_combinations in by_category.items():
+        is_sls = category.strip().upper().startswith("SLS")
+        name_by_id = {
+            item.combination_id: item.name for item in category_combinations
+        }
+        for girder_index, y_m in enumerate(girder_lines, start=1):
+            member_ids = _longitudinal_member_ids(model, y_m=y_m)
+            for quantity, component, unit in (
+                ("Moment", "M_VERTICAL", "kNm"),
+                ("Shear", "V_VERTICAL", "kN"),
+                ("Torsion", "T", "kNm"),
+            ):
+                native_values = {
+                    item.combination_id: native_results.member_component_envelope(
+                        item.combination_id,
+                        member_ids=member_ids,
+                        component=component,
+                    )
+                    for item in category_combinations
+                }
+                external_values = {
+                    item.combination_id: external_results.member_component_envelope(
+                        item.combination_id,
+                        member_ids=member_ids,
+                        component=component,
+                    )
+                    for item in category_combinations
+                }
+                native_id = max(native_values, key=native_values.__getitem__)
+                external_id = max(external_values, key=external_values.__getitem__)
+                native_value = native_values[native_id]
+                external_same = external_values[native_id]
+                external_envelope = external_values[external_id]
+                same_case_absolute = abs(external_same - native_value)
+                envelope_absolute = abs(external_envelope - native_value)
+                allowable = policy.allowable_absolute_error(
+                    reference_value=native_value,
+                    unit=unit,
+                )
+                items.append(
+                    CombinationEnvelopeComparisonItem(
+                        category=category,
+                        girder_index=girder_index,
+                        quantity=quantity,
+                        native_governing_result_id=native_id,
+                        native_governing_result_name=name_by_id[native_id],
+                        external_governing_result_id=external_id,
+                        external_governing_result_name=name_by_id[external_id],
+                        native_value=native_value,
+                        external_value_at_native_result=external_same,
+                        external_envelope_value=external_envelope,
+                        unit=unit,
+                        same_case_relative_difference=_relative_difference(
+                            native_value,
+                            external_same,
+                        ),
+                        envelope_relative_difference=_relative_difference(
+                            native_value,
+                            external_envelope,
+                        ),
+                        same_case_absolute_difference=same_case_absolute,
+                        envelope_absolute_difference=envelope_absolute,
+                        allowable_absolute_difference=allowable,
+                        governing_result_matches=(native_id == external_id),
+                        passes=(
+                            policy.passes(
+                                reference_value=native_value,
+                                comparison_value=external_same,
+                                unit=unit,
+                            )
+                            and policy.passes(
+                                reference_value=native_value,
+                                comparison_value=external_envelope,
+                                unit=unit,
+                            )
+                        ),
+                    )
+                )
+
+            if is_sls:
+                native_values = {
+                    item.combination_id: native_results.vertical_displacement_envelope_mm(
+                        item.combination_id,
+                        model,
+                        y_m=y_m,
+                    )
+                    for item in category_combinations
+                }
+                external_values = {
+                    item.combination_id: external_results.vertical_displacement_envelope_mm(
+                        item.combination_id,
+                        model,
+                        y_m=y_m,
+                    )
+                    for item in category_combinations
+                }
+                native_id = max(native_values, key=native_values.__getitem__)
+                external_id = max(external_values, key=external_values.__getitem__)
+                native_value = native_values[native_id]
+                external_same = external_values[native_id]
+                external_envelope = external_values[external_id]
+                allowable = policy.allowable_absolute_error(
+                    reference_value=native_value,
+                    unit="mm",
+                )
+                items.append(
+                    CombinationEnvelopeComparisonItem(
+                        category=category,
+                        girder_index=girder_index,
+                        quantity="Deflection",
+                        native_governing_result_id=native_id,
+                        native_governing_result_name=name_by_id[native_id],
+                        external_governing_result_id=external_id,
+                        external_governing_result_name=name_by_id[external_id],
+                        native_value=native_value,
+                        external_value_at_native_result=external_same,
+                        external_envelope_value=external_envelope,
+                        unit="mm",
+                        same_case_relative_difference=_relative_difference(
+                            native_value,
+                            external_same,
+                        ),
+                        envelope_relative_difference=_relative_difference(
+                            native_value,
+                            external_envelope,
+                        ),
+                        same_case_absolute_difference=abs(external_same - native_value),
+                        envelope_absolute_difference=abs(
+                            external_envelope - native_value
+                        ),
+                        allowable_absolute_difference=allowable,
+                        governing_result_matches=(native_id == external_id),
+                        passes=(
+                            policy.passes(
+                                reference_value=native_value,
+                                comparison_value=external_same,
+                                unit="mm",
+                            )
+                            and policy.passes(
+                                reference_value=native_value,
+                                comparison_value=external_envelope,
+                                unit="mm",
+                            )
+                        ),
+                    )
+                )
+
+    return CombinationEnvelopeComparisonReport(
+        source_name=source_name,
+        relative_tolerance=policy.relative_tolerance,
+        requested_combination_ids=requested,
+        missing_combination_ids=missing,
+        items=tuple(items),
+    )

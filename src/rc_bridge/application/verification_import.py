@@ -14,8 +14,10 @@ from rc_bridge.analysis.prepared_grillage_solver import (
     solve_prepared_vertical_grillage,
 )
 from rc_bridge.application.verification_envelopes import (
+    CombinationEnvelopeComparisonReport,
     StaadEnvelopeComparisonReport,
     compare_staad_lm1_envelopes,
+    compare_stage5_combination_envelopes,
 )
 from rc_bridge.application.verification_results import VerificationResultDatabase
 from rc_bridge.application.verification_tolerance import VerificationImportTolerance
@@ -82,6 +84,7 @@ class ApplicationVerificationImportReport:
     result_sets: tuple[ImportedVerificationResultSet, ...]
     missing_result_ids: tuple[int, ...]
     envelope_comparison: StaadEnvelopeComparisonReport | None = None
+    combination_envelope_comparison: CombinationEnvelopeComparisonReport | None = None
 
     @property
     def imported_result_ids(self) -> tuple[int, ...]:
@@ -106,13 +109,28 @@ class ApplicationVerificationImportReport:
         return self.envelope_comparison.passes
 
     @property
+    def combination_envelope_comparison_passes(self) -> bool | None:
+        if self.combination_envelope_comparison is None:
+            return None
+        return self.combination_envelope_comparison.passes
+
+    @property
     def numerical_agreement_passes(self) -> bool:
         envelope_pass = (
             True
             if self.envelope_comparison is None
             else self.envelope_comparison.passes
         )
-        return self.detailed_comparisons_pass and envelope_pass
+        combination_envelope_pass = (
+            True
+            if self.combination_envelope_comparison is None
+            else self.combination_envelope_comparison.passes
+        )
+        return (
+            self.detailed_comparisons_pass
+            and envelope_pass
+            and combination_envelope_pass
+        )
 
     @property
     def engineering_acceptance_pending(self) -> bool:
@@ -412,6 +430,47 @@ def _assemble_result_set(
     )
 
 
+def _build_combination_envelope_comparison(
+    model: VerificationModel,
+    *,
+    requested: tuple[int, ...],
+    expected: dict[int, tuple[str, VerificationModel, str]],
+    external_by_id: dict[int, str],
+    source_name: str,
+    tolerance: VerificationImportTolerance,
+) -> CombinationEnvelopeComparisonReport | None:
+    requested_set = set(requested)
+    combination_ids = tuple(
+        item.combination_id
+        for item in model.load_combinations
+        if item.combination_id in requested_set
+    )
+    if not combination_ids:
+        return None
+    native_database = VerificationResultDatabase.from_normalized_csvs(
+        {
+            result_id: expected[result_id][2]
+            for result_id in combination_ids
+            if result_id in expected
+        }
+    )
+    external_database = VerificationResultDatabase.from_normalized_csvs(
+        {
+            result_id: external_by_id[result_id]
+            for result_id in combination_ids
+            if result_id in external_by_id
+        }
+    )
+    return compare_stage5_combination_envelopes(
+        model,
+        native_results=native_database,
+        external_results=external_database,
+        result_ids=combination_ids,
+        tolerance=tolerance,
+        source_name=source_name,
+    )
+
+
 def import_staad_anl_verification_results(
     model: VerificationModel,
     *,
@@ -503,6 +562,14 @@ def import_staad_anl_verification_results(
             source_name=source_name,
         )
     )
+    combination_envelope_comparison = _build_combination_envelope_comparison(
+        model,
+        requested=requested,
+        expected=expected,
+        external_by_id=external_by_id,
+        source_name=source_name,
+        tolerance=policy,
+    )
     return ApplicationVerificationImportReport(
         source_name=source_name,
         model_name=model.name,
@@ -510,6 +577,7 @@ def import_staad_anl_verification_results(
         result_sets=tuple(imported),
         missing_result_ids=tuple(missing),
         envelope_comparison=envelope_comparison,
+        combination_envelope_comparison=combination_envelope_comparison,
     )
 
 
@@ -537,6 +605,7 @@ def import_midas_table_verification_results(
 
     imported: list[ImportedVerificationResultSet] = []
     missing: list[int] = []
+    external_by_id: dict[int, str] = {}
     for result_id in requested:
         kind, result_model, expected_csv = expected[result_id]
         key = ("case", result_id) if kind == "load_case" else ("combination", result_id)
@@ -558,6 +627,7 @@ def import_midas_table_verification_results(
                 missing.append(result_id)
                 continue
             raise
+        external_by_id[result_id] = external_csv
         imported.append(
             _assemble_result_set(
                 result_id=result_id,
@@ -574,12 +644,21 @@ def import_midas_table_verification_results(
         raise ValueError(
             "The MIDAS result tables contain none of the requested Stage-5 load names."
         )
+    combination_envelope_comparison = _build_combination_envelope_comparison(
+        model,
+        requested=requested,
+        expected=expected,
+        external_by_id=external_by_id,
+        source_name=source_name,
+        tolerance=policy,
+    )
     return ApplicationVerificationImportReport(
         source_name=source_name,
         model_name=model.name,
         requested_result_ids=requested,
         result_sets=tuple(imported),
         missing_result_ids=tuple(missing),
+        combination_envelope_comparison=combination_envelope_comparison,
     )
 
 
@@ -660,6 +739,9 @@ def write_verification_import_evidence(
         "import_complete": report.import_complete,
         "detailed_comparisons_pass": report.detailed_comparisons_pass,
         "envelope_comparison_passes": report.envelope_comparison_passes,
+        "combination_envelope_comparison_passes": (
+            report.combination_envelope_comparison_passes
+        ),
         "engineering_acceptance_pending": report.engineering_acceptance_pending,
         "requested_result_ids": list(report.requested_result_ids),
         "imported_result_ids": list(report.imported_result_ids),
@@ -716,6 +798,48 @@ def write_verification_import_evidence(
                         "note": item.note,
                     }
                     for item in report.envelope_comparison.items
+                ],
+            }
+        ),
+        "combination_envelope_comparison": (
+            None
+            if report.combination_envelope_comparison is None
+            else {
+                "passes": report.combination_envelope_comparison.passes,
+                "relative_tolerance": (
+                    report.combination_envelope_comparison.relative_tolerance
+                ),
+                "maximum_relative_difference": (
+                    report.combination_envelope_comparison.maximum_relative_difference
+                ),
+                "requested_combination_ids": list(
+                    report.combination_envelope_comparison.requested_combination_ids
+                ),
+                "missing_combination_ids": list(
+                    report.combination_envelope_comparison.missing_combination_ids
+                ),
+                "items": [
+                    {
+                        "category": item.category,
+                        "girder_index": item.girder_index,
+                        "quantity": item.quantity,
+                        "native_governing_result_id": item.native_governing_result_id,
+                        "native_governing_result_name": item.native_governing_result_name,
+                        "external_governing_result_id": item.external_governing_result_id,
+                        "external_governing_result_name": item.external_governing_result_name,
+                        "native_value": item.native_value,
+                        "external_value_at_native_result": item.external_value_at_native_result,
+                        "external_envelope_value": item.external_envelope_value,
+                        "unit": item.unit,
+                        "same_case_relative_difference": item.same_case_relative_difference,
+                        "envelope_relative_difference": item.envelope_relative_difference,
+                        "same_case_absolute_difference": item.same_case_absolute_difference,
+                        "envelope_absolute_difference": item.envelope_absolute_difference,
+                        "allowable_absolute_difference": item.allowable_absolute_difference,
+                        "governing_result_matches": item.governing_result_matches,
+                        "passes": item.passes,
+                    }
+                    for item in report.combination_envelope_comparison.items
                 ],
             }
         ),

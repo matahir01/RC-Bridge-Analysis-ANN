@@ -95,6 +95,8 @@ def test_midas_import_compares_load_cases_and_combinations_in_one_pass(tmp_path)
     )
 
     assert report.passes is True
+    assert report.combination_envelope_comparison is not None
+    assert report.combination_envelope_comparison.passes is True
     assert report.imported_result_ids == (1, 10001)
     assert report.missing_result_ids == ()
     assert all(item.coverage.complete for item in report.result_sets)
@@ -108,6 +110,8 @@ def test_midas_import_compares_load_cases_and_combinations_in_one_pass(tmp_path)
     assert written.comparisons_csv.exists()
     summary = json.loads(written.summary_json.read_text(encoding="utf-8"))
     assert summary["passes"] is True
+    assert summary["combination_envelope_comparison_passes"] is True
+    assert summary["combination_envelope_comparison"]["passes"] is True
     assert summary["imported_result_ids"] == [1, 10001]
     assert len(written.normalized_result_files) == 2
     assert len(written.expected_result_files) == 2

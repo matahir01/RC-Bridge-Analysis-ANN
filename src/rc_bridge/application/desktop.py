@@ -2396,7 +2396,7 @@ def main() -> int:
     )
 
     verification_equilibrium_var = tk.StringVar(
-        value="Import a STAAD .ANL file to compare permanent equilibrium and LM1 envelopes."
+        value="Import external results to compare permanent equilibrium, LM1 and load-combination envelopes."
     )
     ttk.Label(
         verification_envelope_page,
@@ -2423,9 +2423,9 @@ def main() -> int:
     for key, title, width_value in (
         ("girder", "Girder", 80),
         ("quantity", "Quantity", 110),
-        ("case", "Source case", 100),
+        ("case", "Case / combination", 190),
         ("native", "Native", 145),
-        ("external", "STAAD", 145),
+        ("external", "External", 145),
         ("diff", "Difference", 110),
         ("status", "Status", 90),
     ):
@@ -2980,7 +2980,7 @@ def main() -> int:
             verification_error_metric_var.set("—")
             verification_acceptance_metric_var.set("PENDING")
             verification_equilibrium_var.set(
-                "Import a STAAD .ANL file to compare permanent equilibrium and LM1 envelopes."
+                "Import external results to compare permanent equilibrium, LM1 and load-combination envelopes."
             )
             draw_bar_chart(
                 verification_error_canvas,
@@ -2993,6 +2993,7 @@ def main() -> int:
 
         dashboard = verification_dashboard_data(report)
         envelope = report.envelope_comparison
+        combination_envelope = report.combination_envelope_comparison
         verification_status_metric_var.set(dashboard.status)
         verification_acceptance_metric_var.set("PENDING REVIEW")
         verification_coverage_metric_var.set(
@@ -3006,6 +3007,11 @@ def main() -> int:
                     None
                     if envelope is None
                     else envelope.maximum_relative_difference
+                ),
+                (
+                    None
+                    if combination_envelope is None
+                    else combination_envelope.maximum_relative_difference
                 ),
             )
             if value is not None
@@ -3052,9 +3058,35 @@ def main() -> int:
                 verification_error_canvas,
                 labels=labels,
                 values=values,
-                title="Native vs STAAD governing-envelope relative difference",
+                title="Native vs external governing LM1-envelope relative difference",
                 unit="%",
                 threshold=100.0 * envelope.relative_tolerance,
+            )
+        elif combination_envelope is not None:
+            chart_items = sorted(
+                combination_envelope.items,
+                key=lambda item: (
+                    0.0
+                    if item.envelope_relative_difference is None
+                    else abs(item.envelope_relative_difference)
+                ),
+                reverse=True,
+            )[:24]
+            draw_bar_chart(
+                verification_error_canvas,
+                labels=[
+                    f"G{item.girder_index}-{item.category[:4]}-{item.quantity[0]}"
+                    for item in chart_items
+                ],
+                values=[
+                    0.0
+                    if item.envelope_relative_difference is None
+                    else 100.0 * abs(item.envelope_relative_difference)
+                    for item in chart_items
+                ],
+                title="Native vs external governing load-combination envelope",
+                unit="%",
+                threshold=100.0 * combination_envelope.relative_tolerance,
             )
         else:
             draw_bar_chart(
@@ -5392,10 +5424,11 @@ def main() -> int:
         for item in verification_envelope_tree.get_children():
             verification_envelope_tree.delete(item)
 
+        verification_envelope_tree.tag_configure("pass", foreground="#177245")
+        verification_envelope_tree.tag_configure("check", foreground="#A73434")
         envelope = report.envelope_comparison
+        combination_envelope = report.combination_envelope_comparison
         if envelope is not None:
-            verification_envelope_tree.tag_configure("pass", foreground="#177245")
-            verification_envelope_tree.tag_configure("check", foreground="#A73434")
             for item in envelope.items:
                 difference = item.relative_difference
                 verification_envelope_tree.insert(
@@ -5413,6 +5446,34 @@ def main() -> int:
                             else (
                                 f"abs {item.absolute_difference:.3f} {item.unit} "
                                 f"/ limit {item.allowable_absolute_difference:.3f}"
+                            )
+                        ),
+                        "PASS" if item.passes else "CHECK",
+                    ),
+                    tags=("pass" if item.passes else "check",),
+                )
+        if combination_envelope is not None:
+            for item in combination_envelope.items:
+                difference = item.envelope_relative_difference
+                verification_envelope_tree.insert(
+                    "",
+                    tk.END,
+                    values=(
+                        f"G{item.girder_index}",
+                        f"{item.category} {item.quantity}",
+                        (
+                            f"N {item.native_governing_result_id} / "
+                            f"E {item.external_governing_result_id}"
+                        ),
+                        f"{item.native_value:.3f} {item.unit}",
+                        f"{item.external_envelope_value:.3f} {item.unit}",
+                        (
+                            f"{100.0 * difference:+.2f}%"
+                            if difference is not None
+                            else (
+                                f"abs {item.envelope_absolute_difference:.3f} "
+                                f"{item.unit} / limit "
+                                f"{item.allowable_absolute_difference:.3f}"
                             )
                         ),
                         "PASS" if item.passes else "CHECK",
@@ -5453,8 +5514,10 @@ def main() -> int:
             f"{'COMPLETE' if report.import_complete else 'INCOMPLETE'}; "
             f"detailed numerical "
             f"{'PASS' if report.detailed_comparisons_pass else 'REVIEW / FAIL'}; "
-            f"envelope "
+            f"LM1 envelope "
             f"{('NOT RUN' if report.envelope_comparison_passes is None else ('PASS' if report.envelope_comparison_passes else 'REVIEW / FAIL'))}; "
+            f"combination envelope "
+            f"{('NOT RUN' if report.combination_envelope_comparison_passes is None else ('PASS' if report.combination_envelope_comparison_passes else 'REVIEW / FAIL'))}; "
             f"engineering acceptance PENDING model/source-equivalence review."
         )
         refresh_dashboard()
