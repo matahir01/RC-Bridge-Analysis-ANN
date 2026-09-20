@@ -99,6 +99,7 @@ class ApplicationVerificationImportReport:
     requested_result_ids: tuple[int, ...]
     result_sets: tuple[ImportedVerificationResultSet, ...]
     missing_result_ids: tuple[int, ...]
+    envelope_comparison: StaadEnvelopeComparisonReport | None = None
 
     @property
     def imported_result_ids(self) -> tuple[int, ...]:
@@ -397,6 +398,8 @@ def import_staad_anl_verification_results(
     result_ids: tuple[int, ...] | None = None,
     source_name: str = "STAAD.Pro",
     tolerance: VerificationImportTolerance | None = None,
+    lm1: ProjectNativeLM1GrillageSearchResult | None = None,
+    envelope_relative_tolerance: float = 0.05,
 ) -> ApplicationVerificationImportReport:
     """Import all requested STAAD load-case/combination results from one ANL file."""
 
@@ -439,12 +442,24 @@ def import_staad_anl_verification_results(
         raise ValueError(
             "The STAAD ANL file contains none of the requested Stage-5 result IDs."
         )
+    envelope_comparison = (
+        None
+        if lm1 is None
+        else compare_staad_lm1_envelopes(
+            model,
+            lm1,
+            staad_anl_text=staad_anl_text,
+            relative_tolerance=envelope_relative_tolerance,
+            source_name=source_name,
+        )
+    )
     return ApplicationVerificationImportReport(
         source_name=source_name,
         model_name=model.name,
         requested_result_ids=requested,
         result_sets=tuple(imported),
         missing_result_ids=tuple(missing),
+        envelope_comparison=envelope_comparison,
     )
 
 
@@ -597,6 +612,51 @@ def write_verification_import_evidence(
         "missing_result_ids": list(report.missing_result_ids),
         "failed_result_ids": list(report.failed_result_ids),
         "maximum_relative_error": report.maximum_relative_error,
+        "envelope_comparison": (
+            None
+            if report.envelope_comparison is None
+            else {
+                "passes": report.envelope_comparison.passes,
+                "relative_tolerance": report.envelope_comparison.relative_tolerance,
+                "maximum_relative_difference": (
+                    report.envelope_comparison.maximum_relative_difference
+                ),
+                "permanent_equilibrium": (
+                    None
+                    if report.envelope_comparison.permanent_equilibrium is None
+                    else {
+                        "stage5_case_id": (
+                            report.envelope_comparison.permanent_equilibrium.stage5_case_id
+                        ),
+                        "native_total_reaction_kn": (
+                            report.envelope_comparison.permanent_equilibrium.native_total_reaction_kn
+                        ),
+                        "external_total_reaction_kn": (
+                            report.envelope_comparison.permanent_equilibrium.external_total_reaction_kn
+                        ),
+                        "relative_difference": (
+                            report.envelope_comparison.permanent_equilibrium.relative_difference
+                        ),
+                        "passes": report.envelope_comparison.permanent_equilibrium.passes,
+                    }
+                ),
+                "items": [
+                    {
+                        "girder_index": item.girder_index,
+                        "quantity": item.quantity,
+                        "source_case_id": item.source_case_id,
+                        "stage5_case_id": item.stage5_case_id,
+                        "native_value": item.native_value,
+                        "external_value": item.external_value,
+                        "unit": item.unit,
+                        "relative_difference": item.relative_difference,
+                        "passes": item.passes,
+                        "note": item.note,
+                    }
+                    for item in report.envelope_comparison.items
+                ],
+            }
+        ),
         "result_sets": [
             {
                 "result_id": item.result_id,
@@ -630,4 +690,5 @@ def write_verification_import_evidence(
         comparisons_csv=comparisons_path,
         normalized_result_files=tuple(normalized_files),
         expected_result_files=tuple(expected_files),
-    )
+    )from rc_bridge.workflow.lm1_grillage_search import ProjectNativeLM1GrillageSearchResult
+
