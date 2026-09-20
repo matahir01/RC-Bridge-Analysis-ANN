@@ -656,11 +656,11 @@ actions retain their actual extents in the deterministic permanent-load routines
 
 <h2>Verification boundary</h2>
 <p class="warn">
-The deterministic Stage-5 solver profile now has genuine STAAD external evidence and
-an accepted source/model review. MIDAS cross-verification is deferred to V2 and is not
-a deterministic-v1 release gate. ANN/reliability/RBDO ground-truth generation remains
-locked until the current v1 verification manifest and outstanding project/code acceptance
-checks are complete.
+Independent structural validation for the deterministic Stage-5 solver profile now
+includes genuine STAAD external evidence and an accepted source/model review. MIDAS
+cross-verification is deferred to V2 and is not a deterministic-v1 release gate.
+ANN/reliability/RBDO ground-truth generation remains locked until the current v1
+verification manifest and outstanding project/code acceptance checks are complete.
 </p>
 </body>
 </html>
@@ -1376,11 +1376,12 @@ def write_native_lm1_pdf_report(
             capability_table,
             Spacer(1, 5 * mm),
             Paragraph(
-                "Verification boundary: the deterministic Stage-5 solver profile has genuine "
-                "STAAD external evidence and an accepted source/model review. MIDAS cross-"
-                "verification is deferred to V2 and is not a deterministic-v1 release gate. "
-                "ANN/reliability/RBDO ground-truth generation remains locked until the current "
-                "v1 verification manifest and outstanding project/code acceptance checks are complete.",
+                "Verification boundary: independent structural validation for the deterministic "
+                "Stage-5 solver profile includes genuine STAAD external evidence and an accepted "
+                "source/model review. MIDAS cross-verification is deferred to V2 and is not a "
+                "deterministic-v1 release gate. ANN/reliability/RBDO ground-truth generation remains "
+                "locked until the current v1 verification manifest and outstanding project/code "
+                "acceptance checks are complete.",
                 body,
             ),
         ]
