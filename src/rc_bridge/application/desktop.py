@@ -20,6 +20,7 @@ from rc_bridge.application.gui_presenters import (
     deck_dashboard_data,
     design_dashboard_data,
     verification_dashboard_data,
+    verification_result_definitions,
 )
 from rc_bridge.application.gui_rendering import (
     draw_bar_chart,
@@ -2448,8 +2449,42 @@ def main() -> int:
     verification_result_tree.column("source", width=160, anchor=tk.W)
     verification_result_tree.pack(fill=tk.BOTH, expand=True)
 
+    verification_model_views = ttk.Notebook(verification_models_page)
+    verification_model_views.pack(fill=tk.BOTH, expand=True)
+    verification_definition_page = ttk.Frame(verification_model_views, padding=6)
+    verification_governing_page = ttk.Frame(verification_model_views, padding=6)
+    verification_model_views.add(
+        verification_definition_page,
+        text="All load cases & combinations",
+    )
+    verification_model_views.add(
+        verification_governing_page,
+        text="Governing LM1 cases",
+    )
+
+    verification_definition_tree = ttk.Treeview(
+        verification_definition_page,
+        columns=("id", "kind", "category", "name", "definition"),
+        show="headings",
+        height=16,
+    )
+    for key, title, width_value, anchor_value in (
+        ("id", "ID", 90, tk.CENTER),
+        ("kind", "Type", 130, tk.CENTER),
+        ("category", "Category", 150, tk.CENTER),
+        ("name", "Name", 300, tk.W),
+        ("definition", "Definition / factors", 520, tk.W),
+    ):
+        verification_definition_tree.heading(key, text=title)
+        verification_definition_tree.column(
+            key,
+            width=width_value,
+            anchor=anchor_value,
+        )
+    verification_definition_tree.pack(fill=tk.BOTH, expand=True)
+
     package_tree = ttk.Treeview(
-        verification_models_page,
+        verification_governing_page,
         columns=("case", "purpose"),
         show="headings",
         height=14,
@@ -2914,6 +2949,26 @@ def main() -> int:
             title="Transverse deck moment response",
             y_unit="kNm/m",
         )
+
+    def refresh_verification_definition_tree() -> None:
+        for item in verification_definition_tree.get_children():
+            verification_definition_tree.delete(item)
+        try:
+            model = session.build_stage5_verification_model()
+        except RuntimeError:
+            return
+        for item in verification_result_definitions(model):
+            verification_definition_tree.insert(
+                "",
+                tk.END,
+                values=(
+                    item.result_id,
+                    item.kind,
+                    item.category,
+                    item.name,
+                    item.definition,
+                ),
+            )
 
     def refresh_verification_dashboard(_event=None) -> None:
         report = session.last_verification_import
@@ -4547,6 +4602,7 @@ def main() -> int:
     def refresh_dashboard() -> None:
         refresh_overview()
         refresh_project_preview()
+        refresh_verification_definition_tree()
         refresh_verification_dashboard()
         for item in capability_tree.get_children():
             capability_tree.delete(item)
@@ -5508,6 +5564,7 @@ def main() -> int:
         elif active_key == "calculations":
             refresh_calculation_view()
         elif active_key == "verification":
+            refresh_verification_definition_tree()
             refresh_verification_dashboard()
 
     notebook.bind(
