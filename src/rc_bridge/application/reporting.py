@@ -693,7 +693,7 @@ def write_native_lm1_pdf_report(
 
     try:
         from reportlab.lib import colors
-        from reportlab.lib.enums import TA_LEFT
+        from reportlab.lib.enums import TA_CENTER, TA_LEFT
         from reportlab.lib.pagesizes import A4, landscape
         from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
         from reportlab.lib.units import mm
@@ -741,6 +741,54 @@ def write_native_lm1_pdf_report(
             slab_width_basis="representative interior tributary slab width",
         )
     styles = getSampleStyleSheet()
+    navy = colors.HexColor("#17324d")
+    navy_2 = colors.HexColor("#244b6b")
+    line_colour = colors.HexColor("#9fb0bf")
+    pale_blue = colors.HexColor("#eef3f7")
+    pale_result = colors.HexColor("#f4f8f2")
+    pale_reference = colors.HexColor("#f4f5f6")
+    title_style = ParagraphStyle(
+        "EngineeringTitle",
+        parent=styles["Title"],
+        fontName="Helvetica-Bold",
+        fontSize=19,
+        leading=22,
+        textColor=navy,
+        spaceAfter=4,
+    )
+    subtitle_style = ParagraphStyle(
+        "EngineeringSubtitle",
+        parent=styles["BodyText"],
+        fontSize=9,
+        leading=11,
+        textColor=colors.HexColor("#536b7d"),
+        spaceAfter=5,
+    )
+    heading2 = ParagraphStyle(
+        "EngineeringHeading2",
+        parent=heading2,
+        fontName="Helvetica-Bold",
+        fontSize=12.5,
+        leading=15,
+        textColor=navy,
+        backColor=pale_blue,
+        borderColor=navy_2,
+        borderWidth=0,
+        borderPadding=(5, 7, 5, 8),
+        leftIndent=0,
+        spaceBefore=8,
+        spaceAfter=6,
+    )
+    heading3 = ParagraphStyle(
+        "EngineeringHeading3",
+        parent=heading3,
+        fontName="Helvetica-Bold",
+        fontSize=10.5,
+        leading=13,
+        textColor=navy_2,
+        spaceBefore=7,
+        spaceAfter=3,
+    )
     small = ParagraphStyle(
         "Small",
         parent=styles["BodyText"],
@@ -751,11 +799,46 @@ def write_native_lm1_pdf_report(
     body = styles["BodyText"]
     body.fontSize = 9
     body.leading = 11
+    body.textColor = colors.HexColor("#243746")
+    reference_style = ParagraphStyle(
+        "CalculationReference",
+        parent=small,
+        fontSize=6.8,
+        leading=8.2,
+        textColor=colors.HexColor("#526778"),
+    )
+    calc_label_style = ParagraphStyle(
+        "CalculationLabel",
+        parent=body,
+        fontName="Helvetica-Bold",
+        fontSize=8.2,
+        leading=10,
+        textColor=navy,
+        spaceAfter=2,
+    )
+    equation_caption_style = ParagraphStyle(
+        "EquationCaption",
+        parent=small,
+        fontName="Helvetica-Bold",
+        fontSize=5.8,
+        leading=6.8,
+        textColor=colors.HexColor("#748493"),
+        spaceBefore=2,
+        spaceAfter=1,
+    )
+    result_style = ParagraphStyle(
+        "CalculationResult",
+        parent=body,
+        fontName="Helvetica-Bold",
+        fontSize=8.2,
+        leading=10,
+        textColor=navy,
+    )
     story = [
-        Paragraph(escape(project.name), styles["Title"]),
-        Paragraph("Deterministic RC bridge analysis and application calculation report", body),
+        Paragraph(escape(project.name), title_style),
+        Paragraph("Deterministic RC bridge analysis and design calculation report", subtitle_style),
         Spacer(1, 4 * mm),
-        Paragraph("Project definition", styles["Heading2"]),
+        Paragraph("Project definition", heading2),
     ]
 
     project_rows = [
@@ -802,7 +885,7 @@ def write_native_lm1_pdf_report(
     story.extend([project_table, Spacer(1, 4 * mm)])
 
     ec = prefs.eurocode
-    story.append(Paragraph("Application design basis", styles["Heading2"]))
+    story.append(Paragraph("Application design basis", heading2))
     basis_rows = [
         ["Display units", prefs.units.value],
         ["ULS factors", f"gamma_G,unf={ec.gamma_g_unfavourable:g}; gamma_G,fav={ec.gamma_g_favourable:g}; gamma_Q,traffic={ec.gamma_q_traffic:g}; gamma_Q,other={ec.gamma_q_nontraffic:g}"],
@@ -828,7 +911,7 @@ def write_native_lm1_pdf_report(
         story.extend(
             [
                 PageBreak(),
-                Paragraph("Step-by-step calculation sheets", styles["Heading2"]),
+                Paragraph("Step-by-step calculation sheets", heading2),
                 Paragraph(
                     "Each calculation sheet shows the design reference, equation, "
                     "numerical substitution and result. The later summary tables are "
@@ -839,7 +922,7 @@ def write_native_lm1_pdf_report(
             ]
         )
         for block in calculation_trace.blocks:
-            story.append(Paragraph(escape(block.title), styles["Heading3"]))
+            story.append(Paragraph(escape(block.title), heading3))
             story.append(Paragraph(escape(block.scope), small))
             trace_rows = [["Reference", "Calculation / substitution", "Result"]]
             for step in block.steps:
@@ -877,7 +960,7 @@ def write_native_lm1_pdf_report(
             story.extend([trace_table, Spacer(1, 3 * mm)])
         story.append(PageBreak())
 
-    story.append(Paragraph("Load cases and combinations", styles["Heading2"]))
+    story.append(Paragraph("Load cases and combinations", heading2))
     permanent_rows_pdf = [
         [
             "Girder",
@@ -980,7 +1063,7 @@ def write_native_lm1_pdf_report(
         )
         story.extend([combo_table, Spacer(1, 4 * mm)])
 
-    story.append(Paragraph("Native LM1 search", styles["Heading2"]))
+    story.append(Paragraph("Native LM1 search", heading2))
     search_rows = [
         ["Evaluated cases", str(result.evaluated_case_count)],
         ["Unique factorized structures", str(result.prepared_structure_count)],
@@ -1002,7 +1085,7 @@ def write_native_lm1_pdf_report(
     )
     story.extend([search_table, Spacer(1, 4 * mm)])
 
-    story.append(Paragraph("Native LM1 governing effects", styles["Heading2"]))
+    story.append(Paragraph("Native LM1 governing effects", heading2))
     effect_rows = [["Girder", "y (m)", "|M| kNm", "M case", "|V| kN", "V case", "|T| kNm", "T case"]]
     effect_rows.extend(
         [
@@ -1032,7 +1115,7 @@ def write_native_lm1_pdf_report(
     story.extend([effects_table, Spacer(1, 4 * mm)])
 
     if result.deflections:
-        story.append(Paragraph("Native LM1 traffic deflection trace", styles["Heading2"]))
+        story.append(Paragraph("Native LM1 traffic deflection trace", heading2))
         deflection_rows = [["Girder", "|DZ| (mm)", "x (m)", "Case"]]
         deflection_rows.extend(
             [
@@ -1058,7 +1141,7 @@ def write_native_lm1_pdf_report(
 
     if local_deck_design is not None:
         deck = local_deck_design
-        story.append(Paragraph("Native local deck/slab design", styles["Heading2"]))
+        story.append(Paragraph("Native local deck/slab design", heading2))
         deck_rows = [
             ["Check", "Demand / provision", "Util."],
             [
@@ -1117,7 +1200,7 @@ def write_native_lm1_pdf_report(
         )
 
     if fatigue is not None:
-        story.append(Paragraph("Native FLM3 fatigue", styles["Heading2"]))
+        story.append(Paragraph("Native FLM3 fatigue", heading2))
         fatigue_rows_pdf = [
             ["Girder", "Delta sigma s", "Steel util.", "Concrete util.", "Link util."]
         ]
@@ -1164,7 +1247,7 @@ def write_native_lm1_pdf_report(
             )
 
     if design_interpretation is not None:
-        story.append(Paragraph("Integrated action-to-design results", styles["Heading2"]))
+        story.append(Paragraph("Integrated action-to-design results", heading2))
         integrated_rows = [
             [
                 "Girder",
@@ -1226,7 +1309,7 @@ def write_native_lm1_pdf_report(
                 ]
             )
 
-    story.extend([PageBreak(), Paragraph("Design and verification readiness", styles["Heading2"])])
+    story.extend([PageBreak(), Paragraph("Design and verification readiness", heading2)])
     capability_rows = [["Capability", "Status", "Engineering boundary"]]
     capability_rows.extend(
         [
