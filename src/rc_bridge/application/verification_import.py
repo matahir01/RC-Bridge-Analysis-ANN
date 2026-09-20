@@ -440,10 +440,17 @@ def import_staad_anl_verification_results(
 
     if cancel_check is not None and cancel_check():
         raise RuntimeError("Verification import cancelled.")
+    parser_progress = (
+        None
+        if progress_callback is None
+        else lambda completed, total: progress_callback("parse", completed, total)
+    )
     external_by_id = parse_staad_anl_result_sets(
         staad_anl_text,
         model,
         result_ids=requested,
+        progress_callback=parser_progress,
+        cancel_check=cancel_check,
     )
     external_database = VerificationResultDatabase.from_normalized_csvs(
         external_by_id
