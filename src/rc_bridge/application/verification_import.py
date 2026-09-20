@@ -4,6 +4,7 @@ import csv
 import io
 import json
 import re
+from collections.abc import Callable
 from dataclasses import dataclass, replace
 from pathlib import Path
 
@@ -16,6 +17,8 @@ from rc_bridge.application.verification_envelopes import (
     StaadEnvelopeComparisonReport,
     compare_staad_lm1_envelopes,
 )
+from rc_bridge.application.verification_results import VerificationResultDatabase
+from rc_bridge.application.verification_tolerance import VerificationImportTolerance
 from rc_bridge.export.external_results import (
     ExternalResultComparisonReport,
     ExternalResultCoverageReport,
@@ -40,32 +43,6 @@ from rc_bridge.export.verification_model import (
     VerificationUniformLoad,
 )
 from rc_bridge.workflow.lm1_grillage_search import ProjectNativeLM1GrillageSearchResult
-
-
-@dataclass(frozen=True)
-class VerificationImportTolerance:
-    relative_tolerance: float = 0.02
-    absolute_force_kn: float = 0.10
-    absolute_moment_knm: float = 0.10
-    absolute_displacement_m: float = 1.0e-5
-
-    def __post_init__(self) -> None:
-        if self.relative_tolerance < 0.0:
-            raise ValueError("Verification relative tolerance cannot be negative.")
-        if min(
-            self.absolute_force_kn,
-            self.absolute_moment_knm,
-            self.absolute_displacement_m,
-        ) < 0.0:
-            raise ValueError("Verification absolute tolerances cannot be negative.")
-
-    @property
-    def absolute_tolerance_by_unit(self) -> dict[str, float]:
-        return {
-            "kN": self.absolute_force_kn,
-            "kNm": self.absolute_moment_knm,
-            "m": self.absolute_displacement_m,
-        }
 
 
 @dataclass(frozen=True)
@@ -111,18 +88,43 @@ class ApplicationVerificationImportReport:
         return tuple(item.result_id for item in self.result_sets)
 
     @property
-    def passes(self) -> bool:
-        detailed_pass = (
+    def import_complete(self) -> bool:
+        return (
             bool(self.result_sets)
             and not self.missing_result_ids
-            and all(item.passes for item in self.result_sets)
+            and len(self.result_sets) == len(self.requested_result_ids)
         )
+
+    @property
+    def detailed_comparisons_pass(self) -> bool:
+        return self.import_complete and all(item.passes for item in self.result_sets)
+
+    @property
+    def envelope_comparison_passes(self) -> bool | None:
+        if self.envelope_comparison is None:
+            return None
+        return self.envelope_comparison.passes
+
+    @property
+    def numerical_agreement_passes(self) -> bool:
         envelope_pass = (
             True
             if self.envelope_comparison is None
             else self.envelope_comparison.passes
         )
-        return detailed_pass and envelope_pass
+        return self.detailed_comparisons_pass and envelope_pass
+
+    @property
+    def engineering_acceptance_pending(self) -> bool:
+        # Numerical agreement is necessary but not sufficient for independent
+        # engineering acceptance. Model/source provenance and modelling-equivalence
+        # review remain external acceptance steps.
+        return True
+
+    @property
+    def passes(self) -> bool:
+        """Backward-compatible numerical PASS; not an engineering acceptance flag."""
+        return self.numerical_agreement_passes
 
     @property
     def failed_result_ids(self) -> tuple[int, ...]:
@@ -342,6 +344,9 @@ def normalized_native_grillage_results_csv(
 def native_expected_results_by_id(
     model: VerificationModel,
     result_ids: tuple[int, ...],
+    *,
+    progress_callback: Callable[[str, int, int], None] | None = None,
+    cancel_check: Callable[[], bool] | None = None,
 ) -> dict[int, tuple[str, VerificationModel, str]]:
     if not result_ids:
         raise ValueError("At least one verification result ID is required.")
@@ -355,7 +360,10 @@ def native_expected_results_by_id(
     prepared = prepare_vertical_grillage(first_model)
 
     results: dict[int, tuple[str, VerificationModel, str]] = {}
-    for result_id in result_ids:
+    total = len(result_ids)
+    for index, result_id in enumerate(result_ids, start=1):
+        if cancel_check is not None and cancel_check():
+            raise RuntimeError("Verification import cancelled.")
         kind, result_model = single_models[result_id]
         analysis = solve_prepared_vertical_grillage(prepared, result_model)
         results[result_id] = (
@@ -363,6 +371,8 @@ def native_expected_results_by_id(
             result_model,
             normalized_native_grillage_results_csv(result_model, analysis),
         )
+        if progress_callback is not None:
+            progress_callback("native", index, total)
     return results
 
 
@@ -410,7 +420,8 @@ def import_staad_anl_verification_results(
     source_name: str = "STAAD.Pro",
     tolerance: VerificationImportTolerance | None = None,
     lm1: ProjectNativeLM1GrillageSearchResult | None = None,
-    envelope_relative_tolerance: float = 0.05,
+    progress_callback: Callable[[str, int, int], None] | None = None,
+    cancel_check: Callable[[], bool] | None = None,
 ) -> ApplicationVerificationImportReport:
     """Import all requested STAAD load-case/combination results from one ANL file."""
 
@@ -419,34 +430,63 @@ def import_staad_anl_verification_results(
     requested = result_ids or verification_result_ids(model)
     if len(requested) != len(set(requested)):
         raise ValueError("Verification result IDs cannot contain duplicates.")
-    expected = native_expected_results_by_id(model, requested)
     policy = tolerance or VerificationImportTolerance()
+    expected = native_expected_results_by_id(
+        model,
+        requested,
+        progress_callback=progress_callback,
+        cancel_check=cancel_check,
+    )
 
+    if cancel_check is not None and cancel_check():
+        raise RuntimeError("Verification import cancelled.")
+    parser_progress = (
+        None
+        if progress_callback is None
+        else lambda completed, total: progress_callback("parse", completed, total)
+    )
     external_by_id = parse_staad_anl_result_sets(
         staad_anl_text,
         model,
         result_ids=requested,
+        progress_callback=parser_progress,
+        cancel_check=cancel_check,
+    )
+    index_progress = (
+        None
+        if progress_callback is None
+        else lambda completed, total: progress_callback("index", completed, total)
+    )
+    external_database = VerificationResultDatabase.from_normalized_csvs(
+        external_by_id,
+        progress_callback=index_progress,
+        cancel_check=cancel_check,
     )
 
     imported: list[ImportedVerificationResultSet] = []
     missing: list[int] = []
-    for result_id in requested:
+    total = len(requested)
+    for index, result_id in enumerate(requested, start=1):
+        if cancel_check is not None and cancel_check():
+            raise RuntimeError("Verification import cancelled.")
         kind, result_model, expected_csv = expected[result_id]
         external_csv = external_by_id.get(result_id)
         if external_csv is None:
             missing.append(result_id)
-            continue
-        imported.append(
-            _assemble_result_set(
-                result_id=result_id,
-                result_kind=kind,
-                result_model=result_model,
-                expected_csv=expected_csv,
-                external_csv=external_csv,
-                source_name=source_name,
-                tolerance=policy,
+        else:
+            imported.append(
+                _assemble_result_set(
+                    result_id=result_id,
+                    result_kind=kind,
+                    result_model=result_model,
+                    expected_csv=expected_csv,
+                    external_csv=external_csv,
+                    source_name=source_name,
+                    tolerance=policy,
+                )
             )
-        )
+        if progress_callback is not None:
+            progress_callback("compare", index, total)
 
     if not imported:
         raise ValueError(
@@ -458,8 +498,8 @@ def import_staad_anl_verification_results(
         else compare_staad_lm1_envelopes(
             model,
             lm1,
-            staad_anl_text=staad_anl_text,
-            relative_tolerance=envelope_relative_tolerance,
+            external_results=external_database,
+            tolerance=policy,
             source_name=source_name,
         )
     )
@@ -617,6 +657,10 @@ def write_verification_import_evidence(
         "source_name": report.source_name,
         "model_name": report.model_name,
         "passes": report.passes,
+        "import_complete": report.import_complete,
+        "detailed_comparisons_pass": report.detailed_comparisons_pass,
+        "envelope_comparison_passes": report.envelope_comparison_passes,
+        "engineering_acceptance_pending": report.engineering_acceptance_pending,
         "requested_result_ids": list(report.requested_result_ids),
         "imported_result_ids": list(report.imported_result_ids),
         "missing_result_ids": list(report.missing_result_ids),
@@ -647,6 +691,12 @@ def write_verification_import_evidence(
                         "relative_difference": (
                             report.envelope_comparison.permanent_equilibrium.relative_difference
                         ),
+                        "absolute_difference": (
+                            report.envelope_comparison.permanent_equilibrium.absolute_difference
+                        ),
+                        "allowable_absolute_difference": (
+                            report.envelope_comparison.permanent_equilibrium.allowable_absolute_difference
+                        ),
                         "passes": report.envelope_comparison.permanent_equilibrium.passes,
                     }
                 ),
@@ -660,6 +710,8 @@ def write_verification_import_evidence(
                         "external_value": item.external_value,
                         "unit": item.unit,
                         "relative_difference": item.relative_difference,
+                        "absolute_difference": item.absolute_difference,
+                        "allowable_absolute_difference": item.allowable_absolute_difference,
                         "passes": item.passes,
                         "note": item.note,
                     }

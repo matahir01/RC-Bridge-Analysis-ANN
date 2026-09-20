@@ -20,6 +20,50 @@ class RibbonSection:
     fields: tuple[RibbonField, ...]
 
 
+def _ribbon_field_keys(
+    sections: tuple[RibbonSection, ...],
+) -> tuple[set[str], set[str]]:
+    string_keys = {
+        field.key
+        for section in sections
+        for field in section.fields
+        if field.kind != "bool"
+    }
+    bool_keys = {
+        field.key
+        for section in sections
+        for field in section.fields
+        if field.kind == "bool"
+    }
+    return string_keys, bool_keys
+
+
+def _capture_shared_values(
+    string_vars: dict[str, Any],
+    bool_vars: dict[str, Any],
+    *,
+    string_keys: set[str],
+    bool_keys: set[str],
+) -> tuple[dict[str, str], dict[str, bool]]:
+    return (
+        {key: string_vars[key].get() for key in string_keys},
+        {key: bool(bool_vars[key].get()) for key in bool_keys},
+    )
+
+
+def _restore_shared_values(
+    string_vars: dict[str, Any],
+    bool_vars: dict[str, Any],
+    *,
+    string_values: dict[str, str],
+    bool_values: dict[str, bool],
+) -> None:
+    for key, value in string_values.items():
+        string_vars[key].set(value)
+    for key, value in bool_values.items():
+        bool_vars[key].set(value)
+
+
 def open_scrollable_input_dialog(
     *,
     parent: Any,
@@ -33,11 +77,11 @@ def open_scrollable_input_dialog(
     width: int = 700,
     height: int = 680,
 ) -> Any:
-    """Open a modal, vertically scrollable secondary input editor.
+    """Open a modal, vertically scrollable transactional input editor.
 
-    Fields bind directly to the existing application Tk variables. The engineering
-    model is still updated only by the supplied apply callback, so the popup is a
-    presentation layer rather than another source of project state.
+    Dialog controls bind to temporary Tk variables. Shared application form variables
+    are updated only immediately before Apply validation; failed validation restores
+    the prior shared values, while Cancel/Escape/window-close discard dialog edits.
     """
 
     dialog = tk.Toplevel(parent)
@@ -46,6 +90,24 @@ def open_scrollable_input_dialog(
     dialog.minsize(min(width, 560), min(height, 480))
     dialog.transient(parent)
     dialog.grab_set()
+
+    string_keys, bool_keys = _ribbon_field_keys(sections)
+    missing_strings = sorted(string_keys - string_vars.keys())
+    missing_bools = sorted(bool_keys - bool_vars.keys())
+    if missing_strings or missing_bools:
+        dialog.grab_release()
+        dialog.destroy()
+        missing = ", ".join((*missing_strings, *missing_bools))
+        raise KeyError(f"Ribbon dialog field variable(s) not found: {missing}")
+
+    dialog_string_vars = {
+        key: tk.StringVar(value=string_vars[key].get())
+        for key in string_keys
+    }
+    dialog_bool_vars = {
+        key: tk.BooleanVar(value=bool(bool_vars[key].get()))
+        for key in bool_keys
+    }
 
     outer = ttk.Frame(dialog)
     outer.pack(fill=tk.BOTH, expand=True)
@@ -116,7 +178,7 @@ def open_scrollable_input_dialog(
                 pady=4,
             )
             if field.kind == "bool":
-                variable = bool_vars[field.key]
+                variable = dialog_bool_vars[field.key]
                 ttk.Checkbutton(frame, variable=variable).grid(
                     row=row,
                     column=1,
@@ -124,7 +186,7 @@ def open_scrollable_input_dialog(
                     pady=4,
                 )
             elif field.kind == "choice":
-                variable = string_vars[field.key]
+                variable = dialog_string_vars[field.key]
                 ttk.Combobox(
                     frame,
                     textvariable=variable,
@@ -133,7 +195,7 @@ def open_scrollable_input_dialog(
                     width=field.width,
                 ).grid(row=row, column=1, sticky="ew", pady=4)
             else:
-                variable = string_vars[field.key]
+                variable = dialog_string_vars[field.key]
                 ttk.Entry(
                     frame,
                     textvariable=variable,
@@ -149,8 +211,35 @@ def open_scrollable_input_dialog(
         dialog.destroy()
 
     def apply_and_close() -> None:
-        applied = apply_callback()
+        shared_strings_before, shared_bools_before = _capture_shared_values(
+            string_vars,
+            bool_vars,
+            string_keys=string_keys,
+            bool_keys=bool_keys,
+        )
+        for key, variable in dialog_string_vars.items():
+            string_vars[key].set(variable.get())
+        for key, variable in dialog_bool_vars.items():
+            bool_vars[key].set(bool(variable.get()))
+
+        try:
+            applied = apply_callback()
+        except Exception:
+            _restore_shared_values(
+                string_vars,
+                bool_vars,
+                string_values=shared_strings_before,
+                bool_values=shared_bools_before,
+            )
+            raise
+
         if applied is False:
+            _restore_shared_values(
+                string_vars,
+                bool_vars,
+                string_values=shared_strings_before,
+                bool_values=shared_bools_before,
+            )
             return
         close_dialog()
 

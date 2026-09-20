@@ -6,10 +6,7 @@ on:
     branches:
       - main
     paths:
-      - "src/rc_bridge/application/**"
-      - "src/rc_bridge/analysis/**"
-      - "src/rc_bridge/export/**"
-      - "src/rc_bridge/workflow/**"
+      - "src/rc_bridge/**"
       - "pyproject.toml"
       - ".github/workflows/windows-exe.yml"
 

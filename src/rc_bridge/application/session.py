@@ -598,6 +598,8 @@ class BridgeApplicationSession:
         path: str | Path,
         *,
         tolerance: VerificationImportTolerance | None = None,
+        progress_callback: Callable[[str, int, int], None] | None = None,
+        cancel_check: Callable[[], bool] | None = None,
     ) -> ApplicationVerificationImportReport:
         source = Path(path)
         model = self.build_stage5_verification_model()
@@ -607,6 +609,8 @@ class BridgeApplicationSession:
             source_name="STAAD.Pro",
             tolerance=tolerance,
             lm1=self.last_lm1_search,
+            progress_callback=progress_callback,
+            cancel_check=cancel_check,
         )
         self.last_verification_import = report
         return report

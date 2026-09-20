@@ -1,8 +1,12 @@
 import json
+from dataclasses import replace
 
 import pytest
 
 from rc_bridge.application.verification_envelopes import compare_staad_lm1_envelopes
+from rc_bridge.application.verification_results import VerificationResultDatabase
+from rc_bridge.application.verification_tolerance import VerificationImportTolerance
+from rc_bridge.export.staad_anl import parse_staad_anl_result_sets
 from rc_bridge.export.verification_model import (
     VerificationBeam,
     VerificationLoadCase,
@@ -143,12 +147,19 @@ MEMBER LOAD JT FX FY FZ MX MY MZ
 """
 
 
+def _external_database() -> VerificationResultDatabase:
+    model = _stage5_model()
+    return VerificationResultDatabase.from_normalized_csvs(
+        parse_staad_anl_result_sets(_anl(), model)
+    )
+
+
 def test_staad_envelope_comparison_matches_native_governing_cases() -> None:
     report = compare_staad_lm1_envelopes(
         _stage5_model(),
         _lm1(),
-        staad_anl_text=_anl(),
-        relative_tolerance=0.05,
+        external_results=_external_database(),
+        tolerance=VerificationImportTolerance(relative_tolerance=0.05),
     )
 
     assert report.passes is True
@@ -173,10 +184,43 @@ def test_staad_envelope_comparison_flags_out_of_tolerance_response() -> None:
     report = compare_staad_lm1_envelopes(
         _stage5_model(),
         _lm1(),
-        staad_anl_text=bad,
-        relative_tolerance=0.05,
+        external_results=VerificationResultDatabase.from_normalized_csvs(
+            parse_staad_anl_result_sets(bad, _stage5_model())
+        ),
+        tolerance=VerificationImportTolerance(relative_tolerance=0.05),
     )
 
     moment = next(item for item in report.items if item.quantity == "Moment")
     assert moment.passes is False
+    assert report.passes is False
+
+
+def test_zero_native_envelope_does_not_auto_pass_nonzero_external_value() -> None:
+    lm1 = _lm1()
+    girder = lm1.girders[0]
+    zero_torsion = replace(
+        lm1,
+        girders=(
+            replace(
+                girder,
+                torsion_knm=LM1GoverningComponent(0.0, 12, 10),
+            ),
+        ),
+    )
+
+    report = compare_staad_lm1_envelopes(
+        _stage5_model(),
+        zero_torsion,
+        external_results=_external_database(),
+        tolerance=VerificationImportTolerance(
+            relative_tolerance=0.05,
+            absolute_moment_knm=0.10,
+        ),
+    )
+
+    torsion = next(item for item in report.items if item.quantity == "Torsion")
+    assert torsion.relative_difference is None
+    assert torsion.absolute_difference == pytest.approx(10.1)
+    assert torsion.allowable_absolute_difference == pytest.approx(0.10)
+    assert torsion.passes is False
     assert report.passes is False

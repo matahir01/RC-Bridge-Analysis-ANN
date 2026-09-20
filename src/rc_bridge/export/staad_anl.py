@@ -4,6 +4,7 @@ import csv
 import io
 import math
 import re
+from collections.abc import Callable
 from dataclasses import dataclass
 
 from rc_bridge.export.verification_model import VerificationBeam, VerificationModel
@@ -251,6 +252,8 @@ def _parse_staad_anl_result_rows(
     model: VerificationModel,
     *,
     result_ids: tuple[int, ...],
+    progress_callback: Callable[[int, int], None] | None = None,
+    cancel_check: Callable[[], bool] | None = None,
 ) -> tuple[
     dict[int, list[tuple[str, str, str, str, str, float, str]]],
     dict[int, set[str]],
@@ -288,7 +291,16 @@ def _parse_staad_anl_result_rows(
     current_member: int | None = None
     current_load: int | None = None
 
-    for raw_line in text.replace("\x0c", "\n").splitlines():
+    lines = text.replace("\x0c", "\n").splitlines()
+    total_lines = len(lines)
+    for line_index, raw_line in enumerate(lines, start=1):
+        if cancel_check is not None and cancel_check():
+            raise RuntimeError("Verification import cancelled while parsing STAAD output.")
+        if (
+            progress_callback is not None
+            and (line_index == 1 or line_index % 1000 == 0 or line_index == total_lines)
+        ):
+            progress_callback(line_index, total_lines)
         line = raw_line.strip()
         upper = line.upper()
 
@@ -534,6 +546,8 @@ def parse_staad_anl_result_sets(
     model: VerificationModel,
     *,
     result_ids: tuple[int, ...] | None = None,
+    progress_callback: Callable[[int, int], None] | None = None,
+    cancel_check: Callable[[], bool] | None = None,
 ) -> dict[int, str]:
     """Normalize every requested STAAD primary load case and load combination.
 
@@ -547,6 +561,8 @@ def parse_staad_anl_result_sets(
         text,
         model,
         result_ids=requested,
+        progress_callback=progress_callback,
+        cancel_check=cancel_check,
     )
     return {
         result_id: _write_normalized(rows)
