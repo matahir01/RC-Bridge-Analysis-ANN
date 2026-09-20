@@ -5375,13 +5375,30 @@ def main() -> int:
                 ),
             )
         refresh_verification_dashboard()
-        status = "PASS" if report.passes else "REVIEW / FAIL"
-        status_var.set(
-            f"{report.source_name} Stage-5 import: {status}; "
-            f"{len(report.result_sets)}/{len(report.requested_result_ids)} result "
-            f"sets imported; {len(report.failed_result_ids)} failed and "
-            f"{len(report.missing_result_ids)} missing."
-        )
+        if report.envelope_comparison is not None:
+            envelope = report.envelope_comparison
+            max_difference = envelope.maximum_relative_difference
+            status_var.set(
+                f"{report.source_name} engineering envelopes: "
+                f"{'PASS' if envelope.passes else 'REVIEW / FAIL'}"
+                + (
+                    ""
+                    if max_difference is None
+                    else f"; max difference {100.0 * max_difference:.2f}%"
+                )
+                + (
+                    f". Raw diagnostic coverage: {len(report.result_sets)}/"
+                    f"{len(report.requested_result_ids)} result sets."
+                )
+            )
+        else:
+            status = "PASS" if report.passes else "REVIEW / FAIL"
+            status_var.set(
+                f"{report.source_name} Stage-5 import: {status}; "
+                f"{len(report.result_sets)}/{len(report.requested_result_ids)} result "
+                f"sets imported; {len(report.failed_result_ids)} failed and "
+                f"{len(report.missing_result_ids)} missing."
+            )
         refresh_dashboard()
 
     def import_staad_verification_results() -> None:
