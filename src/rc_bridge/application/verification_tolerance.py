@@ -5,17 +5,24 @@ from dataclasses import dataclass
 
 @dataclass(frozen=True)
 class VerificationImportTolerance:
-    """Shared numerical-tolerance policy for imported verification results.
+    """Shared numerical-tolerance policy for same-model external verification.
+
+    The v1 defaults are evidence-based from the accepted Stage-5 STAAD benchmark:
+    STAAD prints reactions/member forces to 0.01 kN or kNm and joint translations
+    to 0.0001 cm (= 0.001 mm). The absolute floors therefore equal one external
+    print increment. A 0.1% relative allowance governs larger responses and remains
+    roughly four times the largest meaningful governing-envelope relative difference
+    observed in the accepted benchmark (~0.026%).
 
     Relative and absolute tolerances are evaluated together. The larger allowable
     absolute error governs, which keeps near-zero quantities meaningful instead of
     treating an undefined percentage difference as an automatic pass.
     """
 
-    relative_tolerance: float = 0.02
-    absolute_force_kn: float = 0.10
-    absolute_moment_knm: float = 0.10
-    absolute_displacement_m: float = 1.0e-5
+    relative_tolerance: float = 0.001
+    absolute_force_kn: float = 0.01
+    absolute_moment_knm: float = 0.01
+    absolute_displacement_m: float = 1.0e-6
 
     def __post_init__(self) -> None:
         if self.relative_tolerance < 0.0:
