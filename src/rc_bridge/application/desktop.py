@@ -21,6 +21,11 @@ from rc_bridge.application.gui_presenters import (
     design_dashboard_data,
     verification_dashboard_data,
 )
+from rc_bridge.application.gui_ribbon import (
+    RibbonField,
+    RibbonSection,
+    open_scrollable_input_dialog,
+)
 from rc_bridge.application.gui_rendering import (
     draw_bar_chart,
     draw_bridge_preview,
@@ -130,6 +135,104 @@ def main() -> int:
     )
     header_run_button.pack(side=tk.LEFT, padx=(8, 0))
     analysis_buttons.append(header_run_button)
+
+    ribbon = ttk.Frame(root, style="Header.TFrame", padding=(12, 5, 12, 7))
+    ribbon.pack(fill=tk.X)
+
+    ribbon_project_group = ttk.LabelFrame(
+        ribbon,
+        text="MODEL",
+        style="RibbonGroup.TLabelframe",
+    )
+    ribbon_project_group.pack(side=tk.LEFT, padx=(0, 5))
+    ribbon_project_button = ttk.Button(
+        ribbon_project_group,
+        text="Project && Geometry",
+        style="Ribbon.TButton",
+    )
+    ribbon_project_button.pack(side=tk.LEFT, padx=2)
+    ribbon_section_button = ttk.Button(
+        ribbon_project_group,
+        text="Materials && Section",
+        style="Ribbon.TButton",
+    )
+    ribbon_section_button.pack(side=tk.LEFT, padx=2)
+
+    ribbon_load_group = ttk.LabelFrame(
+        ribbon,
+        text="ACTIONS",
+        style="RibbonGroup.TLabelframe",
+    )
+    ribbon_load_group.pack(side=tk.LEFT, padx=5)
+    ribbon_load_button = ttk.Button(
+        ribbon_load_group,
+        text="Permanent Loads",
+        style="Ribbon.TButton",
+    )
+    ribbon_load_button.pack(side=tk.LEFT, padx=2)
+    ribbon_actions_button = ttk.Button(
+        ribbon_load_group,
+        text="Additional Actions",
+        style="Ribbon.TButton",
+    )
+    ribbon_actions_button.pack(side=tk.LEFT, padx=2)
+
+    ribbon_analysis_group = ttk.LabelFrame(
+        ribbon,
+        text="ANALYSIS && DESIGN",
+        style="RibbonGroup.TLabelframe",
+    )
+    ribbon_analysis_group.pack(side=tk.LEFT, padx=5)
+    ribbon_basis_button = ttk.Button(
+        ribbon_analysis_group,
+        text="Design Basis",
+        style="Ribbon.TButton",
+    )
+    ribbon_basis_button.pack(side=tk.LEFT, padx=2)
+    ribbon_analysis_settings_button = ttk.Button(
+        ribbon_analysis_group,
+        text="Analysis Settings",
+        style="Ribbon.TButton",
+    )
+    ribbon_analysis_settings_button.pack(side=tk.LEFT, padx=2)
+    ribbon_design_button = ttk.Button(
+        ribbon_analysis_group,
+        text="Design Settings",
+        style="Ribbon.TButton",
+    )
+    ribbon_design_button.pack(side=tk.LEFT, padx=2)
+    ribbon_deck_button = ttk.Button(
+        ribbon_analysis_group,
+        text="Deck && Fatigue",
+        style="Ribbon.TButton",
+    )
+    ribbon_deck_button.pack(side=tk.LEFT, padx=2)
+
+    ribbon_run_group = ttk.LabelFrame(
+        ribbon,
+        text="RUN && REVIEW",
+        style="RibbonGroup.TLabelframe",
+    )
+    ribbon_run_group.pack(side=tk.RIGHT, padx=(5, 0))
+    ribbon_run_button = ttk.Button(
+        ribbon_run_group,
+        text="Run Full",
+        style="Primary.TButton",
+    )
+    ribbon_run_button.pack(side=tk.LEFT, padx=2)
+    ribbon_verify_button = ttk.Button(
+        ribbon_run_group,
+        text="Verification",
+        style="Ribbon.TButton",
+    )
+    ribbon_verify_button.pack(side=tk.LEFT, padx=2)
+    ribbon_calculation_button = ttk.Button(
+        ribbon_run_group,
+        text="Calculations",
+        style="Ribbon.TButton",
+    )
+    ribbon_calculation_button.pack(side=tk.LEFT, padx=2)
+    analysis_buttons.append(ribbon_run_button)
 
     body = ttk.Frame(root)
     body.pack(fill=tk.BOTH, expand=True)
