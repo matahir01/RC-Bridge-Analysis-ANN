@@ -34,6 +34,9 @@ def test_v1_acceptance_matrix_separates_structural_analysis_from_design_code() -
         "ec2_concrete_shear_reference_case",
         "ec2_required_link_shear_reference_case",
         "ec2_provided_link_vrds_reference_case",
+        "ec2_vrdmax_reference_case",
+        "ec2_torsion_reinforcement_reference_case",
+        "ec2_torsion_resistance_interaction_reference_case",
         "ec2_reinforcement_fatigue_reference_case",
         "ec2_concrete_fatigue_reference_case",
     ):
@@ -86,6 +89,9 @@ def test_staad_acceptance_does_not_unlock_unverified_design_milestones() -> None
     assert matrix.item("ec2_concrete_shear_reference_case").state is AcceptanceState.EXTERNALLY_ACCEPTED
     assert matrix.item("ec2_required_link_shear_reference_case").state is AcceptanceState.EXTERNALLY_ACCEPTED
     assert matrix.item("ec2_provided_link_vrds_reference_case").state is AcceptanceState.EXTERNALLY_ACCEPTED
+    assert matrix.item("ec2_vrdmax_reference_case").state is AcceptanceState.EXTERNALLY_ACCEPTED
+    assert matrix.item("ec2_torsion_reinforcement_reference_case").state is AcceptanceState.EXTERNALLY_ACCEPTED
+    assert matrix.item("ec2_torsion_resistance_interaction_reference_case").state is AcceptanceState.EXTERNALLY_ACCEPTED
     assert matrix.item("ec2_reinforcement_fatigue_reference_case").state is AcceptanceState.EXTERNALLY_ACCEPTED
     assert matrix.item("ec2_concrete_fatigue_reference_case").state is AcceptanceState.EXTERNALLY_ACCEPTED
     assert matrix.item("ec2_rectangular_flexure_reference_case").state is AcceptanceState.EXTERNALLY_ACCEPTED
@@ -93,7 +99,7 @@ def test_staad_acceptance_does_not_unlock_unverified_design_milestones() -> None
     assert verification.traffic_loading is False
     assert verification.load_combinations is False
     assert verification.flexure is False
-    assert verification.shear is False
+    assert verification.shear is True
     assert verification.cracking is False
     assert verification.deflection is False
     assert verification.fatigue is False
