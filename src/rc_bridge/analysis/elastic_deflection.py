@@ -121,23 +121,22 @@ def simply_supported_midspan_deflection_mm(
     )
 
 
-def simply_supported_deflection_from_moment_diagram_mm(
+def simply_supported_deflection_from_curvature_diagram_mm(
     *,
     stations_m: Sequence[float],
-    moments_knm: Sequence[float],
-    elastic_modulus_mpa: float,
-    second_moment_mm4: float,
+    curvatures_per_mm: Sequence[float],
 ) -> MomentDiagramDeflectionResult:
-    """Integrate a signed piecewise-linear M/EI diagram for a simple span.
+    """Integrate a signed piecewise-linear curvature diagram for a simple span.
 
-    The integration constant is solved from zero vertical displacement at both
-    end supports. The returned maximum is an absolute displacement magnitude;
-    signed station displacements are retained for audit and plotting.
+    Curvature is supplied in 1/mm. The integration constant is solved from zero
+    displacement at both simple supports. This generic form supports spatially
+    varying cracked/uncracked stiffness instead of forcing one effective EI over
+    the complete span.
     """
-    if len(stations_m) != len(moments_knm) or len(stations_m) < 2:
-        raise ValueError("Moment stations and values must have equal length of at least two.")
-    if elastic_modulus_mpa <= 0.0 or second_moment_mm4 <= 0.0:
-        raise ValueError("Elastic modulus and second moment must be positive.")
+    if len(stations_m) != len(curvatures_per_mm) or len(stations_m) < 2:
+        raise ValueError(
+            "Curvature stations and values must have equal length of at least two."
+        )
     stations_mm = tuple(float(value) * 1000.0 for value in stations_m)
     if abs(stations_mm[0]) > 1.0e-9:
         raise ValueError("Moment diagram must begin at the left support x=0.")
@@ -147,10 +146,7 @@ def simply_supported_deflection_from_moment_diagram_mm(
     ):
         raise ValueError("Moment stations must be non-decreasing.")
 
-    curvatures = tuple(
-        float(moment) * 1_000_000.0 / (elastic_modulus_mpa * second_moment_mm4)
-        for moment in moments_knm
-    )
+    curvatures = tuple(float(value) for value in curvatures_per_mm)
     free_slopes = [0.0]
     free_deflections = [0.0]
     for index in range(len(stations_mm) - 1):
@@ -241,4 +237,26 @@ def simply_supported_deflection_from_moment_diagram_mm(
         maximum_absolute_deflection_mm=best_absolute,
         maximum_position_m=best_position_mm / 1000.0,
         station_deflections_mm=signed,
+    )
+
+
+def simply_supported_deflection_from_moment_diagram_mm(
+    *,
+    stations_m: Sequence[float],
+    moments_knm: Sequence[float],
+    elastic_modulus_mpa: float,
+    second_moment_mm4: float,
+) -> MomentDiagramDeflectionResult:
+    """Integrate a signed piecewise-linear M/EI diagram for a simple span."""
+    if len(stations_m) != len(moments_knm) or len(stations_m) < 2:
+        raise ValueError("Moment stations and values must have equal length of at least two.")
+    if elastic_modulus_mpa <= 0.0 or second_moment_mm4 <= 0.0:
+        raise ValueError("Elastic modulus and second moment must be positive.")
+    curvatures = tuple(
+        float(moment) * 1_000_000.0 / (elastic_modulus_mpa * second_moment_mm4)
+        for moment in moments_knm
+    )
+    return simply_supported_deflection_from_curvature_diagram_mm(
+        stations_m=stations_m,
+        curvatures_per_mm=curvatures,
     )

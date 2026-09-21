@@ -40,6 +40,8 @@ def test_v1_acceptance_matrix_separates_structural_analysis_from_design_code() -
         "ec2_torsion_resistance_interaction_reference_case",
         "ec2_reinforcement_fatigue_reference_case",
         "ec2_concrete_fatigue_reference_case",
+        "ec2_crack_width_reference_case",
+        "ec2_deflection_reference_case",
     ):
         assert matrix.item(key).state is AcceptanceState.EXTERNALLY_ACCEPTED
         assert key not in matrix.pending_v1_gate_keys
@@ -61,8 +63,6 @@ def test_v1_acceptance_matrix_separates_structural_analysis_from_design_code() -
     for key in (
         "ec2_flexure_design",
         "ec2_torsion_design",
-        "ec2_crack_width",
-        "ec2_deflection_serviceability",
         "ec2_fatigue",
         "ec2_detailing",
     ):
@@ -98,14 +98,18 @@ def test_staad_acceptance_does_not_unlock_unverified_design_milestones() -> None
     assert matrix.item("ec2_torsion_resistance_interaction_reference_case").state is AcceptanceState.EXTERNALLY_ACCEPTED
     assert matrix.item("ec2_reinforcement_fatigue_reference_case").state is AcceptanceState.EXTERNALLY_ACCEPTED
     assert matrix.item("ec2_concrete_fatigue_reference_case").state is AcceptanceState.EXTERNALLY_ACCEPTED
+    assert matrix.item("ec2_crack_width_reference_case").state is AcceptanceState.EXTERNALLY_ACCEPTED
+    assert matrix.item("ec2_deflection_reference_case").state is AcceptanceState.EXTERNALLY_ACCEPTED
+    assert matrix.item("ec2_crack_width").state is AcceptanceState.EXTERNALLY_ACCEPTED
+    assert matrix.item("ec2_deflection_serviceability").state is AcceptanceState.EXTERNALLY_ACCEPTED
     assert matrix.item("ec2_rectangular_flexure_reference_case").state is AcceptanceState.EXTERNALLY_ACCEPTED
     assert matrix.item("ec2_link_spacing_reference_case").state is AcceptanceState.EXTERNALLY_ACCEPTED
     assert verification.traffic_loading is True
     assert verification.load_combinations is False
     assert verification.flexure is False
     assert verification.shear is True
-    assert verification.cracking is False
-    assert verification.deflection is False
+    assert verification.cracking is True
+    assert verification.deflection is True
     assert verification.fatigue is False
     assert verification.detailing is False
     assert verification.torsion_required is True

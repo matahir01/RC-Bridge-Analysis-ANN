@@ -261,19 +261,49 @@ def uncracked_layered_section_sls(
     steel_depth_m: float,
     modular_ratio: float,
     fct_eff_mpa: float,
+    compression_steel_area_mm2: float = 0.0,
+    compression_steel_depth_m: float | None = None,
 ) -> LayeredUncrackedSLS:
     ordered = _validate_layers(layers, effective_depth_m=steel_depth_m)
     if min(steel_area_mm2, modular_ratio, fct_eff_mpa) <= 0.0:
         raise ValueError("Uncracked layered-section inputs must be positive.")
+    if compression_steel_area_mm2 < 0.0:
+        raise ValueError("Compression steel area cannot be negative.")
+    if compression_steel_area_mm2 > 0.0 and compression_steel_depth_m is None:
+        raise ValueError("Compression steel depth is required when its area is positive.")
+    if (
+        compression_steel_depth_m is not None
+        and not 0.0 < compression_steel_depth_m < steel_depth_m
+    ):
+        raise ValueError("Compression steel depth must lie above the tension steel.")
     concrete_area_mm2 = sum(layer.area_m2 for layer in ordered) * 1.0e6
     transformed_steel_area = modular_ratio * steel_area_mm2
-    transformed_area = concrete_area_mm2 + transformed_steel_area
+    transformed_compression_area = modular_ratio * compression_steel_area_mm2
+    transformed_area = (
+        concrete_area_mm2
+        + transformed_steel_area
+        + transformed_compression_area
+    )
     concrete_first = sum(
         layer.area_m2 * 1.0e6 * layer.centroid_from_top_m * 1000.0
         for layer in ordered
     )
     steel_y_mm = steel_depth_m * 1000.0
-    x_mm = (concrete_first + transformed_steel_area * steel_y_mm) / transformed_area
+    compression_steel_y_mm = (
+        None
+        if compression_steel_depth_m is None
+        else compression_steel_depth_m * 1000.0
+    )
+    compression_first = (
+        0.0
+        if compression_steel_y_mm is None
+        else transformed_compression_area * compression_steel_y_mm
+    )
+    x_mm = (
+        concrete_first
+        + transformed_steel_area * steel_y_mm
+        + compression_first
+    ) / transformed_area
     inertia = 0.0
     for layer in ordered:
         width_mm = layer.width_m * 1000.0
@@ -282,6 +312,10 @@ def uncracked_layered_section_sls(
         y_mm = layer.centroid_from_top_m * 1000.0
         inertia += width_mm * depth_mm**3 / 12.0 + area_mm2 * (y_mm - x_mm) ** 2
     inertia += transformed_steel_area * (steel_y_mm - x_mm) ** 2
+    if compression_steel_y_mm is not None:
+        inertia += transformed_compression_area * (
+            compression_steel_y_mm - x_mm
+        ) ** 2
     if inertia <= 0.0:
         raise ValueError("Calculated layered uncracked inertia is non-positive.")
     bottom_mm = max(layer.bottom_m for layer in ordered) * 1000.0
@@ -304,12 +338,29 @@ def cracked_layered_section_sls(
     steel_depth_m: float,
     modular_ratio: float,
     service_moment_knm: float,
+    compression_steel_area_mm2: float = 0.0,
+    compression_steel_depth_m: float | None = None,
 ) -> LayeredCrackedSLS:
     ordered = _validate_layers(layers, effective_depth_m=steel_depth_m)
     if min(steel_area_mm2, modular_ratio) <= 0.0 or service_moment_knm < 0.0:
         raise ValueError("Cracked layered-section inputs are invalid.")
+    if compression_steel_area_mm2 < 0.0:
+        raise ValueError("Compression steel area cannot be negative.")
+    if compression_steel_area_mm2 > 0.0 and compression_steel_depth_m is None:
+        raise ValueError("Compression steel depth is required when its area is positive.")
+    if (
+        compression_steel_depth_m is not None
+        and not 0.0 < compression_steel_depth_m < steel_depth_m
+    ):
+        raise ValueError("Compression steel depth must lie above the tension steel.")
     d_mm = steel_depth_m * 1000.0
+    compression_d_mm = (
+        None
+        if compression_steel_depth_m is None
+        else compression_steel_depth_m * 1000.0
+    )
     nas = modular_ratio * steel_area_mm2
+    nas_compression = modular_ratio * compression_steel_area_mm2
 
     def equilibrium(x_mm: float) -> float:
         x_m = x_mm / 1000.0
@@ -320,7 +371,16 @@ def cracked_layered_section_sls(
                 continue
             area_m2, centroid_m, _ = overlap
             concrete_first += area_m2 * 1.0e6 * (x_mm - centroid_m * 1000.0)
-        return concrete_first - nas * (d_mm - x_mm)
+        compression_steel_first = (
+            0.0
+            if compression_d_mm is None
+            else nas_compression * (x_mm - compression_d_mm)
+        )
+        return (
+            concrete_first
+            + compression_steel_first
+            - nas * (d_mm - x_mm)
+        )
 
     lower = 1.0e-6
     upper = d_mm - 1.0e-6
@@ -349,6 +409,8 @@ def cracked_layered_section_sls(
             + area_mm2 * (x_mm - centroid_mm) ** 2
         )
     inertia += nas * (d_mm - x_mm) ** 2
+    if compression_d_mm is not None:
+        inertia += nas_compression * (x_mm - compression_d_mm) ** 2
     if inertia <= 0.0:
         raise ValueError("Calculated layered cracked inertia is non-positive.")
     steel_stress = (
@@ -395,6 +457,8 @@ def crack_width_layered_section(
     ecm_mpa: float,
     fct_eff_mpa: float,
     crack_limit_mm: float,
+    compression_steel_area_mm2: float = 0.0,
+    compression_steel_depth_m: float | None = None,
     kt: float = 0.4,
     k1: float = 0.8,
     k2: float = 0.5,
@@ -418,6 +482,8 @@ def crack_width_layered_section(
         steel_depth_m=steel_depth_m,
         modular_ratio=modular_ratio,
         service_moment_knm=service_moment_knm,
+        compression_steel_area_mm2=compression_steel_area_mm2,
+        compression_steel_depth_m=compression_steel_depth_m,
     )
     hceff = effective_tension_depth_mm(
         total_depth_m,
@@ -462,7 +528,7 @@ def crack_width_layered_section(
         strain_difference=strain_difference,
         close_spacing=close_spacing,
         status=(
-            "first-generation EC2 layered crack-width calculation with actual "
-            "participating concrete bands/gaps"
+            "EC2 layered crack-width calculation with actual participating "
+            "concrete bands/gaps and optional transformed compression reinforcement"
         ),
     )

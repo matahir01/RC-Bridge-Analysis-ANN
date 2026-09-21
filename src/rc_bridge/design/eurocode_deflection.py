@@ -5,6 +5,7 @@ from dataclasses import dataclass
 
 from rc_bridge.analysis.elastic_deflection import (
     simply_supported_deflection_at_x_mm,
+    simply_supported_deflection_from_curvature_diagram_mm,
     simply_supported_deflection_from_moment_diagram_mm,
 )
 from rc_bridge.analysis.loads import PointLoad
@@ -314,11 +315,30 @@ def ec2_interpolated_moment_diagram_deflection(
         elastic_modulus_mpa=e_eff,
         second_moment_mm4=cracked_second_moment_mm4,
     )
-    interpolated = interpolate_service_deformation(
-        uncracked.maximum_absolute_deflection_mm,
-        cracked.maximum_absolute_deflection_mm,
-        zeta,
+    # EC2 curvature interpolation is local: sections below Mcr remain state I,
+    # while cracked regions interpolate between state I and state II according
+    # to their own moment level. A single span-wide zeta overstates cracking
+    # away from the governing section.
+    local_curvatures: list[float] = []
+    for moment_knm in diagram.moments_knm:
+        moment_abs = abs(moment_knm)
+        local_zeta = ec2_tension_stiffening_zeta(
+            service_moment_knm=moment_abs,
+            cracking_moment_knm=cracking_moment_knm,
+            beta=beta,
+        )
+        effective_flexibility = (
+            (1.0 - local_zeta) / uncracked_second_moment_mm4
+            + local_zeta / cracked_second_moment_mm4
+        )
+        local_curvatures.append(
+            moment_knm * 1_000_000.0 / e_eff * effective_flexibility
+        )
+    interpolated_result = simply_supported_deflection_from_curvature_diagram_mm(
+        stations_m=diagram.stations_m,
+        curvatures_per_mm=tuple(local_curvatures),
     )
+    interpolated = interpolated_result.maximum_absolute_deflection_mm
     utilization, g_deflection = _deflection_acceptance(
         interpolated,
         allowable_deflection_mm,
@@ -333,9 +353,11 @@ def ec2_interpolated_moment_diagram_deflection(
         zeta=zeta,
         effective_concrete_modulus_mpa=e_eff,
         status=(
-            "EC2 two-state deflection from traceable signed M/EI curvature integration; "
+            "EC2 spatially varying two-state signed M/EI curvature integration from the traceable "
+            "signed moment diagram; "
             f"source={diagram.source}; state-I maximum x={uncracked.maximum_position_m:.3f} m; "
-            f"state-II maximum x={cracked.maximum_position_m:.3f} m"
+            f"state-II maximum x={cracked.maximum_position_m:.3f} m; "
+            f"interpolated maximum x={interpolated_result.maximum_position_m:.3f} m"
             + (
                 ""
                 if allowable_deflection_mm is not None
