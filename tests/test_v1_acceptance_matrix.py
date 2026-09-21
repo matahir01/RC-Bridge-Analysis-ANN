@@ -32,6 +32,8 @@ def test_v1_acceptance_matrix_separates_structural_analysis_from_design_code() -
         "en1990_lm1_research_combination_core",
         "road_bridge_combination_factors_reference_case",
         "ec2_concrete_shear_reference_case",
+        "ec2_required_link_shear_reference_case",
+        "ec2_provided_link_vrds_reference_case",
         "ec2_reinforcement_fatigue_reference_case",
         "ec2_concrete_fatigue_reference_case",
     ):
@@ -82,6 +84,8 @@ def test_staad_acceptance_does_not_unlock_unverified_design_milestones() -> None
     assert matrix.item("en1990_lm1_research_combination_core").state is AcceptanceState.EXTERNALLY_ACCEPTED
     assert matrix.item("road_bridge_combination_factors_reference_case").state is AcceptanceState.EXTERNALLY_ACCEPTED
     assert matrix.item("ec2_concrete_shear_reference_case").state is AcceptanceState.EXTERNALLY_ACCEPTED
+    assert matrix.item("ec2_required_link_shear_reference_case").state is AcceptanceState.EXTERNALLY_ACCEPTED
+    assert matrix.item("ec2_provided_link_vrds_reference_case").state is AcceptanceState.EXTERNALLY_ACCEPTED
     assert matrix.item("ec2_reinforcement_fatigue_reference_case").state is AcceptanceState.EXTERNALLY_ACCEPTED
     assert matrix.item("ec2_concrete_fatigue_reference_case").state is AcceptanceState.EXTERNALLY_ACCEPTED
     assert matrix.item("ec2_rectangular_flexure_reference_case").state is AcceptanceState.EXTERNALLY_ACCEPTED
