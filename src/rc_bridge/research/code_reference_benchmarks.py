@@ -286,7 +286,7 @@ CONCRETE_CENTRE_VRDMAX = ReferenceBenchmarkEvidence(
     ),
     scope=(
         "Independent verification of the recommended concrete-strut V_Rd,max "
-        "reduction-factor/equation used by the non-prestressed v1 shear kernel."
+        "reduction-factor/equation used by the non-prestressed v1 shear kernel only."
     ),
 )
 
