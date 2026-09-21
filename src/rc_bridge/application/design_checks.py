@@ -596,6 +596,7 @@ def _design_one_girder(
                     effective_depth_m=stage_d,
                     fck_mpa=float(project.materials.fck_mpa),
                     fyk_mpa=float(project.materials.fyk_mpa),
+                    maximum_design_lever_arm_ratio=EC2_MAXIMUM_DESIGN_LEVER_ARM_RATIO,
                 ),
             )
         trial_as = max(
@@ -755,6 +756,7 @@ def _design_one_girder(
                     effective_depth_m=stage_d,
                     fck_mpa=float(project.materials.fck_mpa),
                     fyk_mpa=float(project.materials.fyk_mpa),
+                    maximum_design_lever_arm_ratio=EC2_MAXIMUM_DESIGN_LEVER_ARM_RATIO,
                 ),
             )
         selected_bars = candidate_bars
