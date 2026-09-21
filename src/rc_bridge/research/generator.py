@@ -5,7 +5,11 @@ from dataclasses import dataclass
 
 from .dataset import TrainingRecord
 from .sampling import VariableRange, latin_hypercube_samples
-from .verification import (\n    DeterministicSolverVerification,\n    SolverProfile,\n    VerificationScope,\n)
+from .verification import (
+    DeterministicSolverVerification,
+    SolverProfile,
+    VerificationScope,
+)
 
 
 @dataclass(frozen=True)
@@ -71,7 +75,10 @@ def generate_training_records(
             "Training data generation is locked until structured deterministic "
             "solver verification is supplied."
         )
-    verification.require_ready_for(\n        expected_profile=solver_profile,\n        scope=verification_scope,\n    )
+    verification.require_ready_for(
+        expected_profile=solver_profile,
+        scope=verification_scope,
+    )
 
     required = COMMON_REQUIRED_TRAINING_VARIABLES | PROFILE_REQUIRED_TRAINING_VARIABLES[
         solver_profile
