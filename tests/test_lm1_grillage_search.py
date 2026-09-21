@@ -29,6 +29,7 @@ from rc_bridge.workflow.lm1_grillage_search import (
     generate_lm1_search_placements,
     native_lm1_girder_moment_diagram,
     run_project_native_lm1_grillage_search,
+    run_project_native_lm1_grillage_search_converged,
 )
 from rc_bridge.workflow.project_bridge import (
     ProjectGirderCombinationSet,
@@ -176,42 +177,22 @@ def test_simple_span_two_lane_search_covers_full_cartesian_candidate_space() -> 
 
 
 def test_native_lm1_search_refinement_is_monotonic_and_materially_converged() -> None:
-    coarse = run_project_native_lm1_grillage_search(
+    convergence = run_project_native_lm1_grillage_search_converged(
         _project(),
         longitudinal_sections_by_span=(_longitudinal(),),
         transverse_section=_transverse(),
         transverse_stations_m=(7.5,),
-        longitudinal_step_m=3.75,
-        retain_all_cases=False,
-    )
-    fine = run_project_native_lm1_grillage_search(
-        _project(),
-        longitudinal_sections_by_span=(_longitudinal(),),
-        transverse_section=_transverse(),
-        transverse_stations_m=(7.5,),
-        longitudinal_step_m=1.875,
-        retain_all_cases=False,
+        initial_longitudinal_step_m=3.75,
+        minimum_longitudinal_step_m=0.46875,
+        relative_tolerance=0.05,
+        max_refinements=3,
     )
 
-    assert coarse.tandem_combinations_exhaustive
-    assert fine.tandem_combinations_exhaustive
-    for coarse_girder, fine_girder in zip(coarse.girders, fine.girders, strict=True):
-        for coarse_value, fine_value in (
-            (coarse_girder.moment_knm.value, fine_girder.moment_knm.value),
-            (coarse_girder.shear_kn.value, fine_girder.shear_kn.value),
-            (coarse_girder.torsion_knm.value, fine_girder.torsion_knm.value),
-        ):
-            assert fine_value + 1.0e-9 >= coarse_value
-            if fine_value > 1.0e-9:
-                assert (fine_value - coarse_value) / fine_value <= 0.05
-
-        coarse_deflection = coarse.deflection_for_girder(coarse_girder.girder_index)
-        fine_deflection = fine.deflection_for_girder(fine_girder.girder_index)
-        assert fine_deflection.value_mm + 1.0e-9 >= coarse_deflection.value_mm
-        if fine_deflection.value_mm > 1.0e-9:
-            assert (
-                fine_deflection.value_mm - coarse_deflection.value_mm
-            ) / fine_deflection.value_mm <= 0.05
+    assert convergence.converged
+    assert convergence.refinements
+    assert convergence.refinements[-1].maximum_relative_change <= 0.05
+    assert convergence.final_step_m <= 0.9375
+    assert convergence.result.tandem_combinations_exhaustive
 
 def test_continuous_search_generates_spanwise_udl_patterns() -> None:
     placements = generate_lm1_search_placements(
