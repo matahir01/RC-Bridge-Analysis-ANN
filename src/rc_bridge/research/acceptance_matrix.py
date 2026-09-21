@@ -402,13 +402,16 @@ def eurocode_simple_span_v1_acceptance_matrix() -> V1AcceptanceMatrix:
                     "tandem placement. Production-search regression tests additionally cover independent "
                     "lane tandem coordinates, lane/remaining-area UDL inclusion, both carriageway-edge "
                     "layouts, M/V/T envelope extraction and co-located service-deflection recovery. "
-                    "The exact generated Stage-5 traffic cases are also reproduced by STAAD at the "
-                    "structural-response level."
+                    "The production convergence controller halves the longitudinal movement step until "
+                    "the worst M/V/T/deflection envelope change is within tolerance and refuses to "
+                    "self-certify a reduced tandem search. The exact generated Stage-5 traffic cases "
+                    "are also reproduced by STAAD at the structural-response level."
                 ),
                 boundary=(
-                    "This acceptance is for the simple-span Eurocode research profile. It does not "
-                    "promote the separate continuous-span LM1 solver profile, nor does STAAD by itself "
-                    "establish code interpretation."
+                    "This acceptance is for the simple-span Eurocode research profile using exhaustive "
+                    "independent tandem combinations and convergence-controlled longitudinal placement. "
+                    "It does not promote the separate continuous-span LM1 solver profile, nor does "
+                    "STAAD by itself establish code interpretation."
                 ),
                 next_evidence=(
                     "Simple-span MSc LM1 loading gate closed. Verify continuous-span placement "
@@ -544,7 +547,11 @@ def eurocode_simple_span_v1_acceptance_matrix() -> V1AcceptanceMatrix:
                     "The production layered required-steel path applies the explicit EC2 design "
                     "lever-arm cap z<=0.95d and reproduces The Concrete Centre heavily loaded "
                     "L-beam span-AB reference: MEd=1148 kNm, d=668 mm, As,req≈4158 mm2 and "
-                    "six H32 bars provide the published 4824 mm2 nominal reinforcement."
+                    "six H32 bars provide the published 4824 mm2 nominal reinforcement. The same "
+                    "0.95d sizing basis is now used by the discrete reinforcement selector and its "
+                    "refined effective-depth iterations, preventing under-provision after final design "
+                    "recalculation. The 15 m research baseline uses a 400x950 mm rectangular precast "
+                    "girder with the hardened participating deck forming the composite T-section."
                 ),
                 boundary=(
                     "This accepts the positive-bending simple-span MSc branch where the compression "
