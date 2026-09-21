@@ -68,6 +68,8 @@ from rc_bridge.workflow.project_layered_detailing import (
     run_project_layered_girder_detailing,
 )
 
+EC2_MAXIMUM_DESIGN_LEVER_ARM_RATIO = 0.95
+
 
 @dataclass(frozen=True)
 class ApplicationDesignSettings:
@@ -417,6 +419,7 @@ def _construction_stage_checks(
             effective_depth_m=d_stage,
             fck_mpa=float(project.materials.fck_mpa),
             fyk_mpa=float(project.materials.fyk_mpa),
+            maximum_design_lever_arm_ratio=EC2_MAXIMUM_DESIGN_LEVER_ARM_RATIO,
         )
         flexure = layered_singly_reinforced_resistance(
             layers=demand.layers,
@@ -576,6 +579,7 @@ def _design_one_girder(
             effective_depth_m=d_m,
             fck_mpa=float(project.materials.fck_mpa),
             fyk_mpa=float(project.materials.fyk_mpa),
+            maximum_design_lever_arm_ratio=EC2_MAXIMUM_DESIGN_LEVER_ARM_RATIO,
         )
         centroid_from_bottom_m = total_depth_m - d_m
         for stage_demand in stage_demands:
@@ -735,6 +739,7 @@ def _design_one_girder(
             effective_depth_m=refined_d,
             fck_mpa=float(project.materials.fck_mpa),
             fyk_mpa=float(project.materials.fyk_mpa),
+            maximum_design_lever_arm_ratio=EC2_MAXIMUM_DESIGN_LEVER_ARM_RATIO,
         )
         refined_centroid_from_bottom_m = total_depth_m - refined_d
         for stage_demand in stage_demands:
