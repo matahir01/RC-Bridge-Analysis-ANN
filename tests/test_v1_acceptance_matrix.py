@@ -25,6 +25,17 @@ def test_v1_acceptance_matrix_separates_structural_analysis_from_design_code() -
     assert matrix.item("lm1_code_loading").state is AcceptanceState.INTERNAL_ONLY
     assert matrix.item("en1990_combination_rules").state is AcceptanceState.INTERNAL_ONLY
 
+    assert (
+        matrix.item("ec2_rectangular_flexure_reference_case").state
+        is AcceptanceState.EXTERNALLY_ACCEPTED
+    )
+    assert (
+        matrix.item("ec2_link_spacing_reference_case").state
+        is AcceptanceState.EXTERNALLY_ACCEPTED
+    )
+    assert "ec2_rectangular_flexure_reference_case" not in matrix.pending_v1_gate_keys
+    assert "ec2_link_spacing_reference_case" not in matrix.pending_v1_gate_keys
+
     for key in (
         "ec2_flexure_design",
         "ec2_shear_design",
@@ -51,6 +62,9 @@ def test_staad_acceptance_does_not_unlock_unverified_design_milestones() -> None
 
     assert verification.traffic_loading is False
     assert verification.load_combinations is False
+    # Passing sub-component reference cases are supporting evidence only.
+    assert matrix.item("ec2_rectangular_flexure_reference_case").state is AcceptanceState.EXTERNALLY_ACCEPTED
+    assert matrix.item("ec2_link_spacing_reference_case").state is AcceptanceState.EXTERNALLY_ACCEPTED
     assert verification.flexure is False
     assert verification.shear is False
     assert verification.cracking is False
