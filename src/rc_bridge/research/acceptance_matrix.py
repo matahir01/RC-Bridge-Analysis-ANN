@@ -522,20 +522,71 @@ def eurocode_simple_span_v1_acceptance_matrix() -> V1AcceptanceMatrix:
                 ),
             ),
             AcceptanceItem(
+                key="ec2_required_link_shear_reference_case",
+                title="Published EC2 required-link shear reference case",
+                domain=AcceptanceDomain.DESIGN_RESISTANCE,
+                state=AcceptanceState.EXTERNALLY_ACCEPTED,
+                v1_gate=False,
+                evidence=(
+                    "The Concrete Centre support-B example is reproduced for VEd=164.5 kN, "
+                    "bw=300 mm, d=392 mm, fck=30 MPa, fyk=500 MPa and cot(theta)=2.5: "
+                    "required Asw/s≈0.429 mm2/mm, minimum≈0.263 mm2/mm, maximum spacing "
+                    "294 mm, and two-leg H8@200 provides≈0.503 mm2/mm versus published 0.50."
+                ),
+                boundary=(
+                    "This independently verifies required links, minimum shear steel, link spacing "
+                    "and the stated provided-link ratio. It deliberately does not certify V_Rd,max, "
+                    "whose concrete-strut reduction convention remains a separate code-basis check."
+                ),
+                next_evidence=(
+                    "Resolve and independently benchmark the EN 1992-2 V_Rd,max reduction-factor "
+                    "basis before promoting the broad shear milestone."
+                ),
+            ),
+            AcceptanceItem(
+                key="ec2_provided_link_vrds_reference_case",
+                title="Published EC2 provided-link V_Rd,s reference case",
+                domain=AcceptanceDomain.DESIGN_RESISTANCE,
+                state=AcceptanceState.EXTERNALLY_ACCEPTED,
+                v1_gate=False,
+                evidence=(
+                    "European Concrete Platform Example 6.4 is reproduced for bw=150 mm, "
+                    "d=550 mm, z=500 mm, Asw=226 mm2 at 150 mm, fyd≈391 MPa and "
+                    "cot(theta)=1.29: native V_Rd,s≈380.27 kN versus published 380 kN."
+                ),
+                boundary=(
+                    "This independently verifies the provided vertical-link V_Rd,s equation only. "
+                    "The example's V_Rd,max/nu convention is intentionally not used to certify "
+                    "the current bridge strut-capacity implementation."
+                ),
+                next_evidence=(
+                    "Resolve and independently benchmark V_Rd,max with the intended EN 1992-2 "
+                    "bridge convention."
+                ),
+            ),
+            AcceptanceItem(
                 key="ec2_shear_design",
                 title="EN 1992 shear resistance and link design",
                 domain=AcceptanceDomain.DESIGN_RESISTANCE,
                 state=AcceptanceState.INTERNAL_ONLY,
                 v1_gate=True,
                 evidence=(
-                    "Concrete VRd,c, required links, provided-link VRd,s/VRd,max and detailing "
-                    "limits are tested. The concrete-only V_Rd,c path now also passes an "
-                    "independent published JRC worked example."
+                    "Concrete V_Rd,c, required links, provided-link V_Rd,s/V_Rd,max and detailing "
+                    "limits are internally tested. Independent published examples now cover "
+                    "concrete-only V_Rd,c, required A_sw/s, minimum links, maximum spacing, "
+                    "provided H8@200 reinforcement and provided-link V_Rd,s."
                 ),
-                boundary="Stage-5 member shear agreement does not validate the EC2 shear-resistance equations.",
+                boundary=(
+                    "Stage-5 member shear agreement does not validate EC2 shear resistance. "
+                    "The remaining independent code-basis gap is V_Rd,max: published examples "
+                    "use different explicit concrete-strut reduction conventions, so the software "
+                    "must not promote the broad shear milestone until the intended EN 1992-2 "
+                    "bridge convention is fixed and benchmarked."
+                ),
                 next_evidence=(
-                    "Retain the passing JRC concrete-only case and add independent link-governed "
-                    "examples covering required A_sw/s, V_Rd,s and V_Rd,max."
+                    "Independently verify V_Rd,max using the intended EN 1992-2 bridge "
+                    "nu/nu1 and alpha_cc basis; then review link zoning before promoting "
+                    "the broad shear milestone."
                 ),
             ),
             AcceptanceItem(
