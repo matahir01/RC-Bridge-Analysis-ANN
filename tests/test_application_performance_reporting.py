@@ -72,8 +72,13 @@ def test_step_by_step_trace_and_html_report_share_calculation_records(tmp_path) 
     session.run_native_lm1()
     session.run_extended_actions()
     session.run_local_deck_design()
-    session.run_design_interpretation()
+    design = session.run_design_interpretation()
     session.run_fatigue()
+
+    assert any(
+        "deflection acceptance limit is not specified" in blocker
+        for blocker in design.coverage_blockers
+    )
 
     trace = session.calculation_trace()
 
@@ -98,6 +103,9 @@ def test_step_by_step_trace_and_html_report_share_calculation_records(tmp_path) 
     assert "integrated action combinations" in text
     assert "TS=0.75 and UDL=0.4" in text
     assert "Required longitudinal reinforcement" in text
+    assert "project/client limit not specified" in text
+    assert "NOT ASSESSED - project deflection limit not specified" in text
+    assert "L/1000" not in text
     assert "<math" in text
     assert "<mfrac>" in text
     assert "<msqrt>" in text
