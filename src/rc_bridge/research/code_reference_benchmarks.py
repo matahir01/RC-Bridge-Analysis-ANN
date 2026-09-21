@@ -4,7 +4,13 @@ from dataclasses import dataclass
 
 from rc_bridge.application.extended_actions import ExtendedActionSettings
 from rc_bridge.codes.common import LoadEffects
-from rc_bridge.codes.eurocode.combinations import EurocodeFactors, persistent_uls
+from rc_bridge.codes.eurocode.combinations import (
+    EurocodeFactors,
+    ServiceabilityPsiFactors,
+    characteristic_sls,
+    persistent_uls,
+    quasi_permanent_sls,
+)
 from rc_bridge.codes.eurocode.en1991_2 import (
     lm1_characteristic_lane_load,
     lm1_remaining_area_udl_kn_m2,
@@ -125,6 +131,49 @@ JRC_CONCRETE_FATIGUE = ReferenceBenchmarkEvidence(
         "Independent published verification of the concrete-compression fatigue "
         "strength/check equation only. Traffic-derived concrete stress histories remain "
         "a separate verification target."
+    ),
+)
+
+
+JRC_LM1_TRANSVERSE_DISTRIBUTION = ReferenceBenchmarkEvidence(
+    key="jrc_lm1_two_girder_transverse_distribution",
+    source_name="JRC Bridge Design with Eurocodes - LM1 transverse distribution",
+    source_reference=(
+        "D1.8 Davaine presentation, pp. 23-25: two main girders 7.0 m apart, "
+        "11.0 m carriageway arranged as 3 m + 3 m + 3 m + 2 m residual area; "
+        "LM1 tandem systems 300/200/100 kN per axle. Published transverse support "
+        "reactions are R1=471.4 kN and R2=128.6 kN for one tandem axle line."
+    ),
+    source_url=(
+        "https://eurocodes.jrc.ec.europa.eu/sites/default/files/2022-06/"
+        "D1.8Davaine.pdf"
+    ),
+    scope=(
+        "Independent published verification of conventional LM1 transverse lane/wheel "
+        "positioning and two-girder influence-line distribution only. Longitudinal "
+        "tandem search and whole-bridge governing-envelope selection remain separate."
+    ),
+)
+
+JRC_LM1_RESEARCH_COMBINATION_CORE = ReferenceBenchmarkEvidence(
+    key="jrc_lm1_research_combination_core",
+    source_name="JRC Bridge Design with Eurocodes - EN 1990/LM1 combinations",
+    source_reference=(
+        "D1.8 Davaine presentation p. 28 and JRC worked examples Table 2.1: "
+        "for the permanent+LM1 core, ULS uses 1.35G + 1.35(TS+UDL); "
+        "characteristic SLS uses G + TS + UDL; frequent SLS uses "
+        "G + 0.75TS + 0.40UDL; road-traffic psi2=0 so the LM1 "
+        "quasi-permanent contribution is zero."
+    ),
+    source_url=(
+        "https://eurocodes.jrc.ec.europa.eu/sites/default/files/2022-06/"
+        "D1.8Davaine.pdf"
+    ),
+    scope=(
+        "Independent published verification of the permanent+LM1 combination core "
+        "used by the MSc simple-span research profile only. It does not certify the "
+        "general application matrix with thermal, wind, pedestrian, braking, LM2, "
+        "accidental or other accompanying actions."
     ),
 )
 
@@ -463,6 +512,165 @@ def jrc_concrete_fatigue_benchmark() -> IndependentBenchmarkReport:
     )
 
 
+def jrc_lm1_transverse_distribution_benchmark() -> IndependentBenchmarkReport:
+    """Reproduce the JRC two-girder LM1 tandem transverse reactions."""
+
+    carriageway_width_m = 11.0
+    left_edge_m = -carriageway_width_m / 2.0
+    girder_1_y_m = -3.5
+    girder_2_y_m = 3.5
+    girder_spacing_m = girder_2_y_m - girder_1_y_m
+    layout = notional_lane_layout(carriageway_width_m)
+
+    if layout.lane_count != 3 or abs(layout.remaining_width_m - 2.0) > 1.0e-12:
+        raise RuntimeError("Unexpected LM1 lane layout for the JRC 11 m reference case.")
+
+    # JRC conventional arrangement: lanes 1-3 from the left carriageway edge,
+    # followed by the 2 m residual area. Each axle line has two equal wheel loads
+    # at +/-1 m from the lane centre.
+    wheel_actions: list[tuple[float, float]] = []
+    for lane_number in range(1, 4):
+        lane_left = left_edge_m + (lane_number - 1) * layout.lane_width_m
+        centre = lane_left + 0.5 * layout.lane_width_m
+        axle_load = lm1_characteristic_lane_load(lane_number).axle_load_kn
+        wheel_load = 0.5 * axle_load
+        wheel_actions.extend(
+            (
+                (centre - 1.0, wheel_load),
+                (centre + 1.0, wheel_load),
+            )
+        )
+
+    r1 = sum(
+        load_kn * (girder_2_y_m - y_m) / girder_spacing_m
+        for y_m, load_kn in wheel_actions
+    )
+    r2 = sum(
+        load_kn * (y_m - girder_1_y_m) / girder_spacing_m
+        for y_m, load_kn in wheel_actions
+    )
+
+    return build_independent_benchmark_report(
+        solver_profile=SolverProfile.EUROCODE_1G,
+        source_name=JRC_LM1_TRANSVERSE_DISTRIBUTION.source_name,
+        source_reference=JRC_LM1_TRANSVERSE_DISTRIBUTION.source_reference,
+        observations=(
+            (
+                BenchmarkTarget(
+                    name="JRC LM1 transverse reaction R1",
+                    reference_value=471.4,
+                    unit="kN",
+                    absolute_tolerance=0.1,
+                ),
+                r1,
+            ),
+            (
+                BenchmarkTarget(
+                    name="JRC LM1 transverse reaction R2",
+                    reference_value=128.6,
+                    unit="kN",
+                    absolute_tolerance=0.1,
+                ),
+                r2,
+            ),
+            (
+                BenchmarkTarget(
+                    name="JRC LM1 transverse equilibrium",
+                    reference_value=600.0,
+                    unit="kN",
+                    absolute_tolerance=1.0e-9,
+                ),
+                r1 + r2,
+            ),
+        ),
+        notes=(
+            "The exact analytical reactions are 471.4286 kN and 128.5714 kN; "
+            "the JRC slide reports 471.4/128.6 kN. The benchmark uses the same "
+            "3 m lane geometry and 2.0 m transverse wheel spacing as the native "
+            "LM1 grillage load builder."
+        ),
+    )
+
+
+def jrc_lm1_research_combination_core_benchmark() -> IndependentBenchmarkReport:
+    """Reproduce the JRC permanent+LM1 ULS/SLS combination coefficients."""
+
+    permanent = LoadEffects(moment_knm=100.0)
+    tandem = LoadEffects(moment_knm=10.0)
+    udl = LoadEffects(moment_knm=20.0)
+    lm1 = tandem + udl
+    uls_factors = EurocodeFactors()
+    traffic_psi = ServiceabilityPsiFactors(
+        psi1_traffic=0.75,
+        psi2_traffic=0.0,
+    )
+    settings = ExtendedActionSettings()
+
+    uls = persistent_uls(permanent, lm1, uls_factors).effects.moment_knm
+    characteristic = characteristic_sls(permanent, lm1).effects.moment_knm
+    frequent = (
+        permanent
+        + tandem.scaled(settings.gr2_lm1_tandem_factor)
+        + udl.scaled(settings.gr2_lm1_udl_factor)
+    ).moment_knm
+    quasi = quasi_permanent_sls(
+        permanent,
+        lm1,
+        traffic_psi,
+    ).effects.moment_knm
+
+    return build_independent_benchmark_report(
+        solver_profile=SolverProfile.EUROCODE_1G,
+        source_name=JRC_LM1_RESEARCH_COMBINATION_CORE.source_name,
+        source_reference=JRC_LM1_RESEARCH_COMBINATION_CORE.source_reference,
+        observations=(
+            (
+                BenchmarkTarget(
+                    name="permanent+LM1 persistent ULS",
+                    reference_value=175.5,
+                    unit="effect units",
+                    absolute_tolerance=1.0e-12,
+                ),
+                uls,
+            ),
+            (
+                BenchmarkTarget(
+                    name="permanent+LM1 characteristic SLS",
+                    reference_value=130.0,
+                    unit="effect units",
+                    absolute_tolerance=1.0e-12,
+                ),
+                characteristic,
+            ),
+            (
+                BenchmarkTarget(
+                    name="permanent+LM1 frequent SLS split TS/UDL",
+                    reference_value=115.5,
+                    unit="effect units",
+                    absolute_tolerance=1.0e-12,
+                ),
+                frequent,
+            ),
+            (
+                BenchmarkTarget(
+                    name="permanent+LM1 quasi-permanent SLS",
+                    reference_value=100.0,
+                    unit="effect units",
+                    absolute_tolerance=1.0e-12,
+                ),
+                quasi,
+            ),
+        ),
+        notes=(
+            "Artificial unit effects G=100, TS=10 and UDL=20 isolate the JRC "
+            "combination coefficients. The frequent value is deliberately formed "
+            "with separate TS=0.75 and UDL=0.40 factors, matching the native "
+            "frequent-LM1 rerun philosophy rather than a single factor on a "
+            "combined characteristic envelope."
+        ),
+    )
+
+
 def jrc_road_bridge_combination_factors_benchmark() -> IndependentBenchmarkReport:
     """Check the v1 road-bridge traffic factors against published JRC examples."""
 
@@ -705,6 +913,8 @@ def eurocode_v1_published_reference_benchmarks() -> tuple[IndependentBenchmarkRe
     return (
         jrc_lm1_characteristic_values_benchmark(),
         jrc_lm1_lane_subdivision_benchmark(),
+        jrc_lm1_transverse_distribution_benchmark(),
+        jrc_lm1_research_combination_core_benchmark(),
         jrc_road_bridge_combination_factors_benchmark(),
         jrc_ec2_slab_shear_benchmark(),
         jrc_rectangular_flexure_benchmark(),
