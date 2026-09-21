@@ -296,6 +296,27 @@ def eurocode_simple_span_v1_acceptance_matrix() -> V1AcceptanceMatrix:
                 ),
             ),
             AcceptanceItem(
+                key="lm1_lane_subdivision_reference_case",
+                title="Published EN 1991-2 notional-lane subdivision reference",
+                domain=AcceptanceDomain.CODE_LOADING,
+                state=AcceptanceState.EXTERNALLY_ACCEPTED,
+                v1_gate=False,
+                evidence=(
+                    "JRC Bridge Design to Eurocodes Table 3.5 is reproduced for the "
+                    "three carriageway-width regimes. The thesis 7.0 m carriageway "
+                    "therefore gives two 3.0 m notional lanes plus 1.0 m remaining area."
+                ),
+                boundary=(
+                    "This independently verifies carriageway subdivision only. "
+                    "Lane positioning/numbering to maximize response and the "
+                    "longitudinal moving-load search remain separate verification targets."
+                ),
+                next_evidence=(
+                    "Add an independently checked LM1 placement/envelope example before "
+                    "promoting the broad LM1 loading milestone."
+                ),
+            ),
+            AcceptanceItem(
                 key="lm1_code_loading",
                 title="EN 1991-2 LM1 load-generation rules",
                 domain=AcceptanceDomain.CODE_LOADING,
@@ -304,17 +325,17 @@ def eurocode_simple_span_v1_acceptance_matrix() -> V1AcceptanceMatrix:
                 evidence=(
                     "Native lane, remaining-area, tandem and placement generation has extensive "
                     "automated mechanics/traceability tests and is exported identically to STAAD. "
-                    "The published JRC LM1 characteristic load values and 1.2 m tandem spacing "
-                    "now pass as a separate scoped reference case."
+                    "The published JRC LM1 characteristic values, 1.2 m tandem spacing and "
+                    "Table 3.5 notional-lane subdivision now pass as separate scoped reference cases."
                 ),
                 boundary=(
                     "STAAD consumes the application's generated LM1 actions; matching results therefore "
                     "cannot independently establish that the EN 1991-2 loading interpretation is correct."
                 ),
                 next_evidence=(
-                    "Retain the passing JRC characteristic-value case, then complete independent "
-                    "checks of notional-lane subdivision and the bridge-wide transverse/longitudinal "
-                    "placement and governing-envelope logic."
+                    "Retain the passing JRC characteristic-value and lane-subdivision cases, then "
+                    "complete an independent bridge-wide transverse/longitudinal placement and "
+                    "governing-envelope benchmark."
                 ),
             ),
             AcceptanceItem(
@@ -520,16 +541,69 @@ def eurocode_simple_span_v1_acceptance_matrix() -> V1AcceptanceMatrix:
                 ),
             ),
             AcceptanceItem(
+                key="ec2_reinforcement_fatigue_reference_case",
+                title="Published EN 1992-2 reinforcement-fatigue reference case",
+                domain=AcceptanceDomain.FATIGUE_DETAILING,
+                state=AcceptanceState.EXTERNALLY_ACCEPTED,
+                v1_gate=False,
+                evidence=(
+                    "JRC transverse-slab fatigue example is reproduced: "
+                    "lambda_s=0.89 and Delta sigma_s,Ec=88 MPa give "
+                    "Delta sigma_s,equ=78.32 MPa versus published 78 MPa; "
+                    "162.5/1.15 gives 141.30 MPa versus published 141 MPa."
+                ),
+                boundary=(
+                    "This independently verifies the equivalent-stress-range/resistance "
+                    "equation only. FLM3 traffic placement, structural stress-range generation "
+                    "and fatigue-specific transverse distribution are not certified by this case."
+                ),
+                next_evidence=(
+                    "Add an independent FLM3 moving-vehicle stress-range benchmark for a "
+                    "simple-span bridge/girder before promoting the broad fatigue milestone."
+                ),
+            ),
+            AcceptanceItem(
+                key="ec2_concrete_fatigue_reference_case",
+                title="Published EN 1992-2 concrete-compression fatigue reference case",
+                domain=AcceptanceDomain.FATIGUE_DETAILING,
+                state=AcceptanceState.EXTERNALLY_ACCEPTED,
+                v1_gate=False,
+                evidence=(
+                    "JRC concrete-fatigue note is reproduced for fck=35 MPa, alpha_cc=0.85, "
+                    "beta_cc(t0)=1.1..1.2: native fcd,fat=15.95..17.40 MPa matches the "
+                    "published rounded 16..17.5 MPa range, and the cited 11.9/3.5 MPa "
+                    "compression stresses fail Expression 6.77 at both endpoints as reported."
+                ),
+                boundary=(
+                    "This independently verifies the concrete fatigue-strength/check equation "
+                    "for the cited stresses only. Traffic-derived concrete stress histories remain "
+                    "part of the unverified FLM3 structural-response path."
+                ),
+                next_evidence=(
+                    "Verify the FLM3 structural stress history independently before promoting "
+                    "the broad fatigue milestone."
+                ),
+            ),
+            AcceptanceItem(
                 key="ec2_fatigue",
                 title="EN 1991-2 FLM3 / EN 1992 fatigue checks",
                 domain=AcceptanceDomain.FATIGUE_DETAILING,
                 state=AcceptanceState.INTERNAL_ONLY,
                 v1_gate=True,
                 evidence=(
-                    "Native FLM3 moving-vehicle analysis and reinforcement/concrete fatigue kernels have automated tests."
+                    "Native FLM3 moving-vehicle analysis and reinforcement/concrete fatigue kernels "
+                    "have automated tests. Published JRC reinforcement and concrete fatigue equation "
+                    "examples now pass as separately scoped external references."
                 ),
-                boundary="The accepted Stage-5 LM1 benchmark is not an FLM3 fatigue verification campaign.",
-                next_evidence="Independent FLM3 stress-range and EN 1992 fatigue worked-example benchmark.",
+                boundary=(
+                    "The accepted Stage-5 LM1 benchmark is not an FLM3 fatigue verification campaign, "
+                    "and the JRC equation examples do not independently validate the application's "
+                    "moving FLM3 stress-range generation."
+                ),
+                next_evidence=(
+                    "Retain the passing JRC fatigue-equation cases and add an independent FLM3 "
+                    "simple-span moving-vehicle stress-range benchmark."
+                ),
             ),
             AcceptanceItem(
                 key="ec2_link_spacing_reference_case",
