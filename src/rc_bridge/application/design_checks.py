@@ -886,14 +886,16 @@ def _design_one_girder(
         aggregate_size_mm=settings.aggregate_size_mm,
     )
 
+    utilizations = (
+        design.uls_design.flexure.utilization,
+        design.shear_utilization,
+        design.crack.utilization,
+        design.deflection.utilization,
+    )
     if not all(
         isfinite(value)
-        for value in (
-            design.uls_design.flexure.utilization,
-            design.shear_utilization,
-            design.crack.utilization,
-            design.deflection.utilization,
-        )
+        for value in utilizations
+        if value is not None
     ):
         raise RuntimeError("Design interpretation produced a non-finite utilization.")
 
