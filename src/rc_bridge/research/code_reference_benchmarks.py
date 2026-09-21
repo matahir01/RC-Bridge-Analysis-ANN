@@ -12,11 +12,13 @@ from rc_bridge.codes.eurocode.combinations import (
     quasi_permanent_sls,
 )
 from rc_bridge.codes.eurocode.en1991_2 import (
+    LM1AdjustmentFactors,
     lm1_characteristic_lane_load,
     lm1_remaining_area_udl_kn_m2,
     lm1_tandem_axle_spacing_m,
     notional_lane_layout,
 )
+from rc_bridge.codes.eurocode.lm1_effects import lm1_lane_simple_span_envelope
 from rc_bridge.design.eurocode_demand import required_tension_steel_rectangular
 from rc_bridge.design.eurocode_detailing import (
     bar_area_mm2,
@@ -166,6 +168,28 @@ JRC_LM1_TRANSVERSE_DISTRIBUTION = ReferenceBenchmarkEvidence(
         "tandem search and whole-bridge governing-envelope selection remain separate."
     ),
 )
+
+LM1_SIMPLE_SPAN_LONGITUDINAL_SEARCH = ReferenceBenchmarkEvidence(
+    key="lm1_simple_span_longitudinal_search",
+    source_name="Independent EN 1991-2 LM1 simply-supported-beam worked example",
+    source_reference=(
+        "18 m simply supported bridge, lane-1 tandem system with two 300 kN axles "
+        "at 1.2 m spacing. The worked example places the governing axle at "
+        "x=L/2-0.3=8.7 m, obtains support reactions 290/310 kN and maximum "
+        "tandem bending moment 2523 kNm. The same governing-position equation "
+        "x=L/2-0.3 is reported in the published paper 'Load effects calculation "
+        "according to EN 1991-2 Load Model 1'."
+    ),
+    source_url=(
+        "https://structville.com/how-to-apply-load-model-1-on-bridges"
+    ),
+    scope=(
+        "Independent numerical verification of the simple-span longitudinal tandem "
+        "placement/search for maximum sagging moment only. It does not certify "
+        "continuous-span search logic or every possible shear-envelope location."
+    ),
+)
+
 
 JRC_LM1_RESEARCH_COMBINATION_CORE = ReferenceBenchmarkEvidence(
     key="jrc_lm1_research_combination_core",
@@ -697,6 +721,70 @@ def jrc_lm1_transverse_distribution_benchmark() -> IndependentBenchmarkReport:
             "the JRC slide reports 471.4/128.6 kN. The benchmark uses the same "
             "3 m lane geometry and 2.0 m transverse wheel spacing as the native "
             "LM1 grillage load builder."
+        ),
+    )
+
+
+def lm1_simple_span_longitudinal_search_benchmark() -> IndependentBenchmarkReport:
+    """Reproduce the independent 18 m LM1 tandem governing-position example."""
+
+    factors = LM1AdjustmentFactors(alpha_q1=0.0)
+    result = lm1_lane_simple_span_envelope(
+        span_m=18.0,
+        lane_number=1,
+        lane_width_m=3.0,
+        factors=factors,
+        movement_steps=1921,
+        section_stations=1801,
+    )
+
+    return build_independent_benchmark_report(
+        solver_profile=SolverProfile.EUROCODE_1G,
+        source_name=LM1_SIMPLE_SPAN_LONGITUDINAL_SEARCH.source_name,
+        source_reference=LM1_SIMPLE_SPAN_LONGITUDINAL_SEARCH.source_reference,
+        observations=(
+            (
+                BenchmarkTarget(
+                    name="LM1 tandem maximum simple-span moment",
+                    reference_value=2523.0,
+                    unit="kNm",
+                    absolute_tolerance=0.05,
+                ),
+                result.max_moment_knm,
+            ),
+            (
+                BenchmarkTarget(
+                    name="LM1 governing section offset from midspan",
+                    reference_value=0.3,
+                    unit="m",
+                    absolute_tolerance=0.01,
+                ),
+                abs(result.moment_position_m - 9.0),
+            ),
+            (
+                BenchmarkTarget(
+                    name="LM1 governing tandem centroid offset from midspan",
+                    reference_value=0.3,
+                    unit="m",
+                    absolute_tolerance=0.01,
+                ),
+                abs(
+                    (
+                        result.moment_governing_lead_position_m
+                        - 0.5 * lm1_tandem_axle_spacing_m()
+                    )
+                    - 9.0
+                ),
+            ),
+        ),
+        notes=(
+            "UDL is deliberately set to zero so this benchmark isolates the moving "
+            "two-axle tandem search. The published x=8.7/9.9 m placement and the "
+            "mirror-symmetric native placement are mechanically equivalent; therefore "
+            "the benchmark checks the invariant 0.3 m section/centroid offset from "
+            "midspan rather than forcing one arbitrary left/right orientation. The "
+            "native search uses the same generic moving-load mechanics used by the "
+            "bridge workflow; it is not a duplicate closed-form calculation."
         ),
     )
 
@@ -1286,6 +1374,7 @@ def eurocode_v1_published_reference_benchmarks() -> tuple[IndependentBenchmarkRe
         jrc_lm1_characteristic_values_benchmark(),
         jrc_lm1_lane_subdivision_benchmark(),
         jrc_lm1_transverse_distribution_benchmark(),
+        lm1_simple_span_longitudinal_search_benchmark(),
         jrc_lm1_research_combination_core_benchmark(),
         jrc_road_bridge_combination_factors_benchmark(),
         jrc_ec2_slab_shear_benchmark(),
