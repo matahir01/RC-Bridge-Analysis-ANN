@@ -304,7 +304,7 @@ ECP_TORSION_REINFORCEMENT = ReferenceBenchmarkEvidence(
     ),
     scope=(
         "Independent verification of the thin-walled torsion transverse and "
-        "longitudinal reinforcement equations for explicitly supplied Ak, uk and theta."
+        "longitudinal reinforcement equations only, for explicitly supplied Ak, uk and theta."
     ),
 )
 
@@ -323,7 +323,7 @@ ECP_TORSION_RESISTANCE_INTERACTION = ReferenceBenchmarkEvidence(
     ),
     scope=(
         "Independent verification of T_Rd,max and the linear high-stress "
-        "shear-torsion interaction for explicitly supplied equivalent-section geometry."
+        "shear-torsion interaction only, for explicitly supplied equivalent-section geometry."
     ),
 )
 
