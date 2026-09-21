@@ -5,9 +5,6 @@ from dataclasses import dataclass
 from rc_bridge.analysis.physical_sections import ConcreteSectionLayer
 from rc_bridge.application.extended_actions import ExtendedActionSettings
 from rc_bridge.codes.common import LoadEffects
-from rc_bridge.codes.eurocode.fatigue_traffic import (
-    flm3_simple_span_section_moment_range,
-)
 from rc_bridge.codes.eurocode.combinations import (
     EurocodeFactors,
     ServiceabilityPsiFactors,
@@ -21,6 +18,9 @@ from rc_bridge.codes.eurocode.en1991_2 import (
     lm1_remaining_area_udl_kn_m2,
     lm1_tandem_axle_spacing_m,
     notional_lane_layout,
+)
+from rc_bridge.codes.eurocode.fatigue_traffic import (
+    flm3_simple_span_section_moment_range,
 )
 from rc_bridge.codes.eurocode.lm1_effects import lm1_lane_simple_span_envelope
 from rc_bridge.design.eurocode_deflection import (
