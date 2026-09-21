@@ -2,6 +2,8 @@ import pytest
 
 from rc_bridge.design.eurocode_fatigue import concrete_compression_fatigue_check
 from rc_bridge.research.code_reference_benchmarks import (
+    CONCRETE_CENTRE_LINK_SHEAR,
+    ECP_PROVIDED_LINK_SHEAR,
     JRC_BEAM_LINK_SPACING,
     JRC_CONCRETE_FATIGUE,
     JRC_EC2_SLAB_SHEAR,
@@ -12,6 +14,8 @@ from rc_bridge.research.code_reference_benchmarks import (
     JRC_RECTANGULAR_FLEXURE,
     JRC_REINFORCEMENT_FATIGUE,
     JRC_ROAD_BRIDGE_COMBINATION_FACTORS,
+    concrete_centre_link_shear_benchmark,
+    ecp_provided_link_shear_benchmark,
     eurocode_v1_published_reference_benchmarks,
     jrc_beam_link_spacing_benchmark,
     jrc_concrete_fatigue_benchmark,
@@ -166,6 +170,36 @@ def test_jrc_ec2_slab_shear_reference_case_passes() -> None:
     )
 
 
+def test_concrete_centre_link_shear_reference_case_passes() -> None:
+    report = concrete_centre_link_shear_benchmark()
+
+    assert report.source_name == CONCRETE_CENTRE_LINK_SHEAR.source_name
+    assert report.passes is True
+    assert report.failed_target_names == ()
+    values = {item.target.name: item.calculated_value for item in report.comparisons}
+    assert values["required vertical links Asw/s"] == pytest.approx(
+        0.428968254
+    )
+    assert values["minimum vertical links Asw/s"] == pytest.approx(
+        0.262906828
+    )
+    assert values["maximum longitudinal link spacing"] == pytest.approx(294.0)
+    assert values["H8 at 200 provided Asw/s"] == pytest.approx(
+        0.502654825
+    )
+
+
+def test_ecp_provided_link_shear_reference_case_passes() -> None:
+    report = ecp_provided_link_shear_benchmark()
+
+    assert report.source_name == ECP_PROVIDED_LINK_SHEAR.source_name
+    assert report.passes is True
+    assert report.failed_target_names == ()
+    comparison = report.comparisons[0]
+    assert comparison.target.reference_value == pytest.approx(380.0)
+    assert comparison.calculated_value == pytest.approx(380.269565, abs=1e-6)
+
+
 def test_jrc_rectangular_flexure_reference_case_passes() -> None:
     report = jrc_rectangular_flexure_benchmark()
 
@@ -215,6 +249,8 @@ def test_published_reference_metadata_is_traceable_and_scope_limited() -> None:
         JRC_REINFORCEMENT_FATIGUE,
         JRC_CONCRETE_FATIGUE,
         JRC_EC2_SLAB_SHEAR,
+        CONCRETE_CENTRE_LINK_SHEAR,
+        ECP_PROVIDED_LINK_SHEAR,
         JRC_RECTANGULAR_FLEXURE,
         JRC_BEAM_LINK_SPACING,
     ):
@@ -230,7 +266,7 @@ def test_published_reference_metadata_is_traceable_and_scope_limited() -> None:
 def test_published_reference_suite_contains_all_independent_reports() -> None:
     reports = eurocode_v1_published_reference_benchmarks()
 
-    assert len(reports) == 10
+    assert len(reports) == 12
     assert all(report.passes for report in reports)
     assert {report.source_name for report in reports} == {
         JRC_LM1_CHARACTERISTIC_VALUES.source_name,
@@ -241,6 +277,8 @@ def test_published_reference_suite_contains_all_independent_reports() -> None:
         JRC_REINFORCEMENT_FATIGUE.source_name,
         JRC_CONCRETE_FATIGUE.source_name,
         JRC_EC2_SLAB_SHEAR.source_name,
+        CONCRETE_CENTRE_LINK_SHEAR.source_name,
+        ECP_PROVIDED_LINK_SHEAR.source_name,
         JRC_RECTANGULAR_FLEXURE.source_name,
         JRC_BEAM_LINK_SPACING.source_name,
     }
