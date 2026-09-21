@@ -186,11 +186,27 @@ def required_tension_steel_layered(
     fck_mpa: float,
     fyk_mpa: float,
     tolerance_knm: float = 0.01,
+    maximum_design_lever_arm_ratio: float | None = None,
 ) -> float:
     if med_knm < 0.0:
         raise ValueError("Design moment cannot be negative.")
     if med_knm == 0.0:
         return 0.0
+    if (
+        maximum_design_lever_arm_ratio is not None
+        and not 0.0 < maximum_design_lever_arm_ratio <= 1.0
+    ):
+        raise ValueError("maximum_design_lever_arm_ratio must lie in (0, 1].")
+
+    def design_resistance_knm(result: LayeredFlexureResult) -> float:
+        if maximum_design_lever_arm_ratio is None:
+            return result.resistance_knm
+        design_lever_arm_m = min(
+            result.lever_arm_m,
+            maximum_design_lever_arm_ratio * effective_depth_m,
+        )
+        return result.steel_force_kn * design_lever_arm_m
+
     lower = 1.0
     upper = 1000.0
     for _ in range(30):
@@ -206,7 +222,7 @@ def required_tension_steel_layered(
             if "compression force exceeds" in str(exc):
                 break
             raise
-        if result.resistance_knm >= med_knm:
+        if design_resistance_knm(result) >= med_knm:
             break
         lower = upper
         upper *= 2.0
@@ -232,7 +248,7 @@ def required_tension_steel_layered(
             valid_upper = 0.5 * (lower + valid_upper)
     else:
         raise ValueError("Layered section cannot develop the requested moment.")
-    if upper_result.resistance_knm < med_knm:
+    if design_resistance_knm(upper_result) < med_knm:
         raise ValueError("Layered section cannot develop the requested moment.")
 
     upper = valid_upper
@@ -245,9 +261,10 @@ def required_tension_steel_layered(
             fck_mpa=fck_mpa,
             fyk_mpa=fyk_mpa,
         )
-        if abs(result.resistance_knm - med_knm) <= tolerance_knm:
+        trial_resistance_knm = design_resistance_knm(result)
+        if abs(trial_resistance_knm - med_knm) <= tolerance_knm:
             return mid
-        if result.resistance_knm < med_knm:
+        if trial_resistance_knm < med_knm:
             lower = mid
         else:
             upper = mid
