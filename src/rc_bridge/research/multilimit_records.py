@@ -10,6 +10,7 @@ from rc_bridge.design.eurocode_shear import provided_vertical_shear_resistance
 from rc_bridge.research.verification import (
     DeterministicSolverVerification,
     SolverProfile,
+    VerificationScope,
 )
 from rc_bridge.workflow.bs5400_girder import BS5400TGirderInput
 from rc_bridge.workflow.eurocode_girder import TGirderDesignInput
@@ -70,6 +71,7 @@ def eurocode_multilimit_record_from_project(
     project: ProjectInput,
     section: TGirderDesignInput,
     verification: DeterministicSolverVerification,
+    verification_scope: VerificationScope = VerificationScope.FULL_APPLICATION_V1,
     span_index: int = 0,
     provided_shear_steel_mm2_per_m: float | None = None,
     g_fatigue: float | None = None,
@@ -175,6 +177,7 @@ def bs5400_multilimit_record_from_project(
     section: BS5400TGirderInput,
     verification: DeterministicSolverVerification,
     provided_shear_steel_mm2_per_m: float,
+    verification_scope: VerificationScope = VerificationScope.FULL_APPLICATION_V1,
     span_index: int = 0,
     g_fatigue: float | None = None,
     g_torsion: float | None = None,
