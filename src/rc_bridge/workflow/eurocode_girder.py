@@ -55,7 +55,7 @@ class EurocodeServiceabilityInput:
     service_moment_knm: float
     equivalent_full_span_udl_kn_m: float
     crack_limit_mm: float
-    allowable_deflection_mm: float
+    allowable_deflection_mm: float | None
     creep_coefficient: float = 0.0
     deflection_beta: float = 0.5
     crack_kt: float = 0.4
@@ -67,6 +67,13 @@ class EurocodeServiceabilityInput:
             raise ValueError("Service moment cannot be negative.")
         if self.equivalent_full_span_udl_kn_m < 0.0:
             raise ValueError("Equivalent full-span UDL cannot be negative.")
+        if (
+            self.allowable_deflection_mm is not None
+            and self.allowable_deflection_mm <= 0.0
+        ):
+            raise ValueError(
+                "Allowable deflection must be positive when specified."
+            )
         if self.deflection_service_moment_knm is not None:
             if self.deflection_service_moment_knm < 0.0:
                 raise ValueError("Deflection service moment cannot be negative.")
@@ -116,7 +123,7 @@ class EurocodeTGirderWorkflowResult:
         return self.crack.g_crack_mm
 
     @property
-    def g_deflection_mm(self) -> float:
+    def g_deflection_mm(self) -> float | None:
         return self.deflection.g_deflection_mm
 
 
