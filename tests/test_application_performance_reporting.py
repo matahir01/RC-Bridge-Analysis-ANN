@@ -93,9 +93,20 @@ def test_step_by_step_trace_and_html_report_share_calculation_records(tmp_path) 
 
     assert "Step-by-step calculation sheets" in text
     assert "Calculation / substitution" in text
+    assert "Native grillage analysis - representative member formulation" in text
     assert "ULS bending moment" in text
     assert "Required longitudinal reinforcement" in text
+    assert "<math" in text
+    assert "<mfrac>" in text
+    assert "<msqrt>" in text
+    assert "<msub>" in text
+    assert "NUMERICAL SUBSTITUTION" not in text
     assert "Summary tables later in the report do not replace these calculations" in text
+
+    pdf = session.write_last_lm1_pdf_report(tmp_path / "worked_report.pdf")
+    pdf_bytes = pdf.read_bytes()
+    assert pdf_bytes.startswith(b"%PDF")
+    assert len(pdf_bytes) > 10_000
 
     cached_trace = session.calculation_trace()
     assert cached_trace is trace

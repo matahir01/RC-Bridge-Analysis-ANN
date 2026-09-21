@@ -18,6 +18,7 @@ from rc_bridge.application.load_cases import (
     permanent_load_audit,
 )
 from rc_bridge.application.local_deck import LocalDeckDesignResult
+from rc_bridge.application.math_notation import MathFormulaFlowable, mathml
 from rc_bridge.application.preferences import ApplicationPreferences
 from rc_bridge.core.models import ProjectInput
 from rc_bridge.workflow.lm1_grillage_search import ProjectNativeLM1GrillageSearchResult
@@ -39,13 +40,25 @@ def calculation_trace_html(trace: CalculationTrace | None) -> str:
                 if step.status
                 else ""
             )
+            equation_html = (
+                mathml(step.equation)
+                if step.equation is not None
+                else f"<div class=\"formula-fallback\">{escape(step.expression)}</div>"
+            )
+            substitution_html = (
+                mathml(step.substitution_equation)
+                if step.substitution_equation is not None
+                else f"<div class=\"formula-fallback\">{escape(step.substitution)}</div>"
+            )
             rows.append(
                 "<tr>"
                 f"<td class=\"left ref\">{escape(step.reference)}</td>"
                 "<td class=\"left calc\">"
-                f"<strong>{escape(step.label)}</strong>"
-                f"<div class=\"formula\">{escape(step.expression)}</div>"
-                f"<div class=\"substitution\">= {escape(step.substitution)}</div>"
+                f"<strong class=\"calc-label\">{escape(step.label)}</strong>"
+                "<div class=\"equation-caption\">Equation</div>"
+                f"<div class=\"formula\">{equation_html}</div>"
+                "<div class=\"equation-caption\">Substitution</div>"
+                f"<div class=\"substitution\">{substitution_html}</div>"
                 "</td>"
                 f"<td class=\"left result\"><strong>{escape(step.result)}</strong>{status}</td>"
                 "</tr>"
@@ -417,27 +430,125 @@ def application_html_report(
 <meta charset="utf-8">
 <title>{project_name} - RC Bridge Analysis Report</title>
 <style>
-body {{ font-family: Arial, Helvetica, sans-serif; margin: 32px; color: #1f2933; }}
-h1, h2 {{ color: #102a43; }}
-.meta {{ display: grid; grid-template-columns: 260px 1fr; gap: 6px 18px; }}
+:root {{
+  --ink: #182635;
+  --navy: #17324d;
+  --navy-2: #244b6b;
+  --line: #aebdca;
+  --paper: #ffffff;
+  --wash: #f4f7f9;
+  --result: #f8fbf6;
+  --accent: #9a7b35;
+}}
+* {{ box-sizing: border-box; }}
+body {{
+  font-family: "Segoe UI", Arial, Helvetica, sans-serif;
+  max-width: 1180px;
+  margin: 28px auto;
+  padding: 34px 42px 48px;
+  color: var(--ink);
+  background: var(--paper);
+  box-shadow: 0 10px 30px rgba(18, 41, 61, 0.10);
+  line-height: 1.38;
+}}
+h1 {{
+  color: var(--navy);
+  margin: 0 0 4px;
+  padding-bottom: 10px;
+  border-bottom: 3px solid var(--navy);
+  letter-spacing: 0.01em;
+}}
+h2 {{
+  color: var(--navy);
+  margin-top: 30px;
+  padding: 7px 10px;
+  border-left: 5px solid var(--navy-2);
+  background: #f0f4f7;
+}}
+h3 {{ color: var(--navy-2); margin: 24px 0 4px; }}
+.meta {{
+  display: grid;
+  grid-template-columns: 260px 1fr;
+  gap: 6px 18px;
+  border: 1px solid var(--line);
+  padding: 12px 14px;
+  background: #fbfcfd;
+}}
+.meta > div:nth-child(odd) {{ font-weight: 600; color: #3a5268; }}
 table {{ border-collapse: collapse; width: 100%; margin: 14px 0 24px; }}
-th, td {{ border: 1px solid #bcccdc; padding: 7px 9px; text-align: right; }}
+th, td {{ border: 1px solid var(--line); padding: 7px 9px; text-align: right; }}
 th:first-child, td:first-child {{ text-align: center; }}
-th {{ background: #eaf2f8; }}
+th {{
+  background: var(--navy);
+  color: white;
+  font-weight: 600;
+}}
+tbody tr:nth-child(even):not(.calculation-sheet tr) {{ background: #fafcfd; }}
 .left {{ text-align: left; }}
-.note {{ border-left: 4px solid #829ab1; padding: 10px 14px; background: #f5f7fa; }}
-.warn {{ border-left: 4px solid #d97706; padding: 10px 14px; background: #fff7ed; }}
+.note {{
+  border-left: 4px solid #6e879c;
+  padding: 10px 14px;
+  background: var(--wash);
+}}
+.warn {{
+  border-left: 4px solid #b06f21;
+  padding: 10px 14px;
+  background: #fff8ec;
+}}
 .small {{ font-size: 0.9rem; color: #52606d; }}
+.calculation-sheet {{
+  table-layout: fixed;
+  border: 1.4px solid #70879a;
+  box-shadow: 0 1px 0 rgba(0,0,0,.03);
+}}
 .calculation-sheet td {{ vertical-align: top; }}
-.calculation-sheet .ref {{ width: 20%; }}
-.calculation-sheet .calc {{ width: 58%; }}
-.calculation-sheet .result {{ width: 22%; }}
-.formula {{ margin-top: 5px; font-family: "Courier New", monospace; }}
-.substitution {{ margin-top: 3px; font-family: "Courier New", monospace; color: #334e68; }}
+.calculation-sheet .ref {{
+  width: 18%;
+  background: #f3f5f7;
+  color: #455b6d;
+  font-size: 0.86rem;
+}}
+.calculation-sheet .calc {{ width: 62%; text-align: left; padding: 10px 14px; }}
+.calculation-sheet .result {{
+  width: 20%;
+  background: var(--result);
+  text-align: left;
+  font-size: 0.93rem;
+}}
+.calc-label {{ color: var(--navy); font-size: 0.98rem; }}
+.equation-caption {{
+  margin-top: 7px;
+  color: #748493;
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}}
+.formula, .substitution {{
+  margin: 2px 0 4px;
+  overflow-x: auto;
+}}
+.substitution {{ color: #334e68; }}
+.formula-fallback {{
+  font-family: "Cambria Math", "STIX Two Math", "Times New Roman", serif;
+  font-size: 1.03rem;
+}}
+math.engineering-math {{
+  font-family: "Cambria Math", "STIX Two Math", "STIXGeneral", "Times New Roman", serif;
+  font-size: 1.08rem;
+  margin: 2px 0;
+}}
+math.engineering-math[display="block"] {{ display: block; text-align: left; }}
 @media print {{
-  body {{ margin: 12mm; }}
+  body {{
+    max-width: none;
+    margin: 0;
+    padding: 10mm;
+    box-shadow: none;
+  }}
+  h2 {{ break-after: avoid; }}
+  h3 {{ break-after: avoid; }}
   .screen-only {{ display: none; }}
-  table {{ break-inside: avoid; }}
+  .calculation-sheet tr {{ break-inside: avoid; }}
 }}
 </style>
 </head>
@@ -545,12 +656,11 @@ actions retain their actual extents in the deterministic permanent-load routines
 
 <h2>Verification boundary</h2>
 <p class="warn">
-These are native deterministic analysis results. Passing automated tests or producing
-MIDAS/STAAD model files is not independent structural validation. Final production
-acceptance requires the application-generated governing models to be run in independent
-structural software and the genuine returned results to pass the project verification
-criteria. ANN/reliability/RBDO ground-truth generation remains locked until the exact
-solver profile satisfies its verification manifest.
+The current independent structural validation for the deterministic Stage-5 solver profile
+includes genuine STAAD external evidence and an accepted source/model review. MIDAS
+cross-verification is deferred to V2 and is not a deterministic-v1 release gate.
+ANN/reliability/RBDO ground-truth generation remains locked until the current v1
+verification manifest and outstanding project/code acceptance checks are complete.
 </p>
 </body>
 </html>
@@ -630,6 +740,54 @@ def write_native_lm1_pdf_report(
             slab_width_basis="representative interior tributary slab width",
         )
     styles = getSampleStyleSheet()
+    navy = colors.HexColor("#17324d")
+    navy_2 = colors.HexColor("#244b6b")
+    line_colour = colors.HexColor("#9fb0bf")
+    pale_blue = colors.HexColor("#eef3f7")
+    pale_result = colors.HexColor("#f4f8f2")
+    pale_reference = colors.HexColor("#f4f5f6")
+    title_style = ParagraphStyle(
+        "EngineeringTitle",
+        parent=styles["Title"],
+        fontName="Helvetica-Bold",
+        fontSize=19,
+        leading=22,
+        textColor=navy,
+        spaceAfter=4,
+    )
+    subtitle_style = ParagraphStyle(
+        "EngineeringSubtitle",
+        parent=styles["BodyText"],
+        fontSize=9,
+        leading=11,
+        textColor=colors.HexColor("#536b7d"),
+        spaceAfter=5,
+    )
+    heading2 = ParagraphStyle(
+        "EngineeringHeading2",
+        parent=styles["Heading2"],
+        fontName="Helvetica-Bold",
+        fontSize=12.5,
+        leading=15,
+        textColor=navy,
+        backColor=pale_blue,
+        borderColor=navy_2,
+        borderWidth=0,
+        borderPadding=(5, 7, 5, 8),
+        leftIndent=0,
+        spaceBefore=8,
+        spaceAfter=6,
+    )
+    heading3 = ParagraphStyle(
+        "EngineeringHeading3",
+        parent=styles["Heading3"],
+        fontName="Helvetica-Bold",
+        fontSize=10.5,
+        leading=13,
+        textColor=navy_2,
+        spaceBefore=7,
+        spaceAfter=3,
+    )
     small = ParagraphStyle(
         "Small",
         parent=styles["BodyText"],
@@ -640,11 +798,46 @@ def write_native_lm1_pdf_report(
     body = styles["BodyText"]
     body.fontSize = 9
     body.leading = 11
+    body.textColor = colors.HexColor("#243746")
+    reference_style = ParagraphStyle(
+        "CalculationReference",
+        parent=small,
+        fontSize=6.8,
+        leading=8.2,
+        textColor=colors.HexColor("#526778"),
+    )
+    calc_label_style = ParagraphStyle(
+        "CalculationLabel",
+        parent=body,
+        fontName="Helvetica-Bold",
+        fontSize=8.2,
+        leading=10,
+        textColor=navy,
+        spaceAfter=2,
+    )
+    equation_caption_style = ParagraphStyle(
+        "EquationCaption",
+        parent=small,
+        fontName="Helvetica-Bold",
+        fontSize=5.8,
+        leading=6.8,
+        textColor=colors.HexColor("#748493"),
+        spaceBefore=2,
+        spaceAfter=1,
+    )
+    result_style = ParagraphStyle(
+        "CalculationResult",
+        parent=body,
+        fontName="Helvetica-Bold",
+        fontSize=8.2,
+        leading=10,
+        textColor=navy,
+    )
     story = [
-        Paragraph(escape(project.name), styles["Title"]),
-        Paragraph("Deterministic RC bridge analysis and application calculation report", body),
+        Paragraph(escape(project.name), title_style),
+        Paragraph("Deterministic RC bridge analysis and design calculation report", subtitle_style),
         Spacer(1, 4 * mm),
-        Paragraph("Project definition", styles["Heading2"]),
+        Paragraph("Project definition", heading2),
     ]
 
     project_rows = [
@@ -691,7 +884,7 @@ def write_native_lm1_pdf_report(
     story.extend([project_table, Spacer(1, 4 * mm)])
 
     ec = prefs.eurocode
-    story.append(Paragraph("Application design basis", styles["Heading2"]))
+    story.append(Paragraph("Application design basis", heading2))
     basis_rows = [
         ["Display units", prefs.units.value],
         ["ULS factors", f"gamma_G,unf={ec.gamma_g_unfavourable:g}; gamma_G,fav={ec.gamma_g_favourable:g}; gamma_Q,traffic={ec.gamma_q_traffic:g}; gamma_Q,other={ec.gamma_q_nontraffic:g}"],
@@ -717,7 +910,7 @@ def write_native_lm1_pdf_report(
         story.extend(
             [
                 PageBreak(),
-                Paragraph("Step-by-step calculation sheets", styles["Heading2"]),
+                Paragraph("Step-by-step calculation sheets", heading2),
                 Paragraph(
                     "Each calculation sheet shows the design reference, equation, "
                     "numerical substitution and result. The later summary tables are "
@@ -728,45 +921,86 @@ def write_native_lm1_pdf_report(
             ]
         )
         for block in calculation_trace.blocks:
-            story.append(Paragraph(escape(block.title), styles["Heading3"]))
+            story.append(Paragraph(escape(block.title), heading3))
             story.append(Paragraph(escape(block.scope), small))
-            trace_rows = [["Reference", "Calculation / substitution", "Result"]]
+            trace_rows = [["Reference", "Worked calculation", "Result / check"]]
             for step in block.steps:
-                calc_text = (
-                    f"<b>{escape(step.label)}</b><br/>"
-                    f"{escape(step.expression)}<br/>"
-                    f"= {escape(step.substitution)}"
+                calculation_cell: list = [
+                    Paragraph(escape(step.label), calc_label_style),
+                    Paragraph("EQUATION", equation_caption_style),
+                ]
+                if step.equation is not None:
+                    calculation_cell.append(
+                        MathFormulaFlowable(step.equation, font_size=9.5)
+                    )
+                else:
+                    calculation_cell.append(
+                        Paragraph(escape(step.expression), small)
+                    )
+
+                calculation_cell.append(
+                    Paragraph("NUMERICAL SUBSTITUTION", equation_caption_style)
                 )
-                result_text = f"<b>{escape(step.result)}</b>"
+                if step.substitution_equation is not None:
+                    calculation_cell.append(
+                        MathFormulaFlowable(
+                            step.substitution_equation,
+                            font_size=9.0,
+                        )
+                    )
+                else:
+                    calculation_cell.append(
+                        Paragraph(escape(step.substitution), small)
+                    )
+
+                result_cell: list = [
+                    Paragraph(escape(step.result), result_style)
+                ]
                 if step.status:
-                    result_text += f"<br/><b>{escape(step.status)}</b>"
+                    status_colour = "#1f6b45" if step.status == "PASS" else "#9a5a16"
+                    result_cell.append(
+                        Paragraph(
+                            f'<font color="{status_colour}"><b>{escape(step.status)}</b></font>',
+                            small,
+                        )
+                    )
+
                 trace_rows.append(
                     [
-                        Paragraph(escape(step.reference), small),
-                        Paragraph(calc_text, small),
-                        Paragraph(result_text, small),
+                        Paragraph(escape(step.reference), reference_style),
+                        calculation_cell,
+                        result_cell,
                     ]
                 )
             trace_table = Table(
                 trace_rows,
-                colWidths=[42 * mm, 101 * mm, 37 * mm],
+                colWidths=[35 * mm, 110 * mm, 35 * mm],
                 repeatRows=1,
+                hAlign="LEFT",
             )
             trace_table.setStyle(
                 TableStyle(
                     [
-                        ("GRID", (0, 0), (-1, -1), 0.25, colors.grey),
-                        ("BACKGROUND", (0, 0), (-1, 0), colors.whitesmoke),
+                        ("GRID", (0, 0), (-1, -1), 0.35, line_colour),
+                        ("BACKGROUND", (0, 0), (-1, 0), navy),
+                        ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
                         ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
-                        ("FONTSIZE", (0, 0), (-1, -1), 7.0),
+                        ("FONTSIZE", (0, 0), (-1, 0), 7.5),
+                        ("ALIGN", (0, 0), (-1, 0), "LEFT"),
+                        ("BACKGROUND", (0, 1), (0, -1), pale_reference),
+                        ("BACKGROUND", (-1, 1), (-1, -1), pale_result),
                         ("VALIGN", (0, 0), (-1, -1), "TOP"),
+                        ("LEFTPADDING", (0, 0), (-1, -1), 5),
+                        ("RIGHTPADDING", (0, 0), (-1, -1), 5),
+                        ("TOPPADDING", (0, 1), (-1, -1), 6),
+                        ("BOTTOMPADDING", (0, 1), (-1, -1), 6),
                     ]
                 )
             )
             story.extend([trace_table, Spacer(1, 3 * mm)])
         story.append(PageBreak())
 
-    story.append(Paragraph("Load cases and combinations", styles["Heading2"]))
+    story.append(Paragraph("Load cases and combinations", heading2))
     permanent_rows_pdf = [
         [
             "Girder",
@@ -869,7 +1103,7 @@ def write_native_lm1_pdf_report(
         )
         story.extend([combo_table, Spacer(1, 4 * mm)])
 
-    story.append(Paragraph("Native LM1 search", styles["Heading2"]))
+    story.append(Paragraph("Native LM1 search", heading2))
     search_rows = [
         ["Evaluated cases", str(result.evaluated_case_count)],
         ["Unique factorized structures", str(result.prepared_structure_count)],
@@ -891,7 +1125,7 @@ def write_native_lm1_pdf_report(
     )
     story.extend([search_table, Spacer(1, 4 * mm)])
 
-    story.append(Paragraph("Native LM1 governing effects", styles["Heading2"]))
+    story.append(Paragraph("Native LM1 governing effects", heading2))
     effect_rows = [["Girder", "y (m)", "|M| kNm", "M case", "|V| kN", "V case", "|T| kNm", "T case"]]
     effect_rows.extend(
         [
@@ -921,7 +1155,7 @@ def write_native_lm1_pdf_report(
     story.extend([effects_table, Spacer(1, 4 * mm)])
 
     if result.deflections:
-        story.append(Paragraph("Native LM1 traffic deflection trace", styles["Heading2"]))
+        story.append(Paragraph("Native LM1 traffic deflection trace", heading2))
         deflection_rows = [["Girder", "|DZ| (mm)", "x (m)", "Case"]]
         deflection_rows.extend(
             [
@@ -947,7 +1181,7 @@ def write_native_lm1_pdf_report(
 
     if local_deck_design is not None:
         deck = local_deck_design
-        story.append(Paragraph("Native local deck/slab design", styles["Heading2"]))
+        story.append(Paragraph("Native local deck/slab design", heading2))
         deck_rows = [
             ["Check", "Demand / provision", "Util."],
             [
@@ -1006,7 +1240,7 @@ def write_native_lm1_pdf_report(
         )
 
     if fatigue is not None:
-        story.append(Paragraph("Native FLM3 fatigue", styles["Heading2"]))
+        story.append(Paragraph("Native FLM3 fatigue", heading2))
         fatigue_rows_pdf = [
             ["Girder", "Delta sigma s", "Steel util.", "Concrete util.", "Link util."]
         ]
@@ -1053,7 +1287,7 @@ def write_native_lm1_pdf_report(
             )
 
     if design_interpretation is not None:
-        story.append(Paragraph("Integrated action-to-design results", styles["Heading2"]))
+        story.append(Paragraph("Integrated action-to-design results", heading2))
         integrated_rows = [
             [
                 "Girder",
@@ -1115,7 +1349,7 @@ def write_native_lm1_pdf_report(
                 ]
             )
 
-    story.extend([PageBreak(), Paragraph("Design and verification readiness", styles["Heading2"])])
+    story.extend([PageBreak(), Paragraph("Design and verification readiness", heading2)])
     capability_rows = [["Capability", "Status", "Engineering boundary"]]
     capability_rows.extend(
         [
@@ -1142,26 +1376,67 @@ def write_native_lm1_pdf_report(
             capability_table,
             Spacer(1, 5 * mm),
             Paragraph(
-                "Verification boundary: native results and automated tests are not independent "
-                "structural validation. Final production acceptance requires genuine MIDAS/STAAD "
-                "results from the application-generated governing models. ANN/reliability/RBDO "
-                "ground-truth generation remains locked until the solver verification manifest "
-                "is complete.",
+                "Verification boundary: independent structural validation for the deterministic "
+                "Stage-5 solver profile includes genuine STAAD external evidence and an accepted "
+                "source/model review. MIDAS cross-verification is deferred to V2 and is not a "
+                "deterministic-v1 release gate. ANN/reliability/RBDO ground-truth generation remains "
+                "locked until the current v1 verification manifest and outstanding project/code "
+                "acceptance checks are complete.",
                 body,
             ),
         ]
     )
 
     temporary = destination.with_suffix(".pdf.tmp")
+    page_size = landscape(A4)
+    page_width, page_height = page_size
+
+    def draw_page_frame(canvas, document) -> None:
+        canvas.saveState()
+        canvas.setStrokeColor(navy)
+        canvas.setLineWidth(0.7)
+        canvas.line(10 * mm, page_height - 9 * mm, page_width - 10 * mm, page_height - 9 * mm)
+        canvas.setFont("Helvetica-Bold", 7.2)
+        canvas.setFillColor(navy)
+        canvas.drawString(10 * mm, page_height - 7 * mm, project.name[:80])
+        canvas.setFont("Helvetica", 7.0)
+        canvas.setFillColor(colors.HexColor("#5f7383"))
+        canvas.drawRightString(
+            page_width - 10 * mm,
+            page_height - 7 * mm,
+            "RC Bridge Analysis & Design Calculations",
+        )
+        canvas.setStrokeColor(line_colour)
+        canvas.setLineWidth(0.35)
+        canvas.line(10 * mm, 8 * mm, page_width - 10 * mm, 8 * mm)
+        canvas.setFont("Helvetica", 6.8)
+        canvas.setFillColor(colors.HexColor("#5f7383"))
+        canvas.drawString(10 * mm, 5 * mm, "Deterministic calculation report")
+        canvas.drawCentredString(
+            page_width / 2.0,
+            5 * mm,
+            f"Page {document.page}",
+        )
+        canvas.drawRightString(
+            page_width - 10 * mm,
+            5 * mm,
+            "Generated by RC-Bridge-Analysis-ANN",
+        )
+        canvas.restoreState()
+
     document = SimpleDocTemplate(
         str(temporary),
-        pagesize=landscape(A4),
+        pagesize=page_size,
         rightMargin=10 * mm,
         leftMargin=10 * mm,
-        topMargin=10 * mm,
-        bottomMargin=10 * mm,
+        topMargin=14 * mm,
+        bottomMargin=12 * mm,
         title=f"{project.name} - RC Bridge Analysis Report",
     )
-    document.build(story)
+    document.build(
+        story,
+        onFirstPage=draw_page_frame,
+        onLaterPages=draw_page_frame,
+    )
     temporary.replace(destination)
     return destination
