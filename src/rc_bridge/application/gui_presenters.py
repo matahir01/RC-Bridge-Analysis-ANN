@@ -77,7 +77,7 @@ class DesignGirderMetric:
     flexure_utilization: float
     shear_utilization: float
     crack_utilization: float
-    deflection_utilization: float
+    deflection_utilization: float | None
     governing_utilization: float
     provided_bars: str
     provided_links: str
@@ -391,20 +391,32 @@ def design_dashboard_data(
     girders: list[DesignGirderMetric] = []
     stages: list[ConstructionStageMetric] = []
     for row in result.girders:
-        values = (
-            float(row.design.uls_design.flexure.utilization),
-            float(row.design.shear_utilization),
-            float(row.design.crack.utilization),
-            float(row.design.deflection.utilization),
+        flexure_utilization = float(row.design.uls_design.flexure.utilization)
+        shear_utilization = float(row.design.shear_utilization)
+        crack_utilization = float(row.design.crack.utilization)
+        deflection_utilization = (
+            None
+            if row.design.deflection.utilization is None
+            else float(row.design.deflection.utilization)
+        )
+        assessed_utilizations = (
+            flexure_utilization,
+            shear_utilization,
+            crack_utilization,
+            *(
+                ()
+                if deflection_utilization is None
+                else (deflection_utilization,)
+            ),
         )
         girders.append(
             DesignGirderMetric(
                 girder_index=row.girder_index,
-                flexure_utilization=values[0],
-                shear_utilization=values[1],
-                crack_utilization=values[2],
-                deflection_utilization=values[3],
-                governing_utilization=max(values),
+                flexure_utilization=flexure_utilization,
+                shear_utilization=shear_utilization,
+                crack_utilization=crack_utilization,
+                deflection_utilization=deflection_utilization,
+                governing_utilization=max(assessed_utilizations),
                 provided_bars=(
                     f"{row.selected_bars.bar_count}-Y"
                     f"{row.selected_bars.bar_diameter_mm:g}"
@@ -414,7 +426,11 @@ def design_dashboard_data(
                     f"{row.selected_links.link_diameter_mm:g}"
                     f"@{row.selected_links.spacing_mm:g}"
                 ),
-                status="PASS" if row.passes_current_checks else "CHECK",
+                status=(
+                    "REVIEW"
+                    if row.design.deflection.passes is None
+                    else ("PASS" if row.passes_current_checks else "CHECK")
+                ),
             )
         )
         for check in row.construction_stage_checks:
