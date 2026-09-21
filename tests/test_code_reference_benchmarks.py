@@ -13,6 +13,7 @@ from rc_bridge.research.code_reference_benchmarks import (
     JRC_LM1_CHARACTERISTIC_VALUES,
     JRC_LM1_LANE_SUBDIVISION,
     JRC_LM1_RESEARCH_COMBINATION_CORE,
+    LM1_SIMPLE_SPAN_LONGITUDINAL_SEARCH,
     JRC_LM1_TRANSVERSE_DISTRIBUTION,
     JRC_RECTANGULAR_FLEXURE,
     JRC_REINFORCEMENT_FATIGUE,
@@ -30,6 +31,7 @@ from rc_bridge.research.code_reference_benchmarks import (
     jrc_lm1_lane_subdivision_benchmark,
     jrc_lm1_research_combination_core_benchmark,
     jrc_lm1_transverse_distribution_benchmark,
+    lm1_simple_span_longitudinal_search_benchmark,
     jrc_rectangular_flexure_benchmark,
     jrc_reinforcement_fatigue_benchmark,
     jrc_road_bridge_combination_factors_benchmark,
@@ -82,6 +84,18 @@ def test_jrc_lm1_transverse_distribution_reference_case_passes() -> None:
         128.5714285714
     )
     assert values["JRC LM1 transverse equilibrium"] == pytest.approx(600.0)
+
+
+def test_lm1_simple_span_longitudinal_search_reference_case_passes() -> None:
+    report = lm1_simple_span_longitudinal_search_benchmark()
+
+    assert report.source_name == LM1_SIMPLE_SPAN_LONGITUDINAL_SEARCH.source_name
+    assert report.passes is True
+    assert report.failed_target_names == ()
+    values = {item.target.name: item.calculated_value for item in report.comparisons}
+    assert values["LM1 tandem maximum simple-span moment"] == pytest.approx(2523.0)
+    assert values["LM1 governing moment section position"] == pytest.approx(8.7)
+    assert values["LM1 governing tandem lead position"] == pytest.approx(9.9)
 
 
 def test_jrc_lm1_research_combination_core_reference_case_passes() -> None:
@@ -291,6 +305,7 @@ def test_published_reference_metadata_is_traceable_and_scope_limited() -> None:
         JRC_LM1_LANE_SUBDIVISION,
         JRC_LM1_TRANSVERSE_DISTRIBUTION,
         JRC_LM1_RESEARCH_COMBINATION_CORE,
+        LM1_SIMPLE_SPAN_LONGITUDINAL_SEARCH,
         JRC_ROAD_BRIDGE_COMBINATION_FACTORS,
         JRC_REINFORCEMENT_FATIGUE,
         JRC_CONCRETE_FATIGUE,
@@ -315,13 +330,14 @@ def test_published_reference_metadata_is_traceable_and_scope_limited() -> None:
 def test_published_reference_suite_contains_all_independent_reports() -> None:
     reports = eurocode_v1_published_reference_benchmarks()
 
-    assert len(reports) == 15
+    assert len(reports) == 16
     assert all(report.passes for report in reports)
     assert {report.source_name for report in reports} == {
         JRC_LM1_CHARACTERISTIC_VALUES.source_name,
         JRC_LM1_LANE_SUBDIVISION.source_name,
         JRC_LM1_TRANSVERSE_DISTRIBUTION.source_name,
         JRC_LM1_RESEARCH_COMBINATION_CORE.source_name,
+        LM1_SIMPLE_SPAN_LONGITUDINAL_SEARCH.source_name,
         JRC_ROAD_BRIDGE_COMBINATION_FACTORS.source_name,
         JRC_REINFORCEMENT_FATIGUE.source_name,
         JRC_CONCRETE_FATIGUE.source_name,
