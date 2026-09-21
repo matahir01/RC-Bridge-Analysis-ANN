@@ -4,6 +4,7 @@ from rc_bridge.core.models import (
     DesignCode,
     MaterialProperties,
     ProjectInput,
+    RectangularGirderProfile,
     SectionType,
     SupportSystem,
 )
@@ -18,6 +19,7 @@ REFERENCE_BRIDGE_15M = ProjectInput(
         girder_count=7,
         girder_spacing_m=1.70,
         girder_depth_m=0.95,
+        precast_girder_length_m=14.95,
         deck_structural_depth_m=0.25,
         deck_construction=DeckConstruction(
             precast_false_slab_depth_m=0.075,
@@ -26,7 +28,11 @@ REFERENCE_BRIDGE_15M = ProjectInput(
             in_situ_slab_composite_participation=True,
         ),
         support_system=SupportSystem.SIMPLY_SUPPORTED,
-        section_type=SectionType.T,
+        section_type=SectionType.RECTANGULAR,
+        girder_profile=RectangularGirderProfile(
+            width_m=0.40,
+            depth_m=0.95,
+        ),
     ),
     materials=MaterialProperties(
         fck_mpa=35.0,
