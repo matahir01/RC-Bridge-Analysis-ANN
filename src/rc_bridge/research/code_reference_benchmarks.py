@@ -18,13 +18,21 @@ from rc_bridge.codes.eurocode.en1991_2 import (
     notional_lane_layout,
 )
 from rc_bridge.design.eurocode_demand import required_tension_steel_rectangular
-from rc_bridge.design.eurocode_detailing import maximum_vertical_link_spacings_mm
+from rc_bridge.design.eurocode_detailing import (
+    bar_area_mm2,
+    maximum_vertical_link_spacings_mm,
+    minimum_vertical_shear_reinforcement,
+)
 from rc_bridge.design.eurocode_fatigue import (
     concrete_design_fatigue_strength_mpa,
     reinforcement_fatigue_check,
 )
 from rc_bridge.design.eurocode_flexure import rectangular_singly_reinforced_resistance
-from rc_bridge.design.eurocode_shear import concrete_shear_resistance
+from rc_bridge.design.eurocode_shear import (
+    concrete_shear_resistance,
+    provided_vertical_shear_resistance,
+    required_vertical_shear_reinforcement,
+)
 from rc_bridge.research.benchmarking import (
     BenchmarkTarget,
     IndependentBenchmarkReport,
@@ -215,6 +223,47 @@ JRC_EC2_SLAB_SHEAR = ReferenceBenchmarkEvidence(
         "Independent published EC2 concrete-shear-without-specific-shear-"
         "reinforcement reference. It supports V_Rd,c only; link design, V_Rd,s "
         "and V_Rd,max remain separate verification targets."
+    ),
+)
+
+
+CONCRETE_CENTRE_LINK_SHEAR = ReferenceBenchmarkEvidence(
+    key="concrete_centre_link_governed_shear",
+    source_name="The Concrete Centre - Worked Examples to Eurocode 2, Volume 1",
+    source_reference=(
+        "Section 4.1.6, continuous beam support B: VEd=164.5 kN, bw=300 mm, "
+        "d=392 mm, fck=30 MPa, fyk=500 MPa, gamma_s=1.15, cot(theta)=2.5. "
+        "Using z=0.9d gives required Asw/s=0.429 mm2/mm; minimum=0.263; "
+        "maximum spacing=294 mm; H8 at 200 gives about 0.50 mm2/mm."
+    ),
+    source_url=(
+        "https://ndl.ethernet.edu.et/bitstream/123456789/87977/66/"
+        "Worked-Examples-Ec2%20Volume%20I.pdf"
+    ),
+    scope=(
+        "Independent EC2 link-governed shear reference for required Asw/s, "
+        "minimum shear reinforcement, maximum link spacing and the stated H8@200 "
+        "provided ratio only. V_Rd,max is deliberately excluded because the source's "
+        "strut-reduction convention must be reconciled separately with the bridge profile."
+    ),
+)
+
+ECP_PROVIDED_LINK_SHEAR = ReferenceBenchmarkEvidence(
+    key="ecp_provided_link_shear_resistance",
+    source_name="European Concrete Platform - Eurocode 2 Worked Examples",
+    source_reference=(
+        "Example 6.4, fck=30 MPa case: bw=150 mm, d=550 mm, z=500 mm, "
+        "two-leg 12 mm stirrups Asw=226 mm2 at s=150 mm, fyd=391 MPa, "
+        "cot(theta)=1.29; published V_Rd,s=380 kN."
+    ),
+    source_url=(
+        "https://www.theconcreteinitiative.eu/images/ECP_Documents/"
+        "Eurocode2_WorkedExamples.pdf"
+    ),
+    scope=(
+        "Independent EC2 verification of the provided vertical-link V_Rd,s equation "
+        "only. The example's V_Rd,max/nu convention is not used to certify the current "
+        "bridge strut-capacity implementation."
     ),
 )
 
@@ -806,6 +855,123 @@ def jrc_ec2_slab_shear_benchmark() -> IndependentBenchmarkReport:
     )
 
 
+def concrete_centre_link_shear_benchmark() -> IndependentBenchmarkReport:
+    """Reproduce the Concrete Centre support-B vertical-link design example."""
+
+    required = required_vertical_shear_reinforcement(
+        164.5,
+        0.300,
+        0.392,
+        30.0,
+        500.0,
+        gamma_s=1.15,
+        cot_theta=2.5,
+        z_factor=0.9,
+    )
+    _, minimum_mm2_per_mm, _ = minimum_vertical_shear_reinforcement(
+        fck_mpa=30.0,
+        fyk_mpa=500.0,
+        web_width_m=0.300,
+    )
+    maximum_spacing_mm, _ = maximum_vertical_link_spacings_mm(
+        effective_depth_m=0.392,
+    )
+    h8_at_200_mm2_per_mm = (
+        2.0 * bar_area_mm2(8.0) / 200.0
+    )
+
+    return build_independent_benchmark_report(
+        solver_profile=SolverProfile.EUROCODE_1G,
+        source_name=CONCRETE_CENTRE_LINK_SHEAR.source_name,
+        source_reference=CONCRETE_CENTRE_LINK_SHEAR.source_reference,
+        observations=(
+            (
+                BenchmarkTarget(
+                    name="required vertical links Asw/s",
+                    reference_value=0.429,
+                    unit="mm2/mm",
+                    absolute_tolerance=0.001,
+                ),
+                required.asw_per_s_mm2_per_mm,
+            ),
+            (
+                BenchmarkTarget(
+                    name="minimum vertical links Asw/s",
+                    reference_value=0.263,
+                    unit="mm2/mm",
+                    absolute_tolerance=0.001,
+                ),
+                minimum_mm2_per_mm,
+            ),
+            (
+                BenchmarkTarget(
+                    name="maximum longitudinal link spacing",
+                    reference_value=294.0,
+                    unit="mm",
+                    absolute_tolerance=0.1,
+                ),
+                maximum_spacing_mm,
+            ),
+            (
+                BenchmarkTarget(
+                    name="H8 at 200 provided Asw/s",
+                    reference_value=0.50,
+                    unit="mm2/mm",
+                    absolute_tolerance=0.01,
+                ),
+                h8_at_200_mm2_per_mm,
+            ),
+        ),
+        notes=(
+            "The source rounds the calculated ratios. The native values are about "
+            "0.42897 required, 0.26291 minimum and 0.50265 provided for a two-leg "
+            "8 mm link at 200 mm. V_Rd,max is intentionally not used as an acceptance "
+            "target in this case."
+        ),
+    )
+
+
+def ecp_provided_link_shear_benchmark() -> IndependentBenchmarkReport:
+    """Reproduce European Concrete Platform Example 6.4 V_Rd,s."""
+
+    provided_asw_per_s_mm2_per_m = 226.0 / 150.0 * 1000.0
+    result = provided_vertical_shear_resistance(
+        provided_asw_per_s_mm2_per_m=provided_asw_per_s_mm2_per_m,
+        web_width_m=0.150,
+        effective_depth_m=0.550,
+        fck_mpa=30.0,
+        fyk_mpa=450.0,
+        gamma_c=1.50,
+        gamma_s=1.15,
+        alpha_cc=0.85,
+        cot_theta=1.29,
+        z_factor=500.0 / 550.0,
+    )
+
+    return build_independent_benchmark_report(
+        solver_profile=SolverProfile.EUROCODE_1G,
+        source_name=ECP_PROVIDED_LINK_SHEAR.source_name,
+        source_reference=ECP_PROVIDED_LINK_SHEAR.source_reference,
+        observations=(
+            (
+                BenchmarkTarget(
+                    name="provided-link V_Rd,s",
+                    reference_value=380.0,
+                    unit="kN",
+                    absolute_tolerance=1.0,
+                ),
+                result.vrds_kn,
+            ),
+        ),
+        notes=(
+            "The published example uses fyd=391 MPa; fyk=450/gamma_s=1.15 gives "
+            "391.30 MPa, so the native V_Rd,s is about 380.27 kN. The benchmark "
+            "does not compare V_Rd,max because the source and current kernel use "
+            "different explicit concrete-strut reduction conventions."
+        ),
+    )
+
+
 def jrc_rectangular_flexure_benchmark() -> IndependentBenchmarkReport:
     """Compare the rectangular flexure kernel with the JRC Annex-B worked example."""
 
@@ -917,6 +1083,8 @@ def eurocode_v1_published_reference_benchmarks() -> tuple[IndependentBenchmarkRe
         jrc_lm1_research_combination_core_benchmark(),
         jrc_road_bridge_combination_factors_benchmark(),
         jrc_ec2_slab_shear_benchmark(),
+        concrete_centre_link_shear_benchmark(),
+        ecp_provided_link_shear_benchmark(),
         jrc_rectangular_flexure_benchmark(),
         jrc_beam_link_spacing_benchmark(),
         jrc_reinforcement_fatigue_benchmark(),
