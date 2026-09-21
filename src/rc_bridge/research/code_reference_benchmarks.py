@@ -9,9 +9,14 @@ from rc_bridge.codes.eurocode.en1991_2 import (
     lm1_characteristic_lane_load,
     lm1_remaining_area_udl_kn_m2,
     lm1_tandem_axle_spacing_m,
+    notional_lane_layout,
 )
 from rc_bridge.design.eurocode_demand import required_tension_steel_rectangular
 from rc_bridge.design.eurocode_detailing import maximum_vertical_link_spacings_mm
+from rc_bridge.design.eurocode_fatigue import (
+    concrete_design_fatigue_strength_mpa,
+    reinforcement_fatigue_check,
+)
 from rc_bridge.design.eurocode_flexure import rectangular_singly_reinforced_resistance
 from rc_bridge.design.eurocode_shear import concrete_shear_resistance
 from rc_bridge.research.benchmarking import (
@@ -64,6 +69,65 @@ JRC_LM1_CHARACTERISTIC_VALUES = ReferenceBenchmarkEvidence(
         "the bridge-wide moving-load search or governing placement algorithm."
     ),
 )
+
+JRC_LM1_LANE_SUBDIVISION = ReferenceBenchmarkEvidence(
+    key="jrc_bridge_lm1_lane_subdivision",
+    source_name="JRC Bridge Design to Eurocodes - EN 1991 lane subdivision",
+    source_reference=(
+        "Chapter 3, section 3.9.1.1, Table 3.5: w<5.4 m -> one 3 m lane "
+        "plus remaining width; 5.4<=w<6.0 m -> two lanes each 0.5w; "
+        "w>=6.0 m -> int(w/3) lanes each 3 m plus w-3n remaining area."
+    ),
+    source_url=(
+        "https://eurocodes.jrc.ec.europa.eu/sites/default/files/2022-06/"
+        "Bridge_Design-Eurocodes-Worked_examples-main_only.pdf"
+    ),
+    scope=(
+        "Independent published verification of EN 1991-2 carriageway subdivision only. "
+        "Lane numbering/positioning to maximize effects and the moving-load search remain "
+        "separate verification targets."
+    ),
+)
+
+JRC_REINFORCEMENT_FATIGUE = ReferenceBenchmarkEvidence(
+    key="jrc_bridge_reinforcement_fatigue",
+    source_name="JRC Bridge Design to Eurocodes - EN 1992-2 reinforcement fatigue",
+    source_reference=(
+        "Chapter 5 transverse slab fatigue example: lambda_s=0.89, "
+        "Delta sigma_s,Ec=88 MPa, Delta sigma_s,equ=78 MPa; "
+        "Delta sigma_Rsk/gamma_s,fat=162.5/1.15=141 MPa and the check passes."
+    ),
+    source_url=(
+        "https://eurocodes.jrc.ec.europa.eu/sites/default/files/2022-06/"
+        "Bridge_Design-Eurocodes-Worked_examples.pdf"
+    ),
+    scope=(
+        "Independent published verification of the EN 1992-2 equivalent-stress-range "
+        "reinforcement fatigue equation only. FLM3 structural stress-range generation "
+        "and fatigue lane placement remain separate verification targets."
+    ),
+)
+
+JRC_CONCRETE_FATIGUE = ReferenceBenchmarkEvidence(
+    key="jrc_bridge_concrete_compression_fatigue",
+    source_name="JRC Bridge Design to Eurocodes - EN 1992-2 concrete fatigue",
+    source_reference=(
+        "Chapter 5 note following the reinforcement-fatigue example: for fck=35 MPa "
+        "with recommended alpha_cc=0.85 and beta_cc(t0)=1.1..1.2, fcd,fat is about "
+        "16..17.5 MPa; sigma_c,max=11.9 MPa and sigma_c,min=3.5 MPa do not satisfy "
+        "EN 1992-2 Expression 6.77."
+    ),
+    source_url=(
+        "https://eurocodes.jrc.ec.europa.eu/sites/default/files/2022-06/"
+        "Bridge_Design-Eurocodes-Worked_examples.pdf"
+    ),
+    scope=(
+        "Independent published verification of the concrete-compression fatigue "
+        "strength/check equation only. Traffic-derived concrete stress histories remain "
+        "a separate verification target."
+    ),
+)
+
 
 JRC_ROAD_BRIDGE_COMBINATION_FACTORS = ReferenceBenchmarkEvidence(
     key="jrc_road_bridge_combination_factors",
@@ -248,6 +312,153 @@ def jrc_lm1_characteristic_values_benchmark() -> IndependentBenchmarkReport:
             "Recommended/basic alpha factors are 1.0. The benchmark deliberately "
             "checks characteristic load definitions before any transverse or "
             "longitudinal placement/search logic."
+        ),
+    )
+
+
+def jrc_lm1_lane_subdivision_benchmark() -> IndependentBenchmarkReport:
+    """Reproduce JRC Table 3.5 notional-lane subdivision cases."""
+
+    cases = (
+        (5.0, 1, 3.0, 2.0),
+        (5.8, 2, 2.9, 0.0),
+        (7.0, 2, 3.0, 1.0),
+        (10.0, 3, 3.0, 1.0),
+    )
+    observations: list[tuple[BenchmarkTarget, float]] = []
+    for width_m, lane_count, lane_width_m, remainder_m in cases:
+        layout = notional_lane_layout(width_m)
+        observations.extend(
+            (
+                (
+                    BenchmarkTarget(
+                        name=f"w={width_m:g} m lane count",
+                        reference_value=float(lane_count),
+                        unit="-",
+                        absolute_tolerance=1.0e-12,
+                    ),
+                    float(layout.lane_count),
+                ),
+                (
+                    BenchmarkTarget(
+                        name=f"w={width_m:g} m lane width",
+                        reference_value=lane_width_m,
+                        unit="m",
+                        absolute_tolerance=1.0e-12,
+                    ),
+                    layout.lane_width_m,
+                ),
+                (
+                    BenchmarkTarget(
+                        name=f"w={width_m:g} m remaining width",
+                        reference_value=remainder_m,
+                        unit="m",
+                        absolute_tolerance=1.0e-12,
+                    ),
+                    layout.remaining_width_m,
+                ),
+            )
+        )
+
+    return build_independent_benchmark_report(
+        solver_profile=SolverProfile.EUROCODE_1G,
+        source_name=JRC_LM1_LANE_SUBDIVISION.source_name,
+        source_reference=JRC_LM1_LANE_SUBDIVISION.source_reference,
+        observations=tuple(observations),
+        notes=(
+            "The 7.0 m case is the thesis carriageway width: two 3.0 m notional "
+            "lanes plus 1.0 m remaining area. This benchmark verifies subdivision, "
+            "not the transverse lane placement chosen to maximize each response."
+        ),
+    )
+
+
+def jrc_reinforcement_fatigue_benchmark() -> IndependentBenchmarkReport:
+    """Reproduce the JRC equivalent-stress-range reinforcement fatigue example."""
+
+    result = reinforcement_fatigue_check(
+        reference_stress_range_mpa=88.0,
+        lambda_s=0.89,
+        phi_fat=1.0,
+        characteristic_fatigue_strength_mpa=162.5,
+        gamma_s_fat=1.15,
+    )
+    return build_independent_benchmark_report(
+        solver_profile=SolverProfile.EUROCODE_1G,
+        source_name=JRC_REINFORCEMENT_FATIGUE.source_name,
+        source_reference=JRC_REINFORCEMENT_FATIGUE.source_reference,
+        observations=(
+            (
+                BenchmarkTarget(
+                    name="reinforcement equivalent stress range",
+                    reference_value=78.0,
+                    unit="MPa",
+                    absolute_tolerance=0.5,
+                ),
+                result.equivalent_stress_range_mpa,
+            ),
+            (
+                BenchmarkTarget(
+                    name="reinforcement design fatigue resistance",
+                    reference_value=141.0,
+                    unit="MPa",
+                    absolute_tolerance=0.5,
+                ),
+                result.design_fatigue_resistance_mpa,
+            ),
+        ),
+        notes=(
+            "Published values are rounded. The native calculation gives 78.32 MPa "
+            "and 141.30 MPa and therefore reproduces the passing JRC check."
+        ),
+    )
+
+
+def jrc_concrete_fatigue_benchmark() -> IndependentBenchmarkReport:
+    """Reproduce the JRC concrete-compression fatigue strength range."""
+
+    low = concrete_design_fatigue_strength_mpa(
+        fck_mpa=35.0,
+        gamma_c=1.50,
+        alpha_cc=0.85,
+        k1=0.85,
+        beta_cc_t0=1.10,
+    )
+    high = concrete_design_fatigue_strength_mpa(
+        fck_mpa=35.0,
+        gamma_c=1.50,
+        alpha_cc=0.85,
+        k1=0.85,
+        beta_cc_t0=1.20,
+    )
+    return build_independent_benchmark_report(
+        solver_profile=SolverProfile.EUROCODE_1G,
+        source_name=JRC_CONCRETE_FATIGUE.source_name,
+        source_reference=JRC_CONCRETE_FATIGUE.source_reference,
+        observations=(
+            (
+                BenchmarkTarget(
+                    name="concrete fatigue strength beta_cc=1.10",
+                    reference_value=16.0,
+                    unit="MPa",
+                    absolute_tolerance=0.10,
+                ),
+                low,
+            ),
+            (
+                BenchmarkTarget(
+                    name="concrete fatigue strength beta_cc=1.20",
+                    reference_value=17.5,
+                    unit="MPa",
+                    absolute_tolerance=0.15,
+                ),
+                high,
+            ),
+        ),
+        notes=(
+            "The source gives a rounded 16..17.5 MPa range. The native endpoints "
+            "are 15.95 and 17.40 MPa. Using the cited 11.9/3.5 MPa concrete stresses, "
+            "Expression 6.77 remains unsatisfied at both endpoints, as reported by JRC."
         ),
     )
 
@@ -493,8 +704,11 @@ def eurocode_v1_published_reference_benchmarks() -> tuple[IndependentBenchmarkRe
 
     return (
         jrc_lm1_characteristic_values_benchmark(),
+        jrc_lm1_lane_subdivision_benchmark(),
         jrc_road_bridge_combination_factors_benchmark(),
         jrc_ec2_slab_shear_benchmark(),
         jrc_rectangular_flexure_benchmark(),
         jrc_beam_link_spacing_benchmark(),
+        jrc_reinforcement_fatigue_benchmark(),
+        jrc_concrete_fatigue_benchmark(),
     )
