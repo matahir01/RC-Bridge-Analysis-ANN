@@ -42,7 +42,7 @@ def test_integrated_eurocode_t_girder_workflow_returns_all_limit_states() -> Non
     )
 
     assert result.uls_combination.effects.moment_knm == pytest.approx(
-        1.35 * 650.0 + 1.50 * 550.0
+        1.35 * 650.0 + 1.35 * 550.0
     )
     assert result.uls_design.flexure.resistance_knm > 0.0
     assert result.uls_design.shear.design_shear_kn > 0.0

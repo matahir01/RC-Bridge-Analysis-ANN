@@ -102,10 +102,10 @@ def test_support_hogging_combination_uses_directional_g_factor() -> None:
     assert combinations.positive_gamma_g == pytest.approx(1.0)
     assert combinations.negative_gamma_g == pytest.approx(1.35)
     assert combinations.positive_uls_effect == pytest.approx(
-        -300.0 + 1.5 * traffic.maximum_positive_effect
+        -300.0 + 1.35 * traffic.maximum_positive_effect
     )
     assert combinations.negative_uls_effect == pytest.approx(
-        1.35 * -300.0 + 1.5 * traffic.minimum_negative_effect
+        1.35 * -300.0 + 1.35 * traffic.minimum_negative_effect
     )
     assert combinations.negative_uls_effect < combinations.positive_uls_effect
 

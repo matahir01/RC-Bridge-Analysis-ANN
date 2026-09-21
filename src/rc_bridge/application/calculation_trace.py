@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from rc_bridge.analysis.physical_sections import girder_web_width_m
+from rc_bridge.application.action_combinations import IntegratedActionCombinationSuite
 from rc_bridge.application.design_checks import ApplicationDesignInterpretationSuite
 from rc_bridge.application.fatigue import FatigueApplicationResult
 from rc_bridge.application.load_cases import (
@@ -299,7 +300,11 @@ def _combination_blocks(
         blocks.append(
             CalculationBlock(
                 title=f"Girder {row.girder_index} - action combinations",
-                scope="Characteristic permanent and LM1 traffic effects combined for the simple-span application path.",
+                scope=(
+                    "Pre-design simplified characteristic-permanent + combined-LM1 summary. "
+                    "Once integrated bridge actions are available, the report replaces this "
+                    "with the actual compatible-group design combinations."
+                ),
                 steps=(
                     CalculationStep(
                         label="ULS bending moment",
@@ -416,11 +421,185 @@ def _combination_blocks(
     return tuple(blocks)
 
 
+def _integrated_combination_blocks(
+    suite: IntegratedActionCombinationSuite,
+    preferences: ApplicationPreferences,
+) -> tuple[CalculationBlock, ...]:
+    """Report the exact compatible action situations used by integrated design."""
+
+    ec = preferences.eurocode
+    blocks: list[CalculationBlock] = []
+    for girder in suite.girders:
+        by_name = {item.name: item for item in girder.situations}
+
+        uls_m = by_name[girder.governing_uls_moment_situation]
+        uls_v = by_name[girder.governing_uls_shear_situation]
+        char_m = by_name[girder.governing_characteristic_moment_situation]
+        freq_m = by_name[girder.governing_frequent_moment_situation]
+        quasi_m = max(
+            girder.situations,
+            key=lambda item: abs(item.quasi_permanent_sls_effects.moment_knm),
+        )
+
+        def gamma_q_for(situation) -> float:
+            return (
+                ec.gamma_q_nontraffic
+                if situation.group == "wind"
+                else ec.gamma_q_traffic
+            )
+
+        uls_m_gamma_q = gamma_q_for(uls_m)
+        uls_v_gamma_q = gamma_q_for(uls_v)
+        g_m = girder.permanent.moment_knm
+        g_v = girder.permanent.shear_kn
+        uls_m_q = uls_m.variable_effects.moment_knm
+        uls_v_q = uls_v.variable_effects.shear_kn
+        char_q = (
+            char_m.characteristic_sls_effects.moment_knm - g_m
+        )
+        freq_q = freq_m.frequent_sls_effects.moment_knm - g_m
+        quasi_q = quasi_m.quasi_permanent_sls_effects.moment_knm - g_m
+
+        blocks.append(
+            CalculationBlock(
+                title=f"Girder {girder.girder_index} - integrated action combinations",
+                scope=(
+                    "Compatible action-group combinations used by the integrated design "
+                    "workflow. Frequent LM1 is taken from the dedicated native rerun with "
+                    "separate tandem-system and UDL representative factors, not by scaling "
+                    "the combined characteristic LM1 envelope."
+                ),
+                steps=(
+                    CalculationStep(
+                        label="ULS bending moment",
+                        expression="MEd = gamma_G MGk + gamma_Q MQk",
+                        substitution=(
+                            f"{ec.gamma_g_unfavourable:g} x {_f(g_m)} + "
+                            f"{uls_m_gamma_q:g} x {_f(uls_m_q)}"
+                        ),
+                        result=f"{_f(uls_m.uls_effects.moment_knm)} kNm",
+                        reference=(
+                            f"{uls_m.group}: {uls_m.name}; {uls_m.basis}"
+                        ),
+                        equation=_eq(
+                            _var("M", "Ed"),
+                            _sum(
+                                _product(_var("γ", "G"), _var("M", "Gk")),
+                                _product(_var("γ", "Q"), _var("M", "Qk")),
+                            ),
+                        ),
+                        substitution_equation=_eq(
+                            _var("M", "Ed"),
+                            _sum(
+                                _product(
+                                    number(f"{ec.gamma_g_unfavourable:g}"),
+                                    _num(g_m),
+                                ),
+                                _product(
+                                    number(f"{uls_m_gamma_q:g}"),
+                                    _num(uls_m_q),
+                                ),
+                            ),
+                        ),
+                    ),
+                    CalculationStep(
+                        label="ULS shear",
+                        expression="VEd = gamma_G VGk + gamma_Q VQk",
+                        substitution=(
+                            f"{ec.gamma_g_unfavourable:g} x {_f(g_v)} + "
+                            f"{uls_v_gamma_q:g} x {_f(uls_v_q)}"
+                        ),
+                        result=f"{_f(uls_v.uls_effects.shear_kn)} kN",
+                        reference=(
+                            f"{uls_v.group}: {uls_v.name}; {uls_v.basis}"
+                        ),
+                        equation=_eq(
+                            _var("V", "Ed"),
+                            _sum(
+                                _product(_var("γ", "G"), _var("V", "Gk")),
+                                _product(_var("γ", "Q"), _var("V", "Qk")),
+                            ),
+                        ),
+                        substitution_equation=_eq(
+                            _var("V", "Ed"),
+                            _sum(
+                                _product(
+                                    number(f"{ec.gamma_g_unfavourable:g}"),
+                                    _num(g_v),
+                                ),
+                                _product(
+                                    number(f"{uls_v_gamma_q:g}"),
+                                    _num(uls_v_q),
+                                ),
+                            ),
+                        ),
+                    ),
+                    CalculationStep(
+                        label="SLS characteristic moment",
+                        expression="M = MGk + MQk",
+                        substitution=f"{_f(g_m)} + {_f(char_q)}",
+                        result=f"{_f(char_m.characteristic_sls_effects.moment_knm)} kNm",
+                        reference=(
+                            f"{char_m.group}: {char_m.name}; {char_m.basis}"
+                        ),
+                        equation=_eq(
+                            identifier("M"),
+                            _sum(_var("M", "Gk"), _var("M", "Qk")),
+                        ),
+                        substitution_equation=_eq(
+                            identifier("M"),
+                            _sum(_num(g_m), _num(char_q)),
+                        ),
+                    ),
+                    CalculationStep(
+                        label="SLS frequent moment",
+                        expression="M = MGk + MQ,frequent",
+                        substitution=f"{_f(g_m)} + {_f(freq_q)}",
+                        result=f"{_f(freq_m.frequent_sls_effects.moment_knm)} kNm",
+                        reference=(
+                            f"{freq_m.group}: {freq_m.name}; {freq_m.basis} "
+                            f"For LM1, native frequent factors are TS="
+                            f"{preferences.actions.gr2_lm1_tandem_factor:g} and UDL="
+                            f"{preferences.actions.gr2_lm1_udl_factor:g}."
+                        ),
+                        equation=_eq(
+                            identifier("M"),
+                            _sum(_var("M", "Gk"), _var("M", "Q,freq")),
+                        ),
+                        substitution_equation=_eq(
+                            identifier("M"),
+                            _sum(_num(g_m), _num(freq_q)),
+                        ),
+                    ),
+                    CalculationStep(
+                        label="SLS quasi-permanent moment",
+                        expression="M = MGk + MQ,quasi",
+                        substitution=f"{_f(g_m)} + {_f(quasi_q)}",
+                        result=f"{_f(quasi_m.quasi_permanent_sls_effects.moment_knm)} kNm",
+                        reference=(
+                            f"{quasi_m.group}: {quasi_m.name}; {quasi_m.basis}"
+                        ),
+                        equation=_eq(
+                            identifier("M"),
+                            _sum(_var("M", "Gk"), _var("M", "Q,qp")),
+                        ),
+                        substitution_equation=_eq(
+                            identifier("M"),
+                            _sum(_num(g_m), _num(quasi_q)),
+                        ),
+                    ),
+                ),
+            )
+        )
+    return tuple(blocks)
+
+
 def build_application_calculation_trace(
     project: ProjectInput,
     result: ProjectNativeLM1GrillageSearchResult,
     *,
     preferences: ApplicationPreferences,
+    action_combinations: IntegratedActionCombinationSuite | None = None,
     local_deck_design: LocalDeckDesignResult | None = None,
     design_interpretation: ApplicationDesignInterpretationSuite | None = None,
     fatigue: FatigueApplicationResult | None = None,
@@ -513,7 +692,10 @@ def build_application_calculation_trace(
             )
         )
 
-    blocks.extend(_combination_blocks(project, result, preferences))
+    if action_combinations is not None:
+        blocks.extend(_integrated_combination_blocks(action_combinations, preferences))
+    else:
+        blocks.extend(_combination_blocks(project, result, preferences))
 
     if design_interpretation is not None:
         for row in design_interpretation.girders:

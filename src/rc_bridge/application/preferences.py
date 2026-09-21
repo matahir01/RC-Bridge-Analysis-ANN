@@ -47,7 +47,7 @@ class EurocodeApplicationBasis:
 
     gamma_g_unfavourable: float = 1.35
     gamma_g_favourable: float = 1.00
-    gamma_q_traffic: float = 1.50
+    gamma_q_traffic: float = 1.35
     gamma_q_nontraffic: float = 1.50
     psi1_traffic: float = 0.75
     psi2_traffic: float = 0.0

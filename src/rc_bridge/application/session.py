@@ -513,6 +513,7 @@ class BridgeApplicationSession:
                 self.project,
                 self.last_lm1_search,
                 preferences=self.preferences,
+                action_combinations=self.last_action_combinations,
                 local_deck_design=self.last_local_deck_design,
                 design_interpretation=self.last_design_interpretation,
                 fatigue=self.last_fatigue,

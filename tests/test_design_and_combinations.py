@@ -14,6 +14,14 @@ from rc_bridge.research.dataset import TrainingRecord
 from rc_bridge.research.verification import SolverProfile
 
 
+def test_default_road_bridge_traffic_factor_is_jrc_reference_value() -> None:
+    factors = EurocodeFactors()
+
+    assert math.isclose(factors.gamma_g_unfavourable, 1.35)
+    assert math.isclose(factors.gamma_q_traffic, 1.35)
+    assert math.isclose(factors.gamma_g_favourable, 1.00)
+
+
 def test_eurocode_combination_is_transparent() -> None:
     permanent = LoadEffects(moment_knm=100.0, shear_kn=20.0)
     traffic = LoadEffects(moment_knm=50.0, shear_kn=10.0)

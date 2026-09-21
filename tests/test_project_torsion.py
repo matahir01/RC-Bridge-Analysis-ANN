@@ -68,7 +68,7 @@ def test_imported_grillage_torsion_is_checked_with_explicit_cell_geometry() -> N
         cot_theta=2.0,
     )
 
-    assert result.torsion.design_torsion_knm == pytest.approx(12.0)
+    assert result.torsion.design_torsion_knm == pytest.approx(10.8)
     assert result.torsion.transverse_asw_per_s_mm2_per_m > 0.0
     assert result.torsion.longitudinal_asl_mm2 > 0.0
     assert result.torsion.trdmax_knm > 0.0

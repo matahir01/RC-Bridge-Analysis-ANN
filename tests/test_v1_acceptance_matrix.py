@@ -25,6 +25,14 @@ def test_v1_acceptance_matrix_separates_structural_analysis_from_design_code() -
     assert matrix.item("lm1_code_loading").state is AcceptanceState.INTERNAL_ONLY
     assert matrix.item("en1990_combination_rules").state is AcceptanceState.INTERNAL_ONLY
 
+    for key in (
+        "lm1_characteristic_values_reference_case",
+        "road_bridge_combination_factors_reference_case",
+        "ec2_concrete_shear_reference_case",
+    ):
+        assert matrix.item(key).state is AcceptanceState.EXTERNALLY_ACCEPTED
+        assert key not in matrix.pending_v1_gate_keys
+
     assert (
         matrix.item("ec2_rectangular_flexure_reference_case").state
         is AcceptanceState.EXTERNALLY_ACCEPTED
@@ -63,8 +71,13 @@ def test_staad_acceptance_does_not_unlock_unverified_design_milestones() -> None
     assert verification.traffic_loading is False
     assert verification.load_combinations is False
     # Passing sub-component reference cases are supporting evidence only.
+    assert matrix.item("lm1_characteristic_values_reference_case").state is AcceptanceState.EXTERNALLY_ACCEPTED
+    assert matrix.item("road_bridge_combination_factors_reference_case").state is AcceptanceState.EXTERNALLY_ACCEPTED
+    assert matrix.item("ec2_concrete_shear_reference_case").state is AcceptanceState.EXTERNALLY_ACCEPTED
     assert matrix.item("ec2_rectangular_flexure_reference_case").state is AcceptanceState.EXTERNALLY_ACCEPTED
     assert matrix.item("ec2_link_spacing_reference_case").state is AcceptanceState.EXTERNALLY_ACCEPTED
+    assert verification.traffic_loading is False
+    assert verification.load_combinations is False
     assert verification.flexure is False
     assert verification.shear is False
     assert verification.cracking is False
