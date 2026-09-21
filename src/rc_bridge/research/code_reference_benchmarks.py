@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from rc_bridge.analysis.physical_sections import ConcreteSectionLayer
 from rc_bridge.application.extended_actions import ExtendedActionSettings
 from rc_bridge.codes.common import LoadEffects
 from rc_bridge.codes.eurocode.combinations import (
@@ -25,11 +26,20 @@ from rc_bridge.design.eurocode_detailing import (
     maximum_vertical_link_spacings_mm,
     minimum_vertical_shear_reinforcement,
 )
+from rc_bridge.design.eurocode_deflection import (
+    SimpleSpanMomentDiagram,
+    ec2_interpolated_moment_diagram_deflection,
+)
 from rc_bridge.design.eurocode_fatigue import (
     concrete_design_fatigue_strength_mpa,
     reinforcement_fatigue_check,
 )
 from rc_bridge.design.eurocode_flexure import rectangular_singly_reinforced_resistance
+from rc_bridge.design.eurocode_layered_section import (
+    crack_width_layered_section,
+    cracked_layered_section_sls,
+    uncracked_layered_section_sls,
+)
 from rc_bridge.design.eurocode_shear import (
     concrete_shear_resistance,
     provided_vertical_shear_resistance,
@@ -348,6 +358,45 @@ ECP_TORSION_RESISTANCE_INTERACTION = ReferenceBenchmarkEvidence(
     scope=(
         "Independent verification of T_Rd,max and the linear high-stress "
         "shear-torsion interaction only, for explicitly supplied equivalent-section geometry."
+    ),
+)
+
+
+ECP_CRACK_WIDTH_EXAMPLE_7_3 = ReferenceBenchmarkEvidence(
+    key="ecp_crack_width_example_7_3",
+    source_name="European Concrete Platform EC2 Worked Examples - Example 7.3",
+    source_reference=(
+        "Example 7.3, EC2 clause 7.3.4: b=400 mm, h=600 mm, d=548 mm, "
+        "d'=46 mm, M=300 kNm, As=2712 mm2 (6phi24), As'=452 mm2 "
+        "(4phi12), alpha_e=15, fct,eff=2.9 MPa, kt=0.6. Published "
+        "yn=237.8 mm, I_II=5.96e9 mm4, sigma_s=234 MPa and wk=0.184 mm."
+    ),
+    source_url=(
+        "https://www.theconcreteinitiative.eu/images/ECP_Documents/"
+        "Eurocode2_WorkedExamples.pdf"
+    ),
+    scope=(
+        "Independent verification of the EC2 direct crack-width equation and "
+        "transformed cracked-section mechanics, including compression reinforcement."
+    ),
+)
+
+ECP_DEFLECTION_EXAMPLE_7_6 = ReferenceBenchmarkEvidence(
+    key="ecp_deflection_example_7_6",
+    source_name="European Concrete Platform EC2 Worked Examples - Example 7.6",
+    source_reference=(
+        "Example 7.6, EC2 deformation: simply supported 10 m beam, "
+        "w=40 kN/m, alpha_e=15, I_I=18.05e9 mm4, I_II=1.01e10 mm4, "
+        "Mcr=166.6 kNm and Mmax=500 kNm. Published state-I midspan "
+        "deflection is 21.64 mm and the spatially cracked total is 35.71 mm."
+    ),
+    source_url=(
+        "https://www.theconcreteinitiative.eu/images/ECP_Documents/"
+        "Eurocode2_WorkedExamples.pdf"
+    ),
+    scope=(
+        "Independent verification of spatially varying EC2 state-I/state-II "
+        "curvature interpolation for a simply supported distributed-load case."
     ),
 )
 
@@ -1266,6 +1315,158 @@ def ecp_torsion_resistance_interaction_benchmark() -> IndependentBenchmarkReport
     )
 
 
+def ecp_crack_width_example_7_3_benchmark() -> IndependentBenchmarkReport:
+    """Reproduce ECP Example 7.3 with the production layered crack kernel."""
+
+    layers = (ConcreteSectionLayer(0.400, 0.0, 0.600, "rectangular section"),)
+    ecm_mpa = 200000.0 / 15.0
+    uncracked = uncracked_layered_section_sls(
+        layers=layers,
+        steel_area_mm2=2712.0,
+        steel_depth_m=0.548,
+        modular_ratio=15.0,
+        fct_eff_mpa=2.9,
+        compression_steel_area_mm2=452.0,
+        compression_steel_depth_m=0.046,
+    )
+    cracked = cracked_layered_section_sls(
+        layers=layers,
+        steel_area_mm2=2712.0,
+        steel_depth_m=0.548,
+        modular_ratio=15.0,
+        service_moment_knm=300.0,
+        compression_steel_area_mm2=452.0,
+        compression_steel_depth_m=0.046,
+    )
+    crack = crack_width_layered_section(
+        layers=layers,
+        total_depth_m=0.600,
+        steel_area_mm2=2712.0,
+        steel_depth_m=0.548,
+        bar_diameter_mm=24.0,
+        bar_spacing_mm=100.0,
+        cover_mm=40.0,
+        service_moment_knm=300.0,
+        cracking_moment_knm=uncracked.cracking_moment_knm,
+        es_mpa=200000.0,
+        ecm_mpa=ecm_mpa,
+        fct_eff_mpa=2.9,
+        crack_limit_mm=0.30,
+        compression_steel_area_mm2=452.0,
+        compression_steel_depth_m=0.046,
+        kt=0.6,
+    )
+
+    return build_independent_benchmark_report(
+        solver_profile=SolverProfile.EUROCODE_1G,
+        source_name=ECP_CRACK_WIDTH_EXAMPLE_7_3.source_name,
+        source_reference=ECP_CRACK_WIDTH_EXAMPLE_7_3.source_reference,
+        observations=(
+            (
+                BenchmarkTarget(
+                    name="cracked neutral-axis depth",
+                    reference_value=237.8,
+                    unit="mm",
+                    absolute_tolerance=0.2,
+                ),
+                cracked.neutral_axis_from_top_mm,
+            ),
+            (
+                BenchmarkTarget(
+                    name="cracked second moment",
+                    reference_value=5.96e9,
+                    unit="mm4",
+                    absolute_tolerance=5.0e6,
+                ),
+                cracked.second_moment_mm4,
+            ),
+            (
+                BenchmarkTarget(
+                    name="service steel stress",
+                    reference_value=234.0,
+                    unit="MPa",
+                    absolute_tolerance=0.5,
+                ),
+                cracked.steel_stress_mpa,
+            ),
+            (
+                BenchmarkTarget(
+                    name="EC2 crack width",
+                    reference_value=0.184,
+                    unit="mm",
+                    absolute_tolerance=0.002,
+                ),
+                crack.crack_width_mm,
+            ),
+        ),
+        notes=(
+            "The source values are rounded. Native results use the same transformed "
+            "compression reinforcement and the EC2 7.3.4 strain/crack-spacing equations."
+        ),
+    )
+
+
+def ecp_deflection_example_7_6_benchmark() -> IndependentBenchmarkReport:
+    """Reproduce ECP Example 7.6 using spatially varying EC2 curvature."""
+
+    span_m = 10.0
+    udl_kn_m = 40.0
+    station_count = 401
+    stations = tuple(
+        span_m * index / (station_count - 1)
+        for index in range(station_count)
+    )
+    moments = tuple(
+        udl_kn_m * x * (span_m - x) / 2.0
+        for x in stations
+    )
+    result = ec2_interpolated_moment_diagram_deflection(
+        diagram=SimpleSpanMomentDiagram(
+            stations_m=stations,
+            moments_knm=moments,
+            source="ECP Example 7.6 full-span UDL",
+        ),
+        ecm_mpa=200000.0 / 15.0,
+        uncracked_second_moment_mm4=18.05e9,
+        cracked_second_moment_mm4=1.01e10,
+        service_moment_knm=500.0,
+        cracking_moment_knm=166.6,
+        allowable_deflection_mm=None,
+        beta=1.0,
+    )
+
+    return build_independent_benchmark_report(
+        solver_profile=SolverProfile.EUROCODE_1G,
+        source_name=ECP_DEFLECTION_EXAMPLE_7_6.source_name,
+        source_reference=ECP_DEFLECTION_EXAMPLE_7_6.source_reference,
+        observations=(
+            (
+                BenchmarkTarget(
+                    name="state-I midspan deflection",
+                    reference_value=21.64,
+                    unit="mm",
+                    absolute_tolerance=0.03,
+                ),
+                result.uncracked_deflection_mm,
+            ),
+            (
+                BenchmarkTarget(
+                    name="spatially cracked midspan deflection",
+                    reference_value=35.71,
+                    unit="mm",
+                    absolute_tolerance=0.20,
+                ),
+                result.interpolated_deflection_mm,
+            ),
+        ),
+        notes=(
+            "The source reports an approximate/numerical result and notes about 4% "
+            "difference between its analytical and discretized procedures. The native "
+            "piecewise-linear curvature integration is evaluated at 401 stations."
+        ),
+    )
+
+
 def jrc_rectangular_flexure_benchmark() -> IndependentBenchmarkReport:
     """Compare the rectangular flexure kernel with the JRC Annex-B worked example."""
 
@@ -1383,6 +1584,8 @@ def eurocode_v1_published_reference_benchmarks() -> tuple[IndependentBenchmarkRe
         concrete_centre_vrdmax_benchmark(),
         ecp_torsion_reinforcement_benchmark(),
         ecp_torsion_resistance_interaction_benchmark(),
+        ecp_crack_width_example_7_3_benchmark(),
+        ecp_deflection_example_7_6_benchmark(),
         jrc_rectangular_flexure_benchmark(),
         jrc_beam_link_spacing_benchmark(),
         jrc_reinforcement_fatigue_benchmark(),
