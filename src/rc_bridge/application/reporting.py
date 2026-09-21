@@ -727,6 +727,7 @@ def write_native_lm1_pdf_report(
         from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
         from reportlab.lib.units import mm
         from reportlab.platypus import (
+            CondPageBreak,
             LongTable,
             PageBreak,
             Paragraph,
@@ -833,7 +834,6 @@ def write_native_lm1_pdf_report(
         parent=small,
         textColor=colors.HexColor("#52606d"),
         spaceAfter=3,
-        keepWithNext=True,
     )
     body = styles["BodyText"]
     body.fontSize = 9
@@ -961,6 +961,11 @@ def write_native_lm1_pdf_report(
             ]
         )
         for block in calculation_trace.blocks:
+            # Reserve enough space for the block heading, scope, repeated table
+            # header and at least the beginning of one worked-calculation row.
+            # This avoids orphaned headings without forcing an entire LongTable
+            # to the following page.
+            story.append(CondPageBreak(42 * mm))
             story.append(Paragraph(escape(block.title), heading3))
             story.append(Paragraph(escape(block.scope), calculation_scope_style))
             trace_rows = [["Reference", "Worked calculation", "Result / check"]]
