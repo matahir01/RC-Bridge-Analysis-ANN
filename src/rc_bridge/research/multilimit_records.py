@@ -7,6 +7,7 @@ from rc_bridge.design.bs5400_provided_shear import (
     provided_vertical_link_resistance_bs5400,
 )
 from rc_bridge.design.eurocode_shear import provided_vertical_shear_resistance
+from rc_bridge.research.msc_profile import require_msc_project_scope
 from rc_bridge.research.verification import (
     DeterministicSolverVerification,
     SolverProfile,
@@ -87,6 +88,8 @@ def eurocode_multilimit_record_from_project(
         expected_profile=SolverProfile.EUROCODE_1G,
         scope=verification_scope,
     )
+    if verification_scope is VerificationScope.MSC_SIMPLE_SPAN_ANN:
+        require_msc_project_scope(project)
     if not 0 <= span_index < len(project.geometry.span_lengths_m):
         raise IndexError("span_index is outside the project span list.")
 
@@ -131,6 +134,16 @@ def eurocode_multilimit_record_from_project(
             ved_kn / shear_resistance_kn if shear_resistance_kn > 0.0 else float("inf")
         )
         g_shear_kn = shear_resistance_kn - ved_kn
+
+    if (
+        result.design.deflection.allowable_deflection_mm is None
+        or result.design.deflection.utilization is None
+        or result.design.deflection.g_deflection_mm is None
+    ):
+        raise ValueError(
+            "Eurocode ANN deflection ground truth requires an explicit project/client "
+            "deflection acceptance criterion."
+        )
 
     span_m = float(project.geometry.span_lengths_m[span_index])
     return MultiLimitTrainingRecord(
