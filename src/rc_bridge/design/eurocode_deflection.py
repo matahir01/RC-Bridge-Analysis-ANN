@@ -19,12 +19,36 @@ class DeflectionResult:
     uncracked_deflection_mm: float
     fully_cracked_deflection_mm: float
     interpolated_deflection_mm: float
-    allowable_deflection_mm: float
-    utilization: float
-    g_deflection_mm: float
+    allowable_deflection_mm: float | None
+    utilization: float | None
+    g_deflection_mm: float | None
     zeta: float
     effective_concrete_modulus_mpa: float
     status: str
+
+    @property
+    def criterion_defined(self) -> bool:
+        return self.allowable_deflection_mm is not None
+
+    @property
+    def passes(self) -> bool | None:
+        if self.utilization is None:
+            return None
+        return self.utilization <= 1.0 + 1.0e-9
+
+
+def _deflection_acceptance(
+    interpolated_deflection_mm: float,
+    allowable_deflection_mm: float | None,
+) -> tuple[float | None, float | None]:
+    if allowable_deflection_mm is None:
+        return None, None
+    if allowable_deflection_mm <= 0.0:
+        raise ValueError("Allowable deflection must be positive when specified.")
+    return (
+        interpolated_deflection_mm / allowable_deflection_mm,
+        allowable_deflection_mm - interpolated_deflection_mm,
+    )
 
 
 @dataclass(frozen=True)
@@ -77,7 +101,7 @@ def ec2_interpolated_udl_deflection(
     uncracked_second_moment_mm4: float,
     cracked_second_moment_mm4: float,
     cracking_moment_knm: float,
-    allowable_deflection_mm: float,
+    allowable_deflection_mm: float | None,
     creep_coefficient: float = 0.0,
     beta: float = 0.5,
 ) -> DeflectionResult:
@@ -88,8 +112,8 @@ def ec2_interpolated_udl_deflection(
     EC2 7.4.3 distribution coefficient. ``beta`` remains explicit: 1.0 is used
     for a single short-term load and 0.5 for sustained/repeated loading.
     """
-    if allowable_deflection_mm <= 0:
-        raise ValueError("Allowable deflection must be positive.")
+    if allowable_deflection_mm is not None and allowable_deflection_mm <= 0:
+        raise ValueError("Allowable deflection must be positive when specified.")
 
     e_eff = effective_concrete_modulus_mpa(ecm_mpa, creep_coefficient)
     service_moment_knm = udl_kn_m * span_m**2 / 8.0
@@ -112,7 +136,10 @@ def ec2_interpolated_udl_deflection(
         cracked_second_moment_mm4,
     )
     interpolated = interpolate_service_deformation(uncracked, cracked, zeta)
-    utilization = interpolated / allowable_deflection_mm
+    utilization, g_deflection = _deflection_acceptance(
+        interpolated,
+        allowable_deflection_mm,
+    )
 
     return DeflectionResult(
         uncracked_deflection_mm=uncracked,
@@ -120,12 +147,17 @@ def ec2_interpolated_udl_deflection(
         interpolated_deflection_mm=interpolated,
         allowable_deflection_mm=allowable_deflection_mm,
         utilization=utilization,
-        g_deflection_mm=allowable_deflection_mm - interpolated,
+        g_deflection_mm=g_deflection,
         zeta=zeta,
         effective_concrete_modulus_mpa=e_eff,
         status=(
             "EC2 two-state UDL deflection estimate; numerical curvature integration "
             "is required for general loading and final bridge verification"
+            + (
+                ""
+                if allowable_deflection_mm is not None
+                else "; project/client road-bridge deflection limit not specified"
+            )
         ),
     )
 
@@ -169,7 +201,7 @@ def ec2_interpolated_load_pattern_deflection(
     cracked_second_moment_mm4: float,
     service_moment_knm: float,
     cracking_moment_knm: float,
-    allowable_deflection_mm: float,
+    allowable_deflection_mm: float | None,
     udl_kn_m: float = 0.0,
     point_loads: Sequence[PointLoad] = (),
     creep_coefficient: float = 0.0,
@@ -189,8 +221,8 @@ def ec2_interpolated_load_pattern_deflection(
         raise ValueError("span_m must be positive.")
     if service_moment_knm < 0.0:
         raise ValueError("Service moment cannot be negative.")
-    if allowable_deflection_mm <= 0.0:
-        raise ValueError("Allowable deflection must be positive.")
+    if allowable_deflection_mm is not None and allowable_deflection_mm <= 0.0:
+        raise ValueError("Allowable deflection must be positive when specified.")
     if udl_kn_m < 0.0:
         raise ValueError("UDL cannot be negative.")
     if not point_loads and udl_kn_m == 0.0:
@@ -221,20 +253,28 @@ def ec2_interpolated_load_pattern_deflection(
         integration_segments=integration_segments,
     )
     interpolated = interpolate_service_deformation(uncracked, cracked, zeta)
-    utilization = interpolated / allowable_deflection_mm
+    utilization, g_deflection = _deflection_acceptance(
+        interpolated,
+        allowable_deflection_mm,
+    )
     return DeflectionResult(
         uncracked_deflection_mm=uncracked,
         fully_cracked_deflection_mm=cracked,
         interpolated_deflection_mm=interpolated,
         allowable_deflection_mm=allowable_deflection_mm,
         utilization=utilization,
-        g_deflection_mm=allowable_deflection_mm - interpolated,
+        g_deflection_mm=g_deflection,
         zeta=zeta,
         effective_concrete_modulus_mpa=e_eff,
         status=(
             "EC2 two-state load-pattern deflection by virtual-work curvature integration; "
             f"maximum searched along span (state-I x={uncracked_x:.3f} m, "
             f"state-II x={cracked_x:.3f} m)"
+            + (
+                ""
+                if allowable_deflection_mm is not None
+                else "; project/client road-bridge deflection limit not specified"
+            )
         ),
     )
 
@@ -247,15 +287,15 @@ def ec2_interpolated_moment_diagram_deflection(
     cracked_second_moment_mm4: float,
     service_moment_knm: float,
     cracking_moment_knm: float,
-    allowable_deflection_mm: float,
+    allowable_deflection_mm: float | None,
     creep_coefficient: float = 0.0,
     beta: float = 0.5,
 ) -> DeflectionResult:
     """EC2 two-state deflection from a traceable signed bending-moment field."""
     if service_moment_knm < 0.0:
         raise ValueError("Service moment cannot be negative.")
-    if allowable_deflection_mm <= 0.0:
-        raise ValueError("Allowable deflection must be positive.")
+    if allowable_deflection_mm is not None and allowable_deflection_mm <= 0.0:
+        raise ValueError("Allowable deflection must be positive when specified.")
     e_eff = effective_concrete_modulus_mpa(ecm_mpa, creep_coefficient)
     zeta = ec2_tension_stiffening_zeta(
         service_moment_knm,
@@ -279,19 +319,27 @@ def ec2_interpolated_moment_diagram_deflection(
         cracked.maximum_absolute_deflection_mm,
         zeta,
     )
-    utilization = interpolated / allowable_deflection_mm
+    utilization, g_deflection = _deflection_acceptance(
+        interpolated,
+        allowable_deflection_mm,
+    )
     return DeflectionResult(
         uncracked_deflection_mm=uncracked.maximum_absolute_deflection_mm,
         fully_cracked_deflection_mm=cracked.maximum_absolute_deflection_mm,
         interpolated_deflection_mm=interpolated,
         allowable_deflection_mm=allowable_deflection_mm,
         utilization=utilization,
-        g_deflection_mm=allowable_deflection_mm - interpolated,
+        g_deflection_mm=g_deflection,
         zeta=zeta,
         effective_concrete_modulus_mpa=e_eff,
         status=(
             "EC2 two-state deflection from traceable signed M/EI curvature integration; "
             f"source={diagram.source}; state-I maximum x={uncracked.maximum_position_m:.3f} m; "
             f"state-II maximum x={cracked.maximum_position_m:.3f} m"
+            + (
+                ""
+                if allowable_deflection_mm is not None
+                else "; project/client road-bridge deflection limit not specified"
+            )
         ),
     )
