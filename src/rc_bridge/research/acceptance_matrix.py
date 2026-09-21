@@ -317,6 +317,29 @@ def eurocode_simple_span_v1_acceptance_matrix() -> V1AcceptanceMatrix:
                 ),
             ),
             AcceptanceItem(
+                key="lm1_transverse_distribution_reference_case",
+                title="Published LM1 transverse placement/distribution reference",
+                domain=AcceptanceDomain.CODE_LOADING,
+                state=AcceptanceState.EXTERNALLY_ACCEPTED,
+                v1_gate=False,
+                evidence=(
+                    "JRC D1.8 two-girder LM1 example is reproduced for the "
+                    "11.0 m carriageway and three tandem systems: native code geometry "
+                    "gives R1=471.43 kN and R2=128.57 kN versus published "
+                    "471.4/128.6 kN."
+                ),
+                boundary=(
+                    "This independently verifies conventional transverse lane/wheel "
+                    "positioning and two-girder influence-line distribution only. "
+                    "Longitudinal tandem positioning and whole-bridge governing-envelope "
+                    "selection remain separate verification targets."
+                ),
+                next_evidence=(
+                    "Add an independent longitudinal LM1 placement/envelope example "
+                    "before promoting the broad LM1 loading milestone."
+                ),
+            ),
+            AcceptanceItem(
                 key="lm1_code_loading",
                 title="EN 1991-2 LM1 load-generation rules",
                 domain=AcceptanceDomain.CODE_LOADING,
@@ -326,15 +349,16 @@ def eurocode_simple_span_v1_acceptance_matrix() -> V1AcceptanceMatrix:
                     "Native lane, remaining-area, tandem and placement generation has extensive "
                     "automated mechanics/traceability tests and is exported identically to STAAD. "
                     "The published JRC LM1 characteristic values, 1.2 m tandem spacing and "
-                    "Table 3.5 notional-lane subdivision now pass as separate scoped reference cases."
+                    "Table 3.5 notional-lane subdivision and the JRC two-girder transverse "
+                    "placement/distribution example now pass as separate scoped reference cases."
                 ),
                 boundary=(
                     "STAAD consumes the application's generated LM1 actions; matching results therefore "
                     "cannot independently establish that the EN 1991-2 loading interpretation is correct."
                 ),
                 next_evidence=(
-                    "Retain the passing JRC characteristic-value and lane-subdivision cases, then "
-                    "complete an independent bridge-wide transverse/longitudinal placement and "
+                    "Retain the passing JRC characteristic-value, lane-subdivision and transverse "
+                    "distribution cases, then complete an independent longitudinal placement and "
                     "governing-envelope benchmark."
                 ),
             ),
@@ -360,6 +384,29 @@ def eurocode_simple_span_v1_acceptance_matrix() -> V1AcceptanceMatrix:
                 ),
             ),
             AcceptanceItem(
+                key="en1990_lm1_research_combination_core",
+                title="Published permanent+LM1 EN 1990 research-combination core",
+                domain=AcceptanceDomain.CODE_LOADING,
+                state=AcceptanceState.EXTERNALLY_ACCEPTED,
+                v1_gate=False,
+                evidence=(
+                    "JRC bridge formulas are reproduced for the MSc permanent+LM1 core: "
+                    "ULS 1.35G+1.35(TS+UDL), characteristic G+TS+UDL, frequent "
+                    "G+0.75TS+0.40UDL, and quasi-permanent LM1 contribution zero."
+                ),
+                boundary=(
+                    "This independently supports the action subset used by the MSc "
+                    "simple-span permanent+LM1 research profile only. It does not certify "
+                    "the standalone application's complete thermal/wind/pedestrian/braking/"
+                    "LM2/accompanying-action matrix."
+                ),
+                next_evidence=(
+                    "Keep the MSc permanent+LM1 combination core as accepted evidence; "
+                    "complete the general application matrix separately where those actions "
+                    "are in project scope."
+                ),
+            ),
+            AcceptanceItem(
                 key="en1990_combination_rules",
                 title="EN 1990 / bridge traffic combination rules",
                 domain=AcceptanceDomain.CODE_LOADING,
@@ -368,17 +415,18 @@ def eurocode_simple_span_v1_acceptance_matrix() -> V1AcceptanceMatrix:
                 evidence=(
                     "Stage-5 exports ULS/SLS combinations and the accepted STAAD run verifies "
                     "the structural superposition mechanics for its recorded factor set. "
-                    "Published JRC gamma_Q,traffic and split frequent LM1 factors now also pass "
-                    "as a separate scoped code-reference case."
+                    "Published JRC gamma_Q,traffic, split frequent LM1 factors and the complete "
+                    "permanent+LM1 ULS/characteristic/frequent/quasi core used by the MSc profile "
+                    "now pass as separate scoped code-reference cases."
                 ),
                 boundary=(
                     "The external solver verifies application of supplied factors, not whether the "
                     "selected EN 1990 groups, gamma values and psi factors are clause-correct."
                 ),
                 next_evidence=(
-                    "Retain the passing traffic-factor reference case and complete independent "
-                    "clause/worked examples for gr1a, gr1b, gr2, gr3, wind/thermal, characteristic, "
-                    "frequent and quasi-permanent combinations."
+                    "Retain the passing MSc permanent+LM1 combination core and complete independent "
+                    "general-application checks for gr1b, gr2, gr3, wind/thermal and other "
+                    "leading/accompanying situations before promoting the broad application milestone."
                 ),
             ),
             AcceptanceItem(
