@@ -4,6 +4,8 @@ from rc_bridge.design.eurocode_fatigue import concrete_compression_fatigue_check
 from rc_bridge.research.code_reference_benchmarks import (
     CONCRETE_CENTRE_LINK_SHEAR,
     CONCRETE_CENTRE_VRDMAX,
+    ECP_CRACK_WIDTH_EXAMPLE_7_3,
+    ECP_DEFLECTION_EXAMPLE_7_6,
     ECP_PROVIDED_LINK_SHEAR,
     ECP_TORSION_REINFORCEMENT,
     ECP_TORSION_RESISTANCE_INTERACTION,
@@ -20,6 +22,8 @@ from rc_bridge.research.code_reference_benchmarks import (
     LM1_SIMPLE_SPAN_LONGITUDINAL_SEARCH,
     concrete_centre_link_shear_benchmark,
     concrete_centre_vrdmax_benchmark,
+    ecp_crack_width_example_7_3_benchmark,
+    ecp_deflection_example_7_6_benchmark,
     ecp_provided_link_shear_benchmark,
     ecp_torsion_reinforcement_benchmark,
     ecp_torsion_resistance_interaction_benchmark,
@@ -262,6 +266,33 @@ def test_ecp_torsion_resistance_interaction_reference_case_passes() -> None:
     ] == pytest.approx(0.998105619)
 
 
+def test_ecp_crack_width_example_7_3_reference_case_passes() -> None:
+    report = ecp_crack_width_example_7_3_benchmark()
+
+    assert report.source_name == ECP_CRACK_WIDTH_EXAMPLE_7_3.source_name
+    assert report.passes is True
+    assert report.failed_target_names == ()
+    values = {item.target.name: item.calculated_value for item in report.comparisons}
+    assert values["cracked neutral-axis depth"] == pytest.approx(237.8615, abs=0.01)
+    assert values["cracked second moment"] == pytest.approx(5.956786e9, rel=1e-6)
+    assert values["service steel stress"] == pytest.approx(234.2913, abs=0.01)
+    assert values["EC2 crack width"] == pytest.approx(0.18487, abs=1e-5)
+
+
+def test_ecp_deflection_example_7_6_reference_case_passes() -> None:
+    report = ecp_deflection_example_7_6_benchmark()
+
+    assert report.source_name == ECP_DEFLECTION_EXAMPLE_7_6.source_name
+    assert report.passes is True
+    assert report.failed_target_names == ()
+    values = {item.target.name: item.calculated_value for item in report.comparisons}
+    assert values["state-I midspan deflection"] == pytest.approx(21.6413, abs=0.01)
+    assert values["spatially cracked midspan deflection"] == pytest.approx(
+        35.81,
+        abs=0.10,
+    )
+
+
 def test_jrc_rectangular_flexure_reference_case_passes() -> None:
     report = jrc_rectangular_flexure_benchmark()
 
@@ -332,7 +363,7 @@ def test_published_reference_metadata_is_traceable_and_scope_limited() -> None:
 def test_published_reference_suite_contains_all_independent_reports() -> None:
     reports = eurocode_v1_published_reference_benchmarks()
 
-    assert len(reports) == 16
+    assert len(reports) == 18
     assert all(report.passes for report in reports)
     assert {report.source_name for report in reports} == {
         JRC_LM1_CHARACTERISTIC_VALUES.source_name,
@@ -349,6 +380,8 @@ def test_published_reference_suite_contains_all_independent_reports() -> None:
         CONCRETE_CENTRE_VRDMAX.source_name,
         ECP_TORSION_REINFORCEMENT.source_name,
         ECP_TORSION_RESISTANCE_INTERACTION.source_name,
+        ECP_CRACK_WIDTH_EXAMPLE_7_3.source_name,
+        ECP_DEFLECTION_EXAMPLE_7_6.source_name,
         JRC_RECTANGULAR_FLEXURE.source_name,
         JRC_BEAM_LINK_SPACING.source_name,
     }
