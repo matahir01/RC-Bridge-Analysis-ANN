@@ -8,16 +8,16 @@ from rc_bridge.codes.common import FactoredCombination, LoadEffects
 
 @dataclass(frozen=True)
 class EurocodeFactors:
-    """Configurable factors for the initial bridge ULS implementation.
+    """Configurable factors for the first-generation road-bridge ULS path.
 
-    Defaults represent a common STR/GEO persistent-design starting point and
-    MUST be checked against the applicable National Annex and project basis.
-    They are deliberately exposed so that no National Annex value is buried
-    inside the solver.
+    The default permanent and road-traffic factors follow the JRC/EN 1990
+    bridge worked-example basis (gamma_G,sup = 1.35 and gamma_Q,traffic = 1.35).
+    They remain explicit project/National-Annex inputs rather than hidden
+    constants.
     """
 
     gamma_g_unfavourable: float = 1.35
-    gamma_q_traffic: float = 1.50
+    gamma_q_traffic: float = 1.35
     gamma_g_favourable: float = 1.00
 
     def __post_init__(self) -> None:
