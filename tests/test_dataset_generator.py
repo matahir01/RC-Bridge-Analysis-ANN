@@ -4,6 +4,7 @@ from rc_bridge.research.generator import SolverOutputs, generate_training_record
 from rc_bridge.research.verification import (
     DeterministicSolverVerification,
     SolverProfile,
+    VerificationScope,
 )
 
 EUROCODE_SAMPLE = {
