@@ -115,8 +115,8 @@ def test_step_by_step_trace_and_html_report_share_calculation_records(tmp_path) 
     pdf_bytes = pdf.read_bytes()
     assert pdf_bytes.startswith(b"%PDF")
     assert len(pdf_bytes) > 10_000
-    page_objects = re.findall(rb"/Type\\s*/Page(?!s)", pdf_bytes)
-    assert len(page_objects) >= 3
+    page_counts = [int(value) for value in re.findall(rb"/Count\\s+(\\d+)", pdf_bytes)]
+    assert page_counts and max(page_counts) >= 3
 
     cached_trace = session.calculation_trace()
     assert cached_trace is trace
