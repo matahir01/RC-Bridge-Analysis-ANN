@@ -1,0 +1,67 @@
+name: report-visual-qa
+
+on:
+  pull_request:
+    paths:
+      - "src/rc_bridge/application/reporting.py"
+      - "src/rc_bridge/application/math_notation.py"
+      - "src/rc_bridge/application/calculation_trace.py"
+      - "tests/test_application_performance_reporting.py"
+      - ".github/workflows/report-visual-qa.yml"
+
+jobs:
+  render-report:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install project
+        run: pip install -e '.[dev]'
+      - name: Generate full worked report
+        run: |
+          mkdir -p qa-artifacts
+          python - <<'PY'
+          from pathlib import Path
+
+          from rc_bridge.application.fatigue import FatigueApplicationSettings
+          from rc_bridge.application.preferences import (
+              AnalysisApplicationSettings,
+              ApplicationPreferences,
+          )
+          from rc_bridge.application.project_editor import application_default_project
+          from rc_bridge.application.session import BridgeApplicationSession
+
+          session = BridgeApplicationSession(
+              application_default_project(),
+              preferences=ApplicationPreferences(
+                  analysis=AnalysisApplicationSettings(
+                      grid_spacing_m=15.0,
+                      traffic_step_m=15.0,
+                      max_exhaustive_tandem_combinations=20,
+                  ),
+                  fatigue=FatigueApplicationSettings(
+                      movement_step_m=15.0,
+                      section_step_m=15.0,
+                      lambda_s=1.0,
+                      characteristic_fatigue_strength_mpa=1000.0,
+                      shear_link_lambda_s=1.0,
+                      shear_link_characteristic_fatigue_strength_mpa=1000.0,
+                  ),
+              ),
+          )
+          session.run_native_lm1()
+          session.run_extended_actions()
+          session.run_local_deck_design()
+          session.run_design_interpretation()
+          session.run_fatigue()
+          session.write_last_lm1_report(Path("qa-artifacts/worked-report.html"))
+          session.write_last_lm1_pdf_report(Path("qa-artifacts/worked-report.pdf"))
+          PY
+      - name: Upload report QA artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: worked-report-visual-qa
+          path: qa-artifacts/
+          if-no-files-found: error
