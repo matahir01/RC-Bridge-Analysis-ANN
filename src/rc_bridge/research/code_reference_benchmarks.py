@@ -18,6 +18,7 @@ from rc_bridge.codes.eurocode.en1991_2 import (
     lm1_tandem_axle_spacing_m,
     notional_lane_layout,
 )
+from rc_bridge.codes.eurocode.lm1_effects import lm1_lane_simple_span_envelope
 from rc_bridge.design.eurocode_demand import required_tension_steel_rectangular
 from rc_bridge.design.eurocode_detailing import (
     bar_area_mm2,
@@ -38,7 +39,6 @@ from rc_bridge.design.eurocode_torsion import (
     shear_torsion_interaction,
     torsion_reinforcement_and_resistance,
 )
-from rc_bridge.codes.eurocode.lm1_effects import lm1_lane_simple_span_envelope
 from rc_bridge.research.benchmarking import (
     BenchmarkTarget,
     IndependentBenchmarkReport,
