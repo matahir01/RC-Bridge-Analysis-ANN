@@ -344,6 +344,27 @@ def eurocode_simple_span_v1_acceptance_matrix() -> V1AcceptanceMatrix:
                 ),
             ),
             AcceptanceItem(
+                key="ec2_rectangular_flexure_reference_case",
+                title="Published EC2 rectangular flexure reference case",
+                domain=AcceptanceDomain.DESIGN_RESISTANCE,
+                state=AcceptanceState.EXTERNALLY_ACCEPTED,
+                v1_gate=False,
+                evidence=(
+                    "JRC Eurocodes Handbook 2 Annex-B rectangular bending example is reproduced: "
+                    "the published A_s=933 mm2 for MEd=62.78 kNm is matched by the native "
+                    "rectangular required-steel/resistance kernels within the benchmark tolerances."
+                ),
+                boundary=(
+                    "This is independent supporting evidence for the basic rectangular "
+                    "singly-reinforced flexure kernel only; it does not certify layered T/I "
+                    "sections, reinforcement selection, ductility or the complete bridge design path."
+                ),
+                next_evidence=(
+                    "Add independent T/I/layered flexure examples and the remaining "
+                    "project/clause checks before promoting the broad flexure milestone."
+                ),
+            ),
+            AcceptanceItem(
                 key="ec2_flexure_design",
                 title="EN 1992 flexural resistance and reinforcement design",
                 domain=AcceptanceDomain.DESIGN_RESISTANCE,
@@ -351,14 +372,16 @@ def eurocode_simple_span_v1_acceptance_matrix() -> V1AcceptanceMatrix:
                 v1_gate=True,
                 evidence=(
                     "Layered rectangular/T/I resistance kernels, required-steel solvers and internal "
-                    "cross-kernel tests are implemented."
+                    "cross-kernel tests are implemented. One independent JRC rectangular-flexure "
+                    "worked example now also passes and is recorded separately."
                 ),
                 boundary=(
                     "STAAD is being used as an analysis verifier, not as the authority for RC section design."
                 ),
                 next_evidence=(
-                    "Independent hand/worked-example checks for required As, compression block, lever arm, "
-                    "MRd and reinforcement selection for rectangular, T and I physical profiles."
+                    "Keep the passing JRC rectangular case as supporting evidence, then add independent "
+                    "T/I/layered cases covering compression-block location, lever arm, MRd, required As "
+                    "and reinforcement selection before the broad flexure milestone can be promoted."
                 ),
             ),
             AcceptanceItem(
@@ -435,17 +458,42 @@ def eurocode_simple_span_v1_acceptance_matrix() -> V1AcceptanceMatrix:
                 next_evidence="Independent FLM3 stress-range and EN 1992 fatigue worked-example benchmark.",
             ),
             AcceptanceItem(
+                key="ec2_link_spacing_reference_case",
+                title="Published EC2 vertical-link spacing reference case",
+                domain=AcceptanceDomain.FATIGUE_DETAILING,
+                state=AcceptanceState.EXTERNALLY_ACCEPTED,
+                v1_gate=False,
+                evidence=(
+                    "JRC Eurocode 2 Background and Applications Beam A2-B2-C2 case 1 "
+                    "reports d=354 mm and s_l,max=s_t,max=0.75d=266 mm; the native "
+                    "spacing kernel returns 265.5 mm and passes the published-rounding tolerance."
+                ),
+                boundary=(
+                    "This independently supports the maximum vertical-link spacing formula only. "
+                    "It does not certify minimum steel, link selection, anchorage, laps, cover, "
+                    "curtailment, cage fit or drawing-level detailing."
+                ),
+                next_evidence=(
+                    "Add independent benchmarks for the remaining detailing rules before "
+                    "promoting the broad EC2 detailing milestone."
+                ),
+            ),
+            AcceptanceItem(
                 key="ec2_detailing",
                 title="EN 1992 detailing, anchorage, laps and cage fit",
                 domain=AcceptanceDomain.FATIGUE_DETAILING,
                 state=AcceptanceState.INTERNAL_ONLY,
                 v1_gate=True,
                 evidence=(
-                    "Discrete bar/link selection, anchorage/lap, cover, cage-fit and curtailment logic have unit tests."
+                    "Discrete bar/link selection, anchorage/lap, cover, cage-fit and curtailment logic "
+                    "have unit tests. One independent JRC vertical-link spacing reference case now "
+                    "passes and is recorded separately."
                 ),
                 boundary="These drawing/detailing rules are outside STAAD structural-analysis verification.",
                 next_evidence=(
-                    "Clause-by-clause detailing review and independently checked example drawings/calculations."
+                    "Retain the passing JRC link-spacing case as supporting evidence and complete "
+                    "clause-by-clause independent checks for minimum steel, link selection, anchorage, "
+                    "laps, cover, curtailment and cage/drawing rules."
                 ),
             ),
             AcceptanceItem(
