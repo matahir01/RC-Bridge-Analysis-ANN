@@ -2,7 +2,13 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from rc_bridge.core.models import DesignCode, ProjectInput, SupportSystem
+from rc_bridge.core.models import (
+    DesignCode,
+    ProjectInput,
+    RectangularGirderProfile,
+    SectionType,
+    SupportSystem,
+)
 from rc_bridge.research.acceptance_matrix import (
     V1AcceptanceMatrix,
     eurocode_simple_span_v1_acceptance_matrix,
@@ -63,6 +69,14 @@ def msc_project_scope_blockers(project: ProjectInput) -> tuple[str, ...]:
         blockers.append("support_system must be simply supported")
     if len(geometry.span_lengths_m) != 1:
         blockers.append("the current MSc profile requires exactly one span")
+    if geometry.section_type is not SectionType.RECTANGULAR:
+        blockers.append(
+            "the current MSc profile requires a rectangular precast girder"
+        )
+    if not isinstance(geometry.girder_profile, RectangularGirderProfile):
+        blockers.append(
+            "a complete rectangular precast girder profile is required"
+        )
     if not geometry.deck_construction.in_situ_slab_composite_participation:
         blockers.append("the in-situ slab must participate in composite positive bending")
     if geometry.deck_construction.false_slab_composite_participation:
