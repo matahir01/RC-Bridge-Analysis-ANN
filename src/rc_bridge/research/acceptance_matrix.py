@@ -275,6 +275,27 @@ def eurocode_simple_span_v1_acceptance_matrix() -> V1AcceptanceMatrix:
                 next_evidence="No further v1 evidence required for the linear-elastic solver response.",
             ),
             AcceptanceItem(
+                key="lm1_characteristic_values_reference_case",
+                title="Published EN 1991-2 LM1 characteristic-value reference",
+                domain=AcceptanceDomain.CODE_LOADING,
+                state=AcceptanceState.EXTERNALLY_ACCEPTED,
+                v1_gate=False,
+                evidence=(
+                    "JRC Bridge Design to Eurocodes Table 3.6/Figure 3.10 is reproduced "
+                    "for lane 1/2/3/other tandem axle loads, lane/remaining-area UDLs "
+                    "and the 1.2 m tandem axle spacing."
+                ),
+                boundary=(
+                    "This independently verifies the basic characteristic LM1 constants only. "
+                    "It does not certify notional-lane geometry, transverse positioning, "
+                    "longitudinal moving-load search or governing placement."
+                ),
+                next_evidence=(
+                    "Add independently checked lane-layout and placement/envelope examples "
+                    "before promoting the broad LM1 loading milestone."
+                ),
+            ),
+            AcceptanceItem(
                 key="lm1_code_loading",
                 title="EN 1991-2 LM1 load-generation rules",
                 domain=AcceptanceDomain.CODE_LOADING,
@@ -282,15 +303,39 @@ def eurocode_simple_span_v1_acceptance_matrix() -> V1AcceptanceMatrix:
                 v1_gate=True,
                 evidence=(
                     "Native lane, remaining-area, tandem and placement generation has extensive "
-                    "automated mechanics/traceability tests and is exported identically to STAAD."
+                    "automated mechanics/traceability tests and is exported identically to STAAD. "
+                    "The published JRC LM1 characteristic load values and 1.2 m tandem spacing "
+                    "now pass as a separate scoped reference case."
                 ),
                 boundary=(
                     "STAAD consumes the application's generated LM1 actions; matching results therefore "
                     "cannot independently establish that the EN 1991-2 loading interpretation is correct."
                 ),
                 next_evidence=(
-                    "Clause-by-clause LM1 benchmark against independently checked hand calculations "
-                    "or a trusted worked example, including lane widths, UDLs, tandems and placement."
+                    "Retain the passing JRC characteristic-value case, then complete independent "
+                    "checks of notional-lane subdivision and the bridge-wide transverse/longitudinal "
+                    "placement and governing-envelope logic."
+                ),
+            ),
+            AcceptanceItem(
+                key="road_bridge_combination_factors_reference_case",
+                title="Published road-bridge traffic combination-factor reference",
+                domain=AcceptanceDomain.CODE_LOADING,
+                state=AcceptanceState.EXTERNALLY_ACCEPTED,
+                v1_gate=False,
+                evidence=(
+                    "JRC road-bridge references are reproduced for gamma_Q,traffic=1.35 "
+                    "(1200 kN -> 1620 kN) and split LM1 frequent factors "
+                    "psi1,TS=0.75 and psi1,UDL=0.40."
+                ),
+                boundary=(
+                    "This verifies the cited traffic factors only. It does not certify the "
+                    "complete EN 1990 bridge leading/accompanying-action matrix or every "
+                    "gr1a/gr1b/gr2/gr3/wind/thermal design situation."
+                ),
+                next_evidence=(
+                    "Complete independent group-by-group ULS/SLS combination examples before "
+                    "promoting the broad EN 1990 combination milestone."
                 ),
             ),
             AcceptanceItem(
@@ -300,16 +345,19 @@ def eurocode_simple_span_v1_acceptance_matrix() -> V1AcceptanceMatrix:
                 state=AcceptanceState.INTERNAL_ONLY,
                 v1_gate=True,
                 evidence=(
-                    "Stage-5 exports 141 ULS/SLS combinations and STAAD reproduces their structural "
-                    "response with the same governing combination identity."
+                    "Stage-5 exports ULS/SLS combinations and the accepted STAAD run verifies "
+                    "the structural superposition mechanics for its recorded factor set. "
+                    "Published JRC gamma_Q,traffic and split frequent LM1 factors now also pass "
+                    "as a separate scoped code-reference case."
                 ),
                 boundary=(
                     "The external solver verifies application of supplied factors, not whether the "
                     "selected EN 1990 groups, gamma values and psi factors are clause-correct."
                 ),
                 next_evidence=(
-                    "Independent clause matrix/worked examples for gr1a, gr1b, gr2, gr3, wind, "
-                    "characteristic, frequent and quasi-permanent combinations."
+                    "Retain the passing traffic-factor reference case and complete independent "
+                    "clause/worked examples for gr1a, gr1b, gr2, gr3, wind/thermal, characteristic, "
+                    "frequent and quasi-permanent combinations."
                 ),
             ),
             AcceptanceItem(
@@ -385,17 +433,40 @@ def eurocode_simple_span_v1_acceptance_matrix() -> V1AcceptanceMatrix:
                 ),
             ),
             AcceptanceItem(
+                key="ec2_concrete_shear_reference_case",
+                title="Published EC2 concrete shear V_Rd,c reference case",
+                domain=AcceptanceDomain.DESIGN_RESISTANCE,
+                state=AcceptanceState.EXTERNALLY_ACCEPTED,
+                v1_gate=False,
+                evidence=(
+                    "JRC concrete-bridge slab example is reproduced for fck=35 MPa, "
+                    "d=360 mm, Asl=1848 mm2 and bw=1000 mm: k≈1.75, rho_l≈0.51%, "
+                    "v_min≈0.48 MPa and V_Rd,c≈198 kN/m."
+                ),
+                boundary=(
+                    "This independently verifies the concrete-only V_Rd,c path. "
+                    "It does not certify required/provided link design, V_Rd,s or V_Rd,max."
+                ),
+                next_evidence=(
+                    "Add independent link-governed shear examples covering required A_sw/s, "
+                    "provided-link resistance and V_Rd,max before promoting the broad shear milestone."
+                ),
+            ),
+            AcceptanceItem(
                 key="ec2_shear_design",
                 title="EN 1992 shear resistance and link design",
                 domain=AcceptanceDomain.DESIGN_RESISTANCE,
                 state=AcceptanceState.INTERNAL_ONLY,
                 v1_gate=True,
                 evidence=(
-                    "Concrete VRd,c, required links, provided-link VRd,s/VRd,max and detailing limits are tested."
+                    "Concrete VRd,c, required links, provided-link VRd,s/VRd,max and detailing "
+                    "limits are tested. The concrete-only V_Rd,c path now also passes an "
+                    "independent published JRC worked example."
                 ),
                 boundary="Stage-5 member shear agreement does not validate the EC2 shear-resistance equations.",
                 next_evidence=(
-                    "Independent EC2 worked examples covering concrete-only and link-governed shear cases."
+                    "Retain the passing JRC concrete-only case and add independent link-governed "
+                    "examples covering required A_sw/s, V_Rd,s and V_Rd,max."
                 ),
             ),
             AcceptanceItem(
