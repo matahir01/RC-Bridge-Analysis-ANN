@@ -94,8 +94,10 @@ def test_lm1_simple_span_longitudinal_search_reference_case_passes() -> None:
     assert report.failed_target_names == ()
     values = {item.target.name: item.calculated_value for item in report.comparisons}
     assert values["LM1 tandem maximum simple-span moment"] == pytest.approx(2523.0)
-    assert values["LM1 governing moment section position"] == pytest.approx(8.7)
-    assert values["LM1 governing tandem lead position"] == pytest.approx(9.9)
+    assert values["LM1 governing section offset from midspan"] == pytest.approx(0.3)
+    assert values["LM1 governing tandem centroid offset from midspan"] == pytest.approx(
+        0.3
+    )
 
 
 def test_jrc_lm1_research_combination_core_reference_case_passes() -> None:
