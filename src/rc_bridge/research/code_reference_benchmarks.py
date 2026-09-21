@@ -12,6 +12,7 @@ from rc_bridge.codes.eurocode.combinations import (
     quasi_permanent_sls,
 )
 from rc_bridge.codes.eurocode.en1991_2 import (
+    LM1AdjustmentFactors,
     lm1_characteristic_lane_load,
     lm1_remaining_area_udl_kn_m2,
     lm1_tandem_axle_spacing_m,
