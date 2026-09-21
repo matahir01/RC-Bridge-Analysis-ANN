@@ -1,5 +1,6 @@
 import pytest
 
+from rc_bridge.application.project_editor import application_default_project
 from rc_bridge.core.models import (
     BridgeGeometry,
     DeckConstruction,
@@ -16,14 +17,14 @@ from rc_bridge.research.msc_profile import (
 
 
 def test_default_reference_shape_is_inside_msc_project_scope() -> None:
-    project = ProjectInput()
+    project = application_default_project()
 
     assert msc_project_scope_blockers(project) == ()
     require_msc_project_scope(project)
 
 
 def test_msc_deterministic_gate_is_ready_for_current_four_targets() -> None:
-    gate = evaluate_msc_deterministic_gate(ProjectInput())
+    gate = evaluate_msc_deterministic_gate(application_default_project())
 
     assert gate.targets == (
         "g_flexure_knm",
