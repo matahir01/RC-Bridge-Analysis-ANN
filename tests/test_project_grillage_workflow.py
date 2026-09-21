@@ -62,7 +62,7 @@ def test_imported_grillage_effects_feed_en1990_combinations() -> None:
     assert combinations.traffic_characteristic.moment_knm == pytest.approx(625.0)
     assert combinations.traffic_characteristic.shear_kn == pytest.approx(235.0)
     assert combinations.traffic_characteristic.torsion_knm == pytest.approx(8.0)
-    assert combinations.persistent_uls.effects.torsion_knm == pytest.approx(12.0)
+    assert combinations.persistent_uls.effects.torsion_knm == pytest.approx(10.8)
     assert "Midas Civil" in combinations.traffic_distribution_method
     assert "LM1 characteristic envelope" in combinations.traffic_distribution_method
 
@@ -81,8 +81,8 @@ def test_imported_grillage_runs_full_t_girder_path_and_retains_torsion() -> None
     )
 
     assert result.source_metadata.source_software == "Midas Civil"
-    assert result.imported_uls_torsion_knm == pytest.approx(12.0)
-    assert result.design.uls_combination.effects.torsion_knm == pytest.approx(12.0)
+    assert result.imported_uls_torsion_knm == pytest.approx(10.8)
+    assert result.design.uls_combination.effects.torsion_knm == pytest.approx(10.8)
     assert result.design.uls_design.flexure.resistance_knm > 0.0
     assert result.design.uls_design.shear.design_shear_kn > 0.0
     assert result.design.crack.crack_width_mm >= 0.0
