@@ -118,7 +118,7 @@ def ec2_interpolated_udl_deflection(
 
     e_eff = effective_concrete_modulus_mpa(ecm_mpa, creep_coefficient)
     service_moment_knm = udl_kn_m * span_m**2 / 8.0
-    zeta = ec2_ec2_tension_stiffening_zeta(
+    zeta = ec2_tension_stiffening_zeta(
         service_moment_knm,
         cracking_moment_knm,
         beta=beta,
@@ -230,7 +230,7 @@ def ec2_interpolated_load_pattern_deflection(
         raise ValueError("A non-zero deflection load pattern is required.")
 
     e_eff = effective_concrete_modulus_mpa(ecm_mpa, creep_coefficient)
-    zeta = ec2_ec2_tension_stiffening_zeta(
+    zeta = ec2_tension_stiffening_zeta(
         service_moment_knm,
         cracking_moment_knm,
         beta=beta,
@@ -298,7 +298,7 @@ def ec2_interpolated_moment_diagram_deflection(
     if allowable_deflection_mm is not None and allowable_deflection_mm <= 0.0:
         raise ValueError("Allowable deflection must be positive when specified.")
     e_eff = effective_concrete_modulus_mpa(ecm_mpa, creep_coefficient)
-    zeta = ec2_ec2_tension_stiffening_zeta(
+    zeta = ec2_tension_stiffening_zeta(
         service_moment_knm,
         cracking_moment_knm,
         beta=beta,
