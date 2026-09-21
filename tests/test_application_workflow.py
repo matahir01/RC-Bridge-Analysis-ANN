@@ -49,6 +49,8 @@ def test_application_report_contains_traceable_governing_results() -> None:
     assert "Native LM1 search" in report
     assert "Verification boundary" in report
     assert "independent structural validation" in report
+    assert "genuine STAAD external evidence" in report
+    assert "MIDAS" in report and "deferred to V2" in report
 
 
 def test_application_writes_exact_governing_verification_packages(tmp_path) -> None:
