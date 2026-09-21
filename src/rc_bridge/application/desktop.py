@@ -894,9 +894,19 @@ def main() -> int:
     add_entry(
         ec_frame,
         row=12,
-        label="Deflection limit denominator (L/...)",
+        label="Project deflection limit (L/...; blank = not specified)",
         key="deflection_ratio",
     )
+    ttk.Label(
+        ec_frame,
+        text=(
+            "Road bridges do not have one universal Eurocode span/deflection limit. "
+            "The frequent SLS combination is the default assessment basis; enter a "
+            "client/project criterion only when one is specified."
+        ),
+        wraplength=500,
+        justify=tk.LEFT,
+    ).grid(row=13, column=0, columnspan=2, sticky="w", pady=(8, 0))
 
     search_frame = ttk.LabelFrame(basis_tab, text="Native traffic-search settings", padding=12)
     search_frame.grid(
@@ -2629,8 +2639,10 @@ def main() -> int:
             psi1_thermal=float(string_vars["psi1_thermal"].get()),
             psi2_thermal=float(string_vars["psi2_thermal"].get()),
             crack_limit_mm=float(string_vars["crack_limit"].get()),
-            deflection_limit_span_ratio=float(
-                string_vars["deflection_ratio"].get()
+            deflection_limit_span_ratio=(
+                None
+                if not string_vars["deflection_ratio"].get().strip()
+                else float(string_vars["deflection_ratio"].get())
             ),
         )
         analysis = AnalysisApplicationSettings(
@@ -3243,7 +3255,9 @@ def main() -> int:
         string_vars["psi2_thermal"].set(f"{basis.psi2_thermal:g}")
         string_vars["crack_limit"].set(f"{basis.crack_limit_mm:g}")
         string_vars["deflection_ratio"].set(
-            f"{basis.deflection_limit_span_ratio:g}"
+            ""
+            if basis.deflection_limit_span_ratio is None
+            else f"{basis.deflection_limit_span_ratio:g}"
         )
         string_vars["grid_spacing"].set(
             f"{displayed_unit.from_metres(preferences.analysis.grid_spacing_m):g}"
@@ -5010,7 +5024,10 @@ def main() -> int:
                         RibbonField("psi1_thermal", "psi1 thermal"),
                         RibbonField("psi2_thermal", "psi2 thermal"),
                         RibbonField("crack_limit", "Crack-width limit"),
-                        RibbonField("deflection_ratio", "Deflection span ratio"),
+                        RibbonField(
+                            "deflection_ratio",
+                            "Project deflection L/... (blank = not specified)",
+                        ),
                     ),
                 ),
             ),

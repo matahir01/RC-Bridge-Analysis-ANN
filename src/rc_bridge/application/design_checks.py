@@ -153,11 +153,12 @@ class ApplicationGirderDesignInterpretation:
 
     @property
     def passes_current_checks(self) -> bool:
+        deflection_pass = self.design.deflection.passes
         checks = (
             self.design.uls_design.flexure.utilization <= 1.0 + 1.0e-9,
             self.design.shear_utilization <= 1.0 + 1.0e-9,
             self.design.crack.utilization <= 1.0 + 1.0e-9,
-            self.design.deflection.utilization <= 1.0 + 1.0e-9,
+            True if deflection_pass is None else deflection_pass,
             self.detailing.cage_fit.passes,
             self.detailing.cover_and_durability.satisfies_nominal_cover,
             all(item.passes for item in self.construction_stage_checks),
@@ -493,7 +494,7 @@ def _design_one_girder(
     uls_factors: EurocodeFactors,
     sls_factors: ServiceabilityPsiFactors,
     crack_limit_mm: float,
-    deflection_limit_span_ratio: float,
+    deflection_limit_span_ratio: float | None,
     settings: ApplicationDesignSettings,
     action_envelope: GirderActionEnvelope | None = None,
     extended_actions: ExtendedActionSuite | None = None,
@@ -838,7 +839,9 @@ def _design_one_girder(
         ),
         crack_limit_mm=crack_limit_mm,
         allowable_deflection_mm=(
-            span_m * 1000.0 / deflection_limit_span_ratio
+            None
+            if deflection_limit_span_ratio is None
+            else span_m * 1000.0 / deflection_limit_span_ratio
         ),
         creep_coefficient=settings.creep_coefficient,
         deflection_beta=settings.deflection_beta,
@@ -883,14 +886,16 @@ def _design_one_girder(
         aggregate_size_mm=settings.aggregate_size_mm,
     )
 
+    utilizations = (
+        design.uls_design.flexure.utilization,
+        design.shear_utilization,
+        design.crack.utilization,
+        design.deflection.utilization,
+    )
     if not all(
         isfinite(value)
-        for value in (
-            design.uls_design.flexure.utilization,
-            design.shear_utilization,
-            design.crack.utilization,
-            design.deflection.utilization,
-        )
+        for value in utilizations
+        if value is not None
     ):
         raise RuntimeError("Design interpretation produced a non-finite utilization.")
 
@@ -928,7 +933,9 @@ def _design_one_girder(
             "Analysis-derived EC2 positive-bending design interpretation using the "
             "physical layered rectangular/T/I section, discrete reinforcement selection, "
             "compatible traffic-group ULS/SLS envelopes, construction-stage checks, "
-            "crack-width and service-deflection checks. Production acceptance remains "
+            "crack-width checks and service-deflection calculation; a deflection "
+            "PASS/CHECK is assigned only when a project/client limit is supplied. "
+            "Production acceptance remains "
             "locked until Stage 7 independent verification and any explicit coverage "
             "blockers are closed."
         ),
@@ -942,7 +949,7 @@ def run_application_design_interpretation(
     uls_factors: EurocodeFactors,
     sls_factors: ServiceabilityPsiFactors,
     crack_limit_mm: float,
-    deflection_limit_span_ratio: float,
+    deflection_limit_span_ratio: float | None,
     settings: ApplicationDesignSettings | None = None,
     action_combinations: IntegratedActionCombinationSuite | None = None,
     extended_actions: ExtendedActionSuite | None = None,
@@ -987,21 +994,29 @@ def run_application_design_interpretation(
         )
         for index in range(1, int(project.geometry.girder_count) + 1)
     )
-    blockers = (
+    blockers = list(
         ()
         if action_combinations is None
         else action_combinations.blockers
     )
+    if deflection_limit_span_ratio is None:
+        blockers.append(
+            "Road-bridge deflection acceptance limit is not specified. "
+            "EN 1990 Annex A2 does not impose a universal span/deflection ratio; "
+            "the frequent combination is used by default, but a client/project "
+            "criterion is required before PASS/CHECK can be assigned."
+        )
     return ApplicationDesignInterpretationSuite(
         girders=girders,
         action_combinations=action_combinations,
-        coverage_blockers=blockers,
+        coverage_blockers=tuple(blockers),
         status=(
             "PRELIMINARY / VERIFICATION-GATED: flexure, shear, crack width, "
             "deflection, reinforcement selection, anchorage/detailing and cover checks "
             "are calculated from the current native analysis and compatible implemented "
-            "action groups. Stage 7 independent MIDAS/STAAD validation remains mandatory; "
-            "bearing/barrier/local-deck items without verified resistance data remain "
-            "explicit project blockers rather than hidden omissions."
+            "action groups. The road-bridge deflection criterion remains an explicit "
+            "project/client input rather than a hardcoded Eurocode span ratio. "
+            "Independent verification and unresolved bearing/barrier/local-deck items "
+            "remain explicit project blockers rather than hidden omissions."
         ),
     )

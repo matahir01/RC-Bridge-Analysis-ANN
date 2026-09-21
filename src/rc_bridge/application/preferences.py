@@ -57,7 +57,7 @@ class EurocodeApplicationBasis:
     psi1_thermal: float = 0.60
     psi2_thermal: float = 0.50
     crack_limit_mm: float = 0.30
-    deflection_limit_span_ratio: float = 1000.0
+    deflection_limit_span_ratio: float | None = None
 
     def __post_init__(self) -> None:
         EurocodeFactors(
@@ -82,8 +82,13 @@ class EurocodeApplicationBasis:
                 raise ValueError(f"{name} must lie between 0 and 1.")
         if self.crack_limit_mm <= 0.0:
             raise ValueError("crack_limit_mm must be positive.")
-        if self.deflection_limit_span_ratio <= 0.0:
-            raise ValueError("deflection_limit_span_ratio must be positive.")
+        if (
+            self.deflection_limit_span_ratio is not None
+            and self.deflection_limit_span_ratio <= 0.0
+        ):
+            raise ValueError(
+                "deflection_limit_span_ratio must be positive when specified."
+            )
 
     @property
     def uls_factors(self) -> EurocodeFactors:

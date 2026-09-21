@@ -85,6 +85,9 @@ def test_design_and_deck_presenters_follow_current_engine_results() -> None:
     assert design_view.worst_utilization >= 0.0
     assert all(item.provided_bars for item in design_view.girders)
     assert all(item.provided_links for item in design_view.girders)
+    assert all(item.deflection_utilization is None for item in design_view.girders)
+    assert all(item.status == "REVIEW" for item in design_view.girders)
+    assert design_view.blocker_count >= 1
 
     assert deck_view.stations_y_m
     assert len(deck_view.stations_y_m) == len(deck_view.permanent_moments_knm_per_m)
