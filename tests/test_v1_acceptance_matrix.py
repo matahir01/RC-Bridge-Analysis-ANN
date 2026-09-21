@@ -28,6 +28,8 @@ def test_v1_acceptance_matrix_separates_structural_analysis_from_design_code() -
     for key in (
         "lm1_characteristic_values_reference_case",
         "lm1_lane_subdivision_reference_case",
+        "lm1_transverse_distribution_reference_case",
+        "en1990_lm1_research_combination_core",
         "road_bridge_combination_factors_reference_case",
         "ec2_concrete_shear_reference_case",
         "ec2_reinforcement_fatigue_reference_case",
@@ -76,6 +78,8 @@ def test_staad_acceptance_does_not_unlock_unverified_design_milestones() -> None
     # Passing sub-component reference cases are supporting evidence only.
     assert matrix.item("lm1_characteristic_values_reference_case").state is AcceptanceState.EXTERNALLY_ACCEPTED
     assert matrix.item("lm1_lane_subdivision_reference_case").state is AcceptanceState.EXTERNALLY_ACCEPTED
+    assert matrix.item("lm1_transverse_distribution_reference_case").state is AcceptanceState.EXTERNALLY_ACCEPTED
+    assert matrix.item("en1990_lm1_research_combination_core").state is AcceptanceState.EXTERNALLY_ACCEPTED
     assert matrix.item("road_bridge_combination_factors_reference_case").state is AcceptanceState.EXTERNALLY_ACCEPTED
     assert matrix.item("ec2_concrete_shear_reference_case").state is AcceptanceState.EXTERNALLY_ACCEPTED
     assert matrix.item("ec2_reinforcement_fatigue_reference_case").state is AcceptanceState.EXTERNALLY_ACCEPTED
