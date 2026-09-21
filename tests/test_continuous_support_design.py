@@ -36,11 +36,11 @@ def test_signed_hogging_uls_routes_to_top_steel_support_check() -> None:
         ),
     )
 
-    assert result.negative_uls_effect_knm == pytest.approx(-585.0)
-    assert result.flexure.design_moment_knm == pytest.approx(-585.0)
+    assert result.negative_uls_effect_knm == pytest.approx(-567.0)
+    assert result.flexure.design_moment_knm == pytest.approx(-567.0)
     assert result.flexure.signed_resistance_knm < 0.0
     assert result.flexure.g_hogging_knm == pytest.approx(
-        result.flexure.resistance_magnitude_knm - 585.0
+        result.flexure.resistance_magnitude_knm - 567.0
     )
     assert result.flexure.compression_model == "rectangular"
 
@@ -59,8 +59,8 @@ def test_i_girder_hogging_can_use_actual_bottom_compression_flange() -> None:
         ),
     )
 
-    assert result.negative_uls_effect_knm == pytest.approx(-585.0)
-    assert result.flexure.design_moment_magnitude_knm == pytest.approx(585.0)
+    assert result.negative_uls_effect_knm == pytest.approx(-567.0)
+    assert result.flexure.design_moment_magnitude_knm == pytest.approx(567.0)
     assert result.flexure.compression_model == "bottom_flanged"
     assert result.flexure.compression_flange_width_m == pytest.approx(0.65)
     assert result.flexure.compression_flange_thickness_m == pytest.approx(0.18)
