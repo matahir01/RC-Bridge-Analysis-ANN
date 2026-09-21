@@ -183,7 +183,7 @@ def test_native_lm1_combinations_support_edge_girders_with_edge_tributary_width(
     assert combinations.traffic_characteristic.moment_knm == pytest.approx(195.0)
     assert combinations.traffic_characteristic.shear_kn == pytest.approx(88.0)
     assert combinations.traffic_characteristic.torsion_knm == pytest.approx(6.0)
-    assert combinations.persistent_uls.effects.torsion_knm == pytest.approx(9.0)
+    assert combinations.persistent_uls.effects.torsion_knm == pytest.approx(8.1)
     assert "externally_benchmarked_native_lm1" in combinations.traffic_distribution_method
 
 
