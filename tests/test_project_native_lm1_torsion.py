@@ -120,7 +120,7 @@ def test_matched_native_lm1_torsion_uses_same_case_and_member_end(
         max(point.interaction.utilization for point in result.evaluated_points)
     )
     assert result.governing_torsion.design_torsion_knm == pytest.approx(
-        1.50 * search.girders[3].torsion_knm.value
+        1.35 * search.girders[3].torsion_knm.value
     )
     assert result.governing_interaction.case_id in {
         case.placement.case_id for case in search.cases
@@ -128,10 +128,10 @@ def test_matched_native_lm1_torsion_uses_same_case_and_member_end(
     assert result.governing_interaction.member_end in {"I", "J"}
     assert result.governing_interaction.design_shear_kn == pytest.approx(
         1.35 * result.governing_interaction.permanent_shear_kn
-        + 1.50 * result.governing_interaction.traffic_shear_kn
+        + 1.35 * result.governing_interaction.traffic_shear_kn
     )
     assert result.governing_interaction.design_torsion_knm == pytest.approx(
-        1.50 * result.governing_interaction.traffic_torsion_knm
+        1.35 * result.governing_interaction.traffic_torsion_knm
     )
 
 
@@ -194,7 +194,7 @@ def test_native_lm1_girder_design_can_include_matched_shear_torsion(
     assert result.envelope_detailing.longitudinal_zones
     assert result.envelope_detailing.link_zones
     assert result.shear_torsion.governing_torsion.design_torsion_knm == pytest.approx(
-        1.50 * search.girders[3].torsion_knm.value
+        1.35 * search.girders[3].torsion_knm.value
     )
     assert result.shear_torsion.governing_interaction.interaction.utilization >= 0.0
     assert "matched co-located V-T interaction" in result.status
