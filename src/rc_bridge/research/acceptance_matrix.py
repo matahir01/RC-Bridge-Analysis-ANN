@@ -691,38 +691,82 @@ def eurocode_simple_span_v1_acceptance_matrix() -> V1AcceptanceMatrix:
                 ),
             ),
             AcceptanceItem(
+                key="ec2_crack_width_reference_case",
+                title="Published EC2 crack-width transformed-section reference",
+                domain=AcceptanceDomain.SERVICEABILITY,
+                state=AcceptanceState.EXTERNALLY_ACCEPTED,
+                v1_gate=False,
+                evidence=(
+                    "European Concrete Platform Example 7.3 is reproduced with the "
+                    "production layered-section kernel, including compression steel: "
+                    "x=237.86 mm, I_II=5.957e9 mm4, sigma_s=234.29 MPa and "
+                    "wk=0.18487 mm versus published 237.8 mm, 5.96e9 mm4, "
+                    "234 MPa and 0.184 mm."
+                ),
+                boundary=(
+                    "This verifies the EC2 direct crack-width/transformed-section mechanics. "
+                    "The project's selected crack-width limit remains a project/NA input."
+                ),
+                next_evidence="No further equation benchmark required for the simple-span MSc crack path.",
+            ),
+            AcceptanceItem(
                 key="ec2_crack_width",
                 title="EN 1992 crack-width serviceability",
                 domain=AcceptanceDomain.SERVICEABILITY,
-                state=AcceptanceState.INTERNAL_ONLY,
+                state=AcceptanceState.EXTERNALLY_ACCEPTED,
                 v1_gate=True,
                 evidence=(
-                    "Layered cracked-section, effective tension area, steel stress, sr,max and wk kernels are tested."
+                    "Layered cracked-section, effective tension area, steel stress, sr,max and wk "
+                    "kernels have internal rectangular/T-section equivalence tests. European "
+                    "Concrete Platform Example 7.3 independently reproduces the transformed "
+                    "neutral axis, cracked inertia, steel stress and final EC2 crack width."
                 ),
-                boundary="A structural solver force comparison cannot independently validate EC2 crack-width equations.",
-                next_evidence="Independent crack-width worked examples for representative rectangular/T/I sections.",
+                boundary=(
+                    "The equation/mechanics gate is accepted for the simple-span research profile. "
+                    "The allowable crack width remains an explicit project/National-Annex criterion."
+                ),
+                next_evidence="Simple-span MSc EC2 crack-width calculation gate closed.",
+            ),
+            AcceptanceItem(
+                key="ec2_deflection_reference_case",
+                title="Published EC2 spatial deflection reference",
+                domain=AcceptanceDomain.SERVICEABILITY,
+                state=AcceptanceState.EXTERNALLY_ACCEPTED,
+                v1_gate=False,
+                evidence=(
+                    "European Concrete Platform Example 7.6 is reproduced using the "
+                    "production moment-diagram path: state-I deflection≈21.64 mm and "
+                    "spatially varying cracked/uncracked deflection≈35.8 mm versus "
+                    "published 21.64 mm and 35.71 mm."
+                ),
+                boundary=(
+                    "This verifies the EC2 deformation calculation/interpolation mechanics. "
+                    "It does not impose a universal road-bridge allowable deflection."
+                ),
+                next_evidence=(
+                    "Use the client/project deformation criterion when a numerical "
+                    "road-bridge acceptance limit is required."
+                ),
             ),
             AcceptanceItem(
                 key="ec2_deflection_serviceability",
                 title="EN 1992 deflection serviceability",
                 domain=AcceptanceDomain.SERVICEABILITY,
-                state=AcceptanceState.INTERNAL_ONLY,
+                state=AcceptanceState.EXTERNALLY_ACCEPTED,
                 v1_gate=True,
                 evidence=(
-                    "Elastic load-pattern/curvature mechanics have closed-form tests and Stage-5 DZ agrees with STAAD; "
-                    "the application also implements cracked/uncracked EC2 interpolation."
+                    "Elastic structural displacement agrees with the genuine STAAD Stage-5 model. "
+                    "The EC2 cracked/uncracked serviceability path now uses spatially varying "
+                    "curvature interpolation along the actual co-located service moment diagram, "
+                    "and reproduces European Concrete Platform Example 7.6."
                 ),
                 boundary=(
-                    "STAAD validates the elastic structural response only, not EC2 cracking, effective modulus, "
-                    "creep assumptions or tension-stiffening interpolation. EN 1990 Annex A2 does not impose a "
-                    "single universal road-bridge span/deflection ratio, so acceptance also requires an explicit "
-                    "client/project criterion rather than a hardcoded software default."
+                    "The deformation calculation gate is accepted for the simple-span research "
+                    "profile. EN 1990 Annex A2 does not impose one universal road-bridge "
+                    "span/deflection ratio, so PASS/CHECK still requires an explicit project/client "
+                    "criterion where such a limit is applicable."
                 ),
-                next_evidence=(
-                    "Independent EC2 deflection worked examples including cracked state, creep/effective modulus "
-                    "and interpolation, plus a traceable project/client deflection acceptance criterion where the "
-                    "road-bridge deformation check is required."
-                ),
+                next_evidence="Simple-span MSc EC2 deflection-calculation gate closed.",
             ),
             AcceptanceItem(
                 key="ec2_reinforcement_fatigue_reference_case",
