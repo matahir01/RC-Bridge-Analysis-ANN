@@ -1,3 +1,4 @@
+from rc_bridge.analysis.physical_sections import composite_section_description
 from rc_bridge.application.design_checks import ApplicationDesignSettings
 from rc_bridge.application.preferences import (
     AnalysisApplicationSettings,
@@ -41,6 +42,19 @@ def test_15m_application_acceptance_smoke_runs_end_to_end(tmp_path) -> None:
     assert int(geometry.girder_count) == 7
     assert float(geometry.girder_spacing_m) == 1.70
     assert geometry.girder_profile is not None
+    assert geometry.section_type.value == "rectangular"
+    assert float(geometry.girder_profile.width_m) == 0.40
+    assert float(geometry.girder_profile.depth_m) == 0.95
+    assert float(geometry.precast_girder_length_m) == 14.95
+    composite = composite_section_description(
+        geometry,
+        slab_width_m=1.70,
+        slab_width_basis="research girder spacing",
+    )
+    assert composite.precast_section_type == "rectangular"
+    assert composite.final_section_form == "T"
+    assert composite.web_width_m == 0.40
+    assert composite.participating_flange_depth_m == 0.175
 
     gate = evaluate_msc_deterministic_gate(session.project)
     assert gate.ready is True
@@ -55,7 +69,16 @@ def test_15m_application_acceptance_smoke_runs_end_to_end(tmp_path) -> None:
         == session.preferences.eurocode.deflection_limit_span_ratio
     )
 
-    search = reopened.run_native_lm1()
+    search = reopened.run_native_lm1(
+        longitudinal_step_m=3.75,
+        max_exhaustive_tandem_combinations=5000,
+        convergence_tolerance=0.05,
+        minimum_longitudinal_step_m=0.46875,
+        max_convergence_refinements=3,
+    )
+    assert reopened.last_lm1_convergence is not None
+    assert reopened.last_lm1_convergence.converged
+    assert reopened.last_lm1_convergence.refinements[-1].maximum_relative_change <= 0.05
     reopened.run_extended_actions()
     design = reopened.run_design_interpretation()
     fatigue = reopened.run_fatigue()
