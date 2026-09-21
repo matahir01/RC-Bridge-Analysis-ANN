@@ -340,26 +340,48 @@ def eurocode_simple_span_v1_acceptance_matrix() -> V1AcceptanceMatrix:
                 ),
             ),
             AcceptanceItem(
+                key="lm1_longitudinal_search_reference_case",
+                title="Independent LM1 longitudinal governing-search reference",
+                domain=AcceptanceDomain.CODE_LOADING,
+                state=AcceptanceState.EXTERNALLY_ACCEPTED,
+                v1_gate=False,
+                evidence=(
+                    "Independent 18 m simple-span LM1 hand calculation is reproduced: "
+                    "two 300 kN axles at 1.2 m spacing govern at x=L/2-0.3=8.7 m, "
+                    "with the native search returning Mmax=2523 kNm and the leading "
+                    "axle coordinate 9.9 m."
+                ),
+                boundary=(
+                    "This independently verifies the longitudinal moving-tandem search "
+                    "for the simple-span MSc profile. Continuous-span LM1 placement remains "
+                    "a separate solver-profile verification item."
+                ),
+                next_evidence=(
+                    "No further longitudinal LM1 placement evidence is required for the "
+                    "simple-span Eurocode MSc profile."
+                ),
+            ),
+            AcceptanceItem(
                 key="lm1_code_loading",
                 title="EN 1991-2 LM1 load-generation rules",
                 domain=AcceptanceDomain.CODE_LOADING,
-                state=AcceptanceState.INTERNAL_ONLY,
+                state=AcceptanceState.EXTERNALLY_ACCEPTED,
                 v1_gate=True,
                 evidence=(
-                    "Native lane, remaining-area, tandem and placement generation has extensive "
-                    "automated mechanics/traceability tests and is exported identically to STAAD. "
-                    "The published JRC LM1 characteristic values, 1.2 m tandem spacing and "
-                    "Table 3.5 notional-lane subdivision and the JRC two-girder transverse "
-                    "placement/distribution example now pass as separate scoped reference cases."
+                    "The simple-span MSc LM1 path now has independent evidence for characteristic "
+                    "lane/remaining-area values, 1.2 m tandem spacing, notional-lane subdivision, "
+                    "transverse tandem placement/distribution and longitudinal response-maximising "
+                    "tandem placement. The exact generated Stage-5 traffic cases are also reproduced "
+                    "by STAAD at the structural-response level."
                 ),
                 boundary=(
-                    "STAAD consumes the application's generated LM1 actions; matching results therefore "
-                    "cannot independently establish that the EN 1991-2 loading interpretation is correct."
+                    "This acceptance is for the simple-span Eurocode research profile. It does not "
+                    "promote the separate continuous-span LM1 solver profile, nor does STAAD by itself "
+                    "establish code interpretation."
                 ),
                 next_evidence=(
-                    "Retain the passing JRC characteristic-value, lane-subdivision and transverse "
-                    "distribution cases, then complete an independent longitudinal placement and "
-                    "governing-envelope benchmark."
+                    "Simple-span MSc LM1 loading gate closed. Verify continuous-span placement "
+                    "separately before unlocking that solver profile."
                 ),
             ),
             AcceptanceItem(
