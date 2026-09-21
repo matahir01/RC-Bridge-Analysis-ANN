@@ -246,48 +246,6 @@ def test_ecp_torsion_resistance_interaction_reference_case_passes() -> None:
     ] == pytest.approx(0.998105619)
 
 
-def test_concrete_centre_vrdmax_reference_case_passes() -> None:
-    report = concrete_centre_vrdmax_benchmark()
-
-    assert report.source_name == CONCRETE_CENTRE_VRDMAX.source_name
-    assert report.passes is True
-    assert report.failed_target_names == ()
-    assert report.comparisons[0].calculated_value == pytest.approx(
-        3.64137931,
-        abs=1e-8,
-    )
-
-
-def test_ecp_torsion_reinforcement_reference_case_passes() -> None:
-    report = ecp_torsion_reinforcement_benchmark()
-
-    assert report.source_name == ECP_TORSION_REINFORCEMENT.source_name
-    assert report.passes is True
-    assert report.failed_target_names == ()
-    values = {item.target.name: item.calculated_value for item in report.comparisons}
-    assert values["torsion transverse reinforcement Asw/s"] == pytest.approx(
-        0.348303911
-    )
-    assert values["torsion longitudinal reinforcement Asl"] == pytest.approx(
-        6858.898148
-    )
-
-
-def test_ecp_torsion_resistance_interaction_reference_case_passes() -> None:
-    report = ecp_torsion_resistance_interaction_benchmark()
-
-    assert report.source_name == ECP_TORSION_RESISTANCE_INTERACTION.source_name
-    assert report.passes is True
-    assert report.failed_target_names == ()
-    values = {item.target.name: item.calculated_value for item in report.comparisons}
-    assert values["torsion concrete-strut resistance T_Rd,max"] == pytest.approx(
-        65.8628816
-    )
-    assert values[
-        "published V=350 kN, T=20 kNm interaction utilization"
-    ] == pytest.approx(0.998105619)
-
-
 def test_jrc_rectangular_flexure_reference_case_passes() -> None:
     report = jrc_rectangular_flexure_benchmark()
 
