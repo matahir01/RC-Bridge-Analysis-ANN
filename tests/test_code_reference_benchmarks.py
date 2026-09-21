@@ -13,11 +13,11 @@ from rc_bridge.research.code_reference_benchmarks import (
     JRC_LM1_CHARACTERISTIC_VALUES,
     JRC_LM1_LANE_SUBDIVISION,
     JRC_LM1_RESEARCH_COMBINATION_CORE,
-    LM1_SIMPLE_SPAN_LONGITUDINAL_SEARCH,
     JRC_LM1_TRANSVERSE_DISTRIBUTION,
     JRC_RECTANGULAR_FLEXURE,
     JRC_REINFORCEMENT_FATIGUE,
     JRC_ROAD_BRIDGE_COMBINATION_FACTORS,
+    LM1_SIMPLE_SPAN_LONGITUDINAL_SEARCH,
     concrete_centre_link_shear_benchmark,
     concrete_centre_vrdmax_benchmark,
     ecp_provided_link_shear_benchmark,
@@ -31,10 +31,10 @@ from rc_bridge.research.code_reference_benchmarks import (
     jrc_lm1_lane_subdivision_benchmark,
     jrc_lm1_research_combination_core_benchmark,
     jrc_lm1_transverse_distribution_benchmark,
-    lm1_simple_span_longitudinal_search_benchmark,
     jrc_rectangular_flexure_benchmark,
     jrc_reinforcement_fatigue_benchmark,
     jrc_road_bridge_combination_factors_benchmark,
+    lm1_simple_span_longitudinal_search_benchmark,
 )
 from rc_bridge.research.verification import SolverProfile
 
