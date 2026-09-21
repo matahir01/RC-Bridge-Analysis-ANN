@@ -20,15 +20,15 @@ from rc_bridge.codes.eurocode.en1991_2 import (
     notional_lane_layout,
 )
 from rc_bridge.codes.eurocode.lm1_effects import lm1_lane_simple_span_envelope
+from rc_bridge.design.eurocode_deflection import (
+    SimpleSpanMomentDiagram,
+    ec2_interpolated_moment_diagram_deflection,
+)
 from rc_bridge.design.eurocode_demand import required_tension_steel_rectangular
 from rc_bridge.design.eurocode_detailing import (
     bar_area_mm2,
     maximum_vertical_link_spacings_mm,
     minimum_vertical_shear_reinforcement,
-)
-from rc_bridge.design.eurocode_deflection import (
-    SimpleSpanMomentDiagram,
-    ec2_interpolated_moment_diagram_deflection,
 )
 from rc_bridge.design.eurocode_fatigue import (
     concrete_design_fatigue_strength_mpa,
