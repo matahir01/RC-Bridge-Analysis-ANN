@@ -54,9 +54,11 @@ def test_v1_acceptance_matrix_separates_structural_analysis_from_design_code() -
     assert "ec2_rectangular_flexure_reference_case" not in matrix.pending_v1_gate_keys
     assert "ec2_link_spacing_reference_case" not in matrix.pending_v1_gate_keys
 
+    assert matrix.item("ec2_shear_design").state is AcceptanceState.EXTERNALLY_ACCEPTED
+    assert "ec2_shear_design" not in matrix.pending_v1_gate_keys
+
     for key in (
         "ec2_flexure_design",
-        "ec2_shear_design",
         "ec2_torsion_design",
         "ec2_crack_width",
         "ec2_deflection_serviceability",
