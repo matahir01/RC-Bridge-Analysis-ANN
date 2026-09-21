@@ -5,6 +5,7 @@ from dataclasses import dataclass
 
 from rc_bridge.analysis.elastic_deflection import (
     simply_supported_deflection_at_x_mm,
+    simply_supported_deflection_from_curvature_diagram_mm,
     simply_supported_deflection_from_moment_diagram_mm,
 )
 from rc_bridge.analysis.loads import PointLoad
@@ -117,7 +118,7 @@ def ec2_interpolated_udl_deflection(
 
     e_eff = effective_concrete_modulus_mpa(ecm_mpa, creep_coefficient)
     service_moment_knm = udl_kn_m * span_m**2 / 8.0
-    zeta = ec2_tension_stiffening_zeta(
+    zeta = ec2_ec2_tension_stiffening_zeta(
         service_moment_knm,
         cracking_moment_knm,
         beta=beta,
@@ -229,7 +230,7 @@ def ec2_interpolated_load_pattern_deflection(
         raise ValueError("A non-zero deflection load pattern is required.")
 
     e_eff = effective_concrete_modulus_mpa(ecm_mpa, creep_coefficient)
-    zeta = ec2_tension_stiffening_zeta(
+    zeta = ec2_ec2_tension_stiffening_zeta(
         service_moment_knm,
         cracking_moment_knm,
         beta=beta,
@@ -297,7 +298,7 @@ def ec2_interpolated_moment_diagram_deflection(
     if allowable_deflection_mm is not None and allowable_deflection_mm <= 0.0:
         raise ValueError("Allowable deflection must be positive when specified.")
     e_eff = effective_concrete_modulus_mpa(ecm_mpa, creep_coefficient)
-    zeta = ec2_tension_stiffening_zeta(
+    zeta = ec2_ec2_tension_stiffening_zeta(
         service_moment_knm,
         cracking_moment_knm,
         beta=beta,
@@ -321,7 +322,7 @@ def ec2_interpolated_moment_diagram_deflection(
     local_curvatures: list[float] = []
     for moment_knm in diagram.moments_knm:
         moment_abs = abs(moment_knm)
-        local_zeta = tension_stiffening_zeta(
+        local_zeta = ec2_tension_stiffening_zeta(
             service_moment_knm=moment_abs,
             cracking_moment_knm=cracking_moment_knm,
             beta=beta,
