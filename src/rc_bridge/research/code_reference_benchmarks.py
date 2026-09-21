@@ -7,14 +7,13 @@ from rc_bridge.codes.common import LoadEffects
 from rc_bridge.codes.eurocode.combinations import EurocodeFactors, persistent_uls
 from rc_bridge.codes.eurocode.en1991_2 import (
     lm1_characteristic_lane_load,
-    notional_lane_layout,
     lm1_remaining_area_udl_kn_m2,
     lm1_tandem_axle_spacing_m,
+    notional_lane_layout,
 )
 from rc_bridge.design.eurocode_demand import required_tension_steel_rectangular
 from rc_bridge.design.eurocode_detailing import maximum_vertical_link_spacings_mm
 from rc_bridge.design.eurocode_fatigue import (
-    concrete_compression_fatigue_check,
     concrete_design_fatigue_strength_mpa,
     reinforcement_fatigue_check,
 )
