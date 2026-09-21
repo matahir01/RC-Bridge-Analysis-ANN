@@ -19,6 +19,8 @@ jobs:
           python-version: '3.11'
       - name: Install deterministic engine
         run: pip install -e .
+      - name: Prepare artifact directory
+        run: mkdir -p artifacts/bridge_20m_i_girder
       - name: Run 20 m bridge analysis and design
         run: python examples/bridge_20m_i_girder_design.py | tee artifacts/bridge_20m_i_girder/run_summary.txt
       - name: Upload calculation report
