@@ -22,6 +22,7 @@ def test_application_default_project_has_complete_physical_profile() -> None:
     assert project.geometry.section_type == SectionType.RECTANGULAR
     assert project.geometry.girder_profile.total_depth_m == pytest.approx(0.95)
     assert project.geometry.girder_profile.width_m == pytest.approx(0.40)
+    assert project.geometry.precast_girder_length_m == pytest.approx(14.95)
 
 
 def test_basic_editor_round_trip_preserves_unedited_project_actions() -> None:
@@ -42,7 +43,9 @@ def test_basic_editor_round_trip_preserves_unedited_project_actions() -> None:
     assert fields.t_total_depth_m is None
 
     analysable = application_default_project()
-    edited = ProjectBasicFields.from_project(analysable).apply(analysable)
+    fields = ProjectBasicFields.from_project(analysable)
+    assert fields.precast_girder_length_m == pytest.approx(14.95)
+    edited = fields.apply(analysable)
     assert edited == analysable
 
 
