@@ -56,9 +56,12 @@ class ResearchVariableDefinition:
     evidence_note: str = ""
 
     def __post_init__(self) -> None:
-        if self.lower_bound is not None and self.upper_bound is not None:
-            if self.upper_bound <= self.lower_bound:
-                raise ValueError(f"Invalid bounds for {self.name}.")
+        if (
+            self.lower_bound is not None
+            and self.upper_bound is not None
+            and self.upper_bound <= self.lower_bound
+        ):
+            raise ValueError(f"Invalid bounds for {self.name}.")
         for value in (
             self.baseline,
             self.lower_bound,
