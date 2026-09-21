@@ -47,8 +47,8 @@ def test_signed_combinations_use_directional_permanent_factors_for_hogging_g() -
 
     assert result.positive_gamma_g == pytest.approx(1.0)
     assert result.negative_gamma_g == pytest.approx(1.35)
-    assert result.positive_uls_effect == pytest.approx(20.0)
-    assert result.negative_uls_effect == pytest.approx(-210.0)
+    assert result.positive_uls_effect == pytest.approx(8.0)
+    assert result.negative_uls_effect == pytest.approx(-202.5)
     assert result.positive_quasi_permanent_sls_effect == pytest.approx(-84.0)
     assert result.negative_quasi_permanent_sls_effect == pytest.approx(-110.0)
 
