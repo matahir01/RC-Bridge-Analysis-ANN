@@ -2,8 +2,8 @@ import pytest
 
 from rc_bridge.core.models import (
     BridgeGeometry,
-    DesignCode,
     DeckConstruction,
+    DesignCode,
     ProjectInput,
     SupportSystem,
 )
