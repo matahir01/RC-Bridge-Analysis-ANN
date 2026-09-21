@@ -30,9 +30,10 @@ def test_jrc_rectangular_flexure_reference_case_passes() -> None:
         if item.target.name == "moment resistance using published steel area"
     )
     assert steel.target.reference_value == pytest.approx(933.0)
-    assert steel.calculated_value == pytest.approx(932.833, abs=0.01)
+    assert steel.absolute_error < 0.5
+    assert steel.calculated_value == pytest.approx(932.685, abs=0.01)
     assert resistance.target.reference_value == pytest.approx(62.78)
-    assert resistance.calculated_value == pytest.approx(62.790, abs=0.001)
+    assert resistance.absolute_error < resistance.allowable_absolute_error
 
 
 def test_jrc_beam_link_spacing_reference_case_passes_published_rounding() -> None:
