@@ -7,6 +7,8 @@ from rc_bridge.research.code_reference_benchmarks import (
     JRC_EC2_SLAB_SHEAR,
     JRC_LM1_CHARACTERISTIC_VALUES,
     JRC_LM1_LANE_SUBDIVISION,
+    JRC_LM1_RESEARCH_COMBINATION_CORE,
+    JRC_LM1_TRANSVERSE_DISTRIBUTION,
     JRC_RECTANGULAR_FLEXURE,
     JRC_REINFORCEMENT_FATIGUE,
     JRC_ROAD_BRIDGE_COMBINATION_FACTORS,
@@ -16,6 +18,8 @@ from rc_bridge.research.code_reference_benchmarks import (
     jrc_ec2_slab_shear_benchmark,
     jrc_lm1_characteristic_values_benchmark,
     jrc_lm1_lane_subdivision_benchmark,
+    jrc_lm1_research_combination_core_benchmark,
+    jrc_lm1_transverse_distribution_benchmark,
     jrc_rectangular_flexure_benchmark,
     jrc_reinforcement_fatigue_benchmark,
     jrc_road_bridge_combination_factors_benchmark,
@@ -52,6 +56,37 @@ def test_jrc_lm1_lane_subdivision_reference_cases_pass() -> None:
     assert values["w=7 m lane count"] == pytest.approx(2.0)
     assert values["w=7 m remaining width"] == pytest.approx(1.0)
     assert values["w=10 m lane count"] == pytest.approx(3.0)
+
+
+def test_jrc_lm1_transverse_distribution_reference_case_passes() -> None:
+    report = jrc_lm1_transverse_distribution_benchmark()
+
+    assert report.source_name == JRC_LM1_TRANSVERSE_DISTRIBUTION.source_name
+    assert report.passes is True
+    assert report.failed_target_names == ()
+    values = {item.target.name: item.calculated_value for item in report.comparisons}
+    assert values["JRC LM1 transverse reaction R1"] == pytest.approx(
+        471.4285714286
+    )
+    assert values["JRC LM1 transverse reaction R2"] == pytest.approx(
+        128.5714285714
+    )
+    assert values["JRC LM1 transverse equilibrium"] == pytest.approx(600.0)
+
+
+def test_jrc_lm1_research_combination_core_reference_case_passes() -> None:
+    report = jrc_lm1_research_combination_core_benchmark()
+
+    assert report.source_name == JRC_LM1_RESEARCH_COMBINATION_CORE.source_name
+    assert report.passes is True
+    assert report.failed_target_names == ()
+    values = {item.target.name: item.calculated_value for item in report.comparisons}
+    assert values["permanent+LM1 persistent ULS"] == pytest.approx(175.5)
+    assert values["permanent+LM1 characteristic SLS"] == pytest.approx(130.0)
+    assert values["permanent+LM1 frequent SLS split TS/UDL"] == pytest.approx(
+        115.5
+    )
+    assert values["permanent+LM1 quasi-permanent SLS"] == pytest.approx(100.0)
 
 
 def test_jrc_reinforcement_fatigue_reference_case_passes() -> None:
@@ -174,6 +209,8 @@ def test_published_reference_metadata_is_traceable_and_scope_limited() -> None:
     for evidence in (
         JRC_LM1_CHARACTERISTIC_VALUES,
         JRC_LM1_LANE_SUBDIVISION,
+        JRC_LM1_TRANSVERSE_DISTRIBUTION,
+        JRC_LM1_RESEARCH_COMBINATION_CORE,
         JRC_ROAD_BRIDGE_COMBINATION_FACTORS,
         JRC_REINFORCEMENT_FATIGUE,
         JRC_CONCRETE_FATIGUE,
@@ -193,11 +230,13 @@ def test_published_reference_metadata_is_traceable_and_scope_limited() -> None:
 def test_published_reference_suite_contains_all_independent_reports() -> None:
     reports = eurocode_v1_published_reference_benchmarks()
 
-    assert len(reports) == 8
+    assert len(reports) == 10
     assert all(report.passes for report in reports)
     assert {report.source_name for report in reports} == {
         JRC_LM1_CHARACTERISTIC_VALUES.source_name,
         JRC_LM1_LANE_SUBDIVISION.source_name,
+        JRC_LM1_TRANSVERSE_DISTRIBUTION.source_name,
+        JRC_LM1_RESEARCH_COMBINATION_CORE.source_name,
         JRC_ROAD_BRIDGE_COMBINATION_FACTORS.source_name,
         JRC_REINFORCEMENT_FATIGUE.source_name,
         JRC_CONCRETE_FATIGUE.source_name,
