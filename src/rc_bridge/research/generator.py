@@ -45,11 +45,14 @@ def generate_training_records(
     solver_profile: SolverProfile | None = None,
     verification: DeterministicSolverVerification | None = None,
     solver_verified: bool | None = None,
+    verification_scope: VerificationScope = VerificationScope.FULL_APPLICATION_V1,
 ) -> list[TrainingRecord]:
     """Evaluate deterministic samples and create provenance-safe ANN records.
 
     Export requires a named deterministic solver profile and a verification
-    object for that exact profile. Eurocode rows require fck; BS 5400/BD 37/01
+    object for that exact profile. The verification scope defaults to the
+    conservative full-application gate; MSc dataset callers must opt into the
+    explicitly narrower research scope. Eurocode rows require fck; BS 5400/BD 37/01
     rows require fcu. The former ``solver_verified=True`` Boolean can no longer
     unlock ground-truth generation.
     """
