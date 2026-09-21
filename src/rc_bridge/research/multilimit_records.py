@@ -81,7 +81,7 @@ def eurocode_multilimit_record_from_project(
     supplied. The shear target then uses min(V_Rd,s, V_Rd,max) - V_Ed rather than
     the concrete-only reserve or the *required* reinforcement demand.
     """
-    verification.require_ann_ready(expected_profile=SolverProfile.EUROCODE_1G)
+    verification.require_ready_for(\n        expected_profile=SolverProfile.EUROCODE_1G,\n        scope=verification_scope,\n    )
     if not 0 <= span_index < len(project.geometry.span_lengths_m):
         raise IndexError("span_index is outside the project span list.")
 
@@ -185,7 +185,7 @@ def bs5400_multilimit_record_from_project(
     supplied beam links are required so the shear margin is a resistance margin,
     not merely the link quantity calculated by the design equation.
     """
-    verification.require_ann_ready(expected_profile=SolverProfile.BS5400_BD37_01)
+    verification.require_ready_for(\n        expected_profile=SolverProfile.BS5400_BD37_01,\n        scope=verification_scope,\n    )
     if not 0 <= span_index < len(project.geometry.span_lengths_m):
         raise IndexError("span_index is outside the project span list.")
     if project.materials.fcu_mpa is None:
