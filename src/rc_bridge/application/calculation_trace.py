@@ -471,7 +471,7 @@ def _integrated_combination_blocks(
                 ),
                 steps=(
                     CalculationStep(
-                        label="Governing ULS bending moment",
+                        label="ULS bending moment",
                         expression="MEd = gamma_G MGk + gamma_Q MQk",
                         substitution=(
                             f"{ec.gamma_g_unfavourable:g} x {_f(g_m)} + "
@@ -503,7 +503,7 @@ def _integrated_combination_blocks(
                         ),
                     ),
                     CalculationStep(
-                        label="Governing ULS shear",
+                        label="ULS shear",
                         expression="VEd = gamma_G VGk + gamma_Q VQk",
                         substitution=(
                             f"{ec.gamma_g_unfavourable:g} x {_f(g_v)} + "
@@ -535,7 +535,7 @@ def _integrated_combination_blocks(
                         ),
                     ),
                     CalculationStep(
-                        label="Governing characteristic SLS moment",
+                        label="SLS characteristic moment",
                         expression="M = MGk + MQk",
                         substitution=f"{_f(g_m)} + {_f(char_q)}",
                         result=f"{_f(char_m.characteristic_sls_effects.moment_knm)} kNm",
@@ -552,7 +552,7 @@ def _integrated_combination_blocks(
                         ),
                     ),
                     CalculationStep(
-                        label="Governing frequent SLS moment",
+                        label="SLS frequent moment",
                         expression="M = MGk + MQ,frequent",
                         substitution=f"{_f(g_m)} + {_f(freq_q)}",
                         result=f"{_f(freq_m.frequent_sls_effects.moment_knm)} kNm",
@@ -572,7 +572,7 @@ def _integrated_combination_blocks(
                         ),
                     ),
                     CalculationStep(
-                        label="Governing quasi-permanent SLS moment",
+                        label="SLS quasi-permanent moment",
                         expression="M = MGk + MQ,quasi",
                         substitution=f"{_f(g_m)} + {_f(quasi_q)}",
                         result=f"{_f(quasi_m.quasi_permanent_sls_effects.moment_knm)} kNm",
