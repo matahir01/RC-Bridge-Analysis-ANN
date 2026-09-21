@@ -353,7 +353,7 @@ def ec2_interpolated_moment_diagram_deflection(
         zeta=zeta,
         effective_concrete_modulus_mpa=e_eff,
         status=(
-            "EC2 spatially varying two-state curvature interpolation from the traceable "
+            "EC2 spatially varying two-state signed M/EI curvature integration from the traceable "
             "signed moment diagram; "
             f"source={diagram.source}; state-I maximum x={uncracked.maximum_position_m:.3f} m; "
             f"state-II maximum x={cracked.maximum_position_m:.3f} m; "
