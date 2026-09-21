@@ -158,3 +158,42 @@ def test_torsion_must_be_verified_when_it_is_in_scope() -> None:
     )
     assert not verification.ann_ready
     assert verification.missing_requirements() == ("torsion",)
+
+
+def test_msc_scope_is_explicit_and_does_not_relax_full_application_gate() -> None:
+    verification = DeterministicSolverVerification(
+        solver_profile=SolverProfile.EUROCODE_1G,
+        traffic_loading=True,
+        load_combinations=True,
+        flexure=True,
+        shear=True,
+        cracking=True,
+        deflection=True,
+        fatigue=False,
+        detailing=False,
+        transverse_distribution=True,
+        independent_benchmark=True,
+        torsion_required=True,
+        torsion=False,
+    )
+
+    assert verification.ann_ready is False
+    assert verification.ready_for(VerificationScope.MSC_SIMPLE_SPAN_ANN) is True
+    assert verification.missing_requirements() == ("fatigue", "detailing", "torsion")
+
+    records = generate_training_records(
+        [EUROCODE_SAMPLE],
+        fake_solver,
+        solver_profile=SolverProfile.EUROCODE_1G,
+        verification=verification,
+        verification_scope=VerificationScope.MSC_SIMPLE_SPAN_ANN,
+    )
+    assert len(records) == 1
+
+    with pytest.raises(RuntimeError, match="fatigue"):
+        generate_training_records(
+            [EUROCODE_SAMPLE],
+            fake_solver,
+            solver_profile=SolverProfile.EUROCODE_1G,
+            verification=verification,
+        )
