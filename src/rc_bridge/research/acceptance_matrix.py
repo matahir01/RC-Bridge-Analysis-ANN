@@ -190,6 +190,34 @@ class V1AcceptanceMatrix:
         )
 
 
+    def msc_research_verification_manifest(self) -> DeterministicSolverVerification:
+        """Return the explicitly scoped four-target MSc verification manifest.
+
+        This manifest is intentionally narrower than deterministic application
+        v1.0. It covers only the simple-span permanent+LM1 research path feeding
+        g_M, g_V, g_crack and g_deflection. Fatigue, drawing-level detailing,
+        torsion, construction stages, local deck design and the wider EN 1990
+        action matrix remain under their own standalone-application gates.
+        """
+
+        accepted = set(self.externally_accepted_keys)
+        return DeterministicSolverVerification(
+            solver_profile=self.solver_profile,
+            traffic_loading="lm1_code_loading" in accepted,
+            load_combinations="en1990_lm1_research_combination_core" in accepted,
+            flexure="ec2_msc_layered_flexure_design" in accepted,
+            shear="ec2_shear_design" in accepted,
+            cracking="ec2_crack_width" in accepted,
+            deflection="ec2_deflection_serviceability" in accepted,
+            fatigue=False,
+            detailing=False,
+            transverse_distribution="grillage_transverse_distribution" in accepted,
+            independent_benchmark="stage5_structural_response" in accepted,
+            torsion_required=False,
+            torsion=False,
+        )
+
+
 def eurocode_simple_span_v1_acceptance_matrix() -> V1AcceptanceMatrix:
     """Return the current evidence boundary for the first Eurocode v1 profile.
 
@@ -371,13 +399,19 @@ def eurocode_simple_span_v1_acceptance_matrix() -> V1AcceptanceMatrix:
                     "The simple-span MSc LM1 path now has independent evidence for characteristic "
                     "lane/remaining-area values, 1.2 m tandem spacing, notional-lane subdivision, "
                     "transverse tandem placement/distribution and longitudinal response-maximising "
-                    "tandem placement. The exact generated Stage-5 traffic cases are also reproduced "
-                    "by STAAD at the structural-response level."
+                    "tandem placement. Production-search regression tests additionally cover independent "
+                    "lane tandem coordinates, lane/remaining-area UDL inclusion, both carriageway-edge "
+                    "layouts, M/V/T envelope extraction and co-located service-deflection recovery. "
+                    "The production convergence controller halves the longitudinal movement step until "
+                    "the worst M/V/T/deflection envelope change is within tolerance and refuses to "
+                    "self-certify a reduced tandem search. The exact generated Stage-5 traffic cases "
+                    "are also reproduced by STAAD at the structural-response level."
                 ),
                 boundary=(
-                    "This acceptance is for the simple-span Eurocode research profile. It does not "
-                    "promote the separate continuous-span LM1 solver profile, nor does STAAD by itself "
-                    "establish code interpretation."
+                    "This acceptance is for the simple-span Eurocode research profile using exhaustive "
+                    "independent tandem combinations and convergence-controlled longitudinal placement. "
+                    "It does not promote the separate continuous-span LM1 solver profile, nor does "
+                    "STAAD by itself establish code interpretation."
                 ),
                 next_evidence=(
                     "Simple-span MSc LM1 loading gate closed. Verify continuous-span placement "
@@ -504,6 +538,33 @@ def eurocode_simple_span_v1_acceptance_matrix() -> V1AcceptanceMatrix:
                 ),
             ),
             AcceptanceItem(
+                key="ec2_msc_layered_flexure_design",
+                title="Scoped MSc positive-bending layered flexure design",
+                domain=AcceptanceDomain.DESIGN_RESISTANCE,
+                state=AcceptanceState.EXTERNALLY_ACCEPTED,
+                v1_gate=False,
+                evidence=(
+                    "The production layered required-steel path applies the explicit EC2 design "
+                    "lever-arm cap z<=0.95d and reproduces The Concrete Centre heavily loaded "
+                    "L-beam span-AB reference: MEd=1148 kNm, d=668 mm, As,req≈4158 mm2 and "
+                    "six H32 bars provide the published 4824 mm2 nominal reinforcement. The same "
+                    "0.95d sizing basis is now used by the discrete reinforcement selector and its "
+                    "refined effective-depth iterations, preventing under-provision after final design "
+                    "recalculation. The 15 m research baseline uses a 400x950 mm rectangular precast "
+                    "girder with the hardened participating deck forming the composite T-section."
+                ),
+                boundary=(
+                    "This accepts the positive-bending simple-span MSc branch where the compression "
+                    "block remains in the effective composite flange. It does not certify negative "
+                    "bending, compression reinforcement or every possible web-compression regime."
+                ),
+                next_evidence=(
+                    "Keep sampled MSc geometry/reinforcement inside this verified positive-bending "
+                    "scope, or add an independent flange-to-web compression-block benchmark before "
+                    "expanding the research input domain."
+                ),
+            ),
+            AcceptanceItem(
                 key="ec2_flexure_design",
                 title="EN 1992 flexural resistance and reinforcement design",
                 domain=AcceptanceDomain.DESIGN_RESISTANCE,
@@ -511,16 +572,17 @@ def eurocode_simple_span_v1_acceptance_matrix() -> V1AcceptanceMatrix:
                 v1_gate=True,
                 evidence=(
                     "Layered rectangular/T/I resistance kernels, required-steel solvers and internal "
-                    "cross-kernel tests are implemented. One independent JRC rectangular-flexure "
-                    "worked example now also passes and is recorded separately."
+                    "cross-kernel tests are implemented. Independent references now cover the basic "
+                    "JRC rectangular kernel and the MSc positive-bending compression-block-in-flange "
+                    "production path with the explicit 0.95d design lever-arm cap."
                 ),
                 boundary=(
                     "STAAD is being used as an analysis verifier, not as the authority for RC section design."
                 ),
                 next_evidence=(
-                    "Keep the passing JRC rectangular case as supporting evidence, then add independent "
-                    "T/I/layered cases covering compression-block location, lever arm, MRd, required As "
-                    "and reinforcement selection before the broad flexure milestone can be promoted."
+                    "The four-target MSc positive-bending scope is accepted separately. Add independent "
+                    "web-compression, negative-bending and other general T/I cases before the broad "
+                    "standalone flexure milestone can be promoted."
                 ),
             ),
             AcceptanceItem(
@@ -813,6 +875,27 @@ def eurocode_simple_span_v1_acceptance_matrix() -> V1AcceptanceMatrix:
                 ),
             ),
             AcceptanceItem(
+                key="flm3_longitudinal_search_reference_case",
+                title="Independent FLM3 simple-span longitudinal search reference",
+                domain=AcceptanceDomain.FATIGUE_DETAILING,
+                state=AcceptanceState.EXTERNALLY_ACCEPTED,
+                v1_gate=False,
+                evidence=(
+                    "The production FLM3 mover reproduces the independent 15 m simple-span "
+                    "midspan influence-line result for the standard four 120 kN axle lines: "
+                    "maximum positive moment and range are 936 kNm at unit longitudinal distribution."
+                ),
+                boundary=(
+                    "This verifies the longitudinal vehicle movement/search only. Fatigue-specific "
+                    "transverse distribution, section stress recovery and full stress histories remain "
+                    "separate verification targets."
+                ),
+                next_evidence=(
+                    "Use an independently checked fatigue-specific full-width distribution/stress-history "
+                    "case before promoting the broad fatigue milestone."
+                ),
+            ),
+            AcceptanceItem(
                 key="ec2_fatigue",
                 title="EN 1991-2 FLM3 / EN 1992 fatigue checks",
                 domain=AcceptanceDomain.FATIGUE_DETAILING,
@@ -820,17 +903,18 @@ def eurocode_simple_span_v1_acceptance_matrix() -> V1AcceptanceMatrix:
                 v1_gate=True,
                 evidence=(
                     "Native FLM3 moving-vehicle analysis and reinforcement/concrete fatigue kernels "
-                    "have automated tests. Published JRC reinforcement and concrete fatigue equation "
-                    "examples now pass as separately scoped external references."
+                    "have automated tests. Published JRC reinforcement/concrete fatigue equation "
+                    "examples pass, and the 15 m longitudinal FLM3 mover independently reproduces "
+                    "a 936 kNm midspan simple-span influence-line reference."
                 ),
                 boundary=(
-                    "The accepted Stage-5 LM1 benchmark is not an FLM3 fatigue verification campaign, "
-                    "and the JRC equation examples do not independently validate the application's "
-                    "moving FLM3 stress-range generation."
+                    "The longitudinal FLM3 search is now independently checked, but the accepted Stage-5 "
+                    "LM1 benchmark is not an FLM3 fatigue campaign. Fatigue-specific transverse "
+                    "distribution and the resulting girder stress histories are still unverified."
                 ),
                 next_evidence=(
-                    "Retain the passing JRC fatigue-equation cases and add an independent FLM3 "
-                    "simple-span moving-vehicle stress-range benchmark."
+                    "Retain the equation and longitudinal-movement references, then add an independent "
+                    "fatigue-specific transverse distribution and girder stress-history benchmark."
                 ),
             ),
             AcceptanceItem(

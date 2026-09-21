@@ -5,7 +5,11 @@ from dataclasses import dataclass
 
 from .dataset import TrainingRecord
 from .sampling import VariableRange, latin_hypercube_samples
-from .verification import DeterministicSolverVerification, SolverProfile
+from .verification import (
+    DeterministicSolverVerification,
+    SolverProfile,
+    VerificationScope,
+)
 
 
 @dataclass(frozen=True)
@@ -45,11 +49,14 @@ def generate_training_records(
     solver_profile: SolverProfile | None = None,
     verification: DeterministicSolverVerification | None = None,
     solver_verified: bool | None = None,
+    verification_scope: VerificationScope = VerificationScope.FULL_APPLICATION_V1,
 ) -> list[TrainingRecord]:
     """Evaluate deterministic samples and create provenance-safe ANN records.
 
     Export requires a named deterministic solver profile and a verification
-    object for that exact profile. Eurocode rows require fck; BS 5400/BD 37/01
+    object for that exact profile. The verification scope defaults to the
+    conservative full-application gate; MSc dataset callers must opt into the
+    explicitly narrower research scope. Eurocode rows require fck; BS 5400/BD 37/01
     rows require fcu. The former ``solver_verified=True`` Boolean can no longer
     unlock ground-truth generation.
     """
@@ -68,7 +75,10 @@ def generate_training_records(
             "Training data generation is locked until structured deterministic "
             "solver verification is supplied."
         )
-    verification.require_ann_ready(expected_profile=solver_profile)
+    verification.require_ready_for(
+        expected_profile=solver_profile,
+        scope=verification_scope,
+    )
 
     required = COMMON_REQUIRED_TRAINING_VARIABLES | PROFILE_REQUIRED_TRAINING_VARIABLES[
         solver_profile

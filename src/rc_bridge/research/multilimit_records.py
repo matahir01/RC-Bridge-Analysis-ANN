@@ -7,9 +7,11 @@ from rc_bridge.design.bs5400_provided_shear import (
     provided_vertical_link_resistance_bs5400,
 )
 from rc_bridge.design.eurocode_shear import provided_vertical_shear_resistance
+from rc_bridge.research.msc_profile import require_msc_project_scope
 from rc_bridge.research.verification import (
     DeterministicSolverVerification,
     SolverProfile,
+    VerificationScope,
 )
 from rc_bridge.workflow.bs5400_girder import BS5400TGirderInput
 from rc_bridge.workflow.eurocode_girder import TGirderDesignInput
@@ -70,6 +72,7 @@ def eurocode_multilimit_record_from_project(
     project: ProjectInput,
     section: TGirderDesignInput,
     verification: DeterministicSolverVerification,
+    verification_scope: VerificationScope = VerificationScope.FULL_APPLICATION_V1,
     span_index: int = 0,
     provided_shear_steel_mm2_per_m: float | None = None,
     g_fatigue: float | None = None,
@@ -81,7 +84,12 @@ def eurocode_multilimit_record_from_project(
     supplied. The shear target then uses min(V_Rd,s, V_Rd,max) - V_Ed rather than
     the concrete-only reserve or the *required* reinforcement demand.
     """
-    verification.require_ann_ready(expected_profile=SolverProfile.EUROCODE_1G)
+    verification.require_ready_for(
+        expected_profile=SolverProfile.EUROCODE_1G,
+        scope=verification_scope,
+    )
+    if verification_scope is VerificationScope.MSC_SIMPLE_SPAN_ANN:
+        require_msc_project_scope(project)
     if not 0 <= span_index < len(project.geometry.span_lengths_m):
         raise IndexError("span_index is outside the project span list.")
 
@@ -126,6 +134,16 @@ def eurocode_multilimit_record_from_project(
             ved_kn / shear_resistance_kn if shear_resistance_kn > 0.0 else float("inf")
         )
         g_shear_kn = shear_resistance_kn - ved_kn
+
+    if (
+        result.design.deflection.allowable_deflection_mm is None
+        or result.design.deflection.utilization is None
+        or result.design.deflection.g_deflection_mm is None
+    ):
+        raise ValueError(
+            "Eurocode ANN deflection ground truth requires an explicit project/client "
+            "deflection acceptance criterion."
+        )
 
     span_m = float(project.geometry.span_lengths_m[span_index])
     return MultiLimitTrainingRecord(
@@ -175,6 +193,7 @@ def bs5400_multilimit_record_from_project(
     section: BS5400TGirderInput,
     verification: DeterministicSolverVerification,
     provided_shear_steel_mm2_per_m: float,
+    verification_scope: VerificationScope = VerificationScope.FULL_APPLICATION_V1,
     span_index: int = 0,
     g_fatigue: float | None = None,
     g_torsion: float | None = None,
@@ -185,7 +204,10 @@ def bs5400_multilimit_record_from_project(
     supplied beam links are required so the shear margin is a resistance margin,
     not merely the link quantity calculated by the design equation.
     """
-    verification.require_ann_ready(expected_profile=SolverProfile.BS5400_BD37_01)
+    verification.require_ready_for(
+        expected_profile=SolverProfile.BS5400_BD37_01,
+        scope=verification_scope,
+    )
     if not 0 <= span_index < len(project.geometry.span_lengths_m):
         raise IndexError("span_index is outside the project span list.")
     if project.materials.fcu_mpa is None:

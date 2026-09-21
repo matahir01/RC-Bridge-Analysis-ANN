@@ -29,6 +29,7 @@ from rc_bridge.workflow.lm1_grillage_search import (
     generate_lm1_search_placements,
     native_lm1_girder_moment_diagram,
     run_project_native_lm1_grillage_search,
+    run_project_native_lm1_grillage_search_converged,
 )
 from rc_bridge.workflow.project_bridge import (
     ProjectGirderCombinationSet,
@@ -121,6 +122,77 @@ def test_search_generator_positions_lane_tandems_independently() -> None:
     assert any(placement.tandem_lead_x_m is None for placement in placements)
     assert any(placement.tandem_lead_x_m is not None for placement in placements)
 
+
+
+def test_simple_span_two_lane_search_covers_full_cartesian_candidate_space() -> None:
+    placements = generate_lm1_search_placements(
+        _project(),
+        longitudinal_step_m=15.0,
+        max_exhaustive_tandem_combinations=5000,
+    )
+
+    # For L=15 m and TS axle spacing 1.2 m, this step produces the four
+    # exact boundary-aware lead coordinates below. With two independently
+    # moving notional-lane tandems there must be 4**2 vectors for each of
+    # the four transverse layouts (two remainder edges x two lane numberings).
+    expected_positions = (-1.2, 0.0, 13.8, 15.0)
+    expected_vectors = {
+        (lane_1, lane_2)
+        for lane_1 in expected_positions
+        for lane_2 in expected_positions
+    }
+    assert len(placements) == 4 * len(expected_vectors)
+
+    by_transverse_layout: dict[tuple[object, ...], set[tuple[float, float]]] = {}
+    for placement in placements:
+        layout = (
+            tuple(
+                (lane.lane_number, lane.y_start_m, lane.y_end_m)
+                for lane in placement.lane_placements
+            ),
+            tuple(
+                (strip.y_start_m, strip.y_end_m)
+                for strip in placement.remaining_area_placements
+            ),
+        )
+        vector = tuple(
+            position
+            for _, position in sorted(placement.tandem_lead_positions_m)
+        )
+        by_transverse_layout.setdefault(layout, set()).add(vector)
+
+        assert all(
+            tuple((region.x_start_m, region.x_end_m) for region in lane.udl_regions)
+            == ((0.0, 15.0),)
+            for lane in placement.lane_placements
+        )
+        assert all(
+            tuple((region.x_start_m, region.x_end_m) for region in strip.udl_regions)
+            == ((0.0, 15.0),)
+            for strip in placement.remaining_area_placements
+        )
+
+    assert len(by_transverse_layout) == 4
+    assert all(vectors == expected_vectors for vectors in by_transverse_layout.values())
+
+
+def test_native_lm1_search_refinement_is_monotonic_and_materially_converged() -> None:
+    convergence = run_project_native_lm1_grillage_search_converged(
+        _project(),
+        longitudinal_sections_by_span=(_longitudinal(),),
+        transverse_section=_transverse(),
+        transverse_stations_m=(7.5,),
+        initial_longitudinal_step_m=3.75,
+        minimum_longitudinal_step_m=0.46875,
+        relative_tolerance=0.05,
+        max_refinements=3,
+    )
+
+    assert convergence.converged
+    assert convergence.refinements
+    assert convergence.refinements[-1].maximum_relative_change <= 0.05
+    assert convergence.final_step_m <= 0.9375
+    assert convergence.result.tandem_combinations_exhaustive
 
 def test_continuous_search_generates_spanwise_udl_patterns() -> None:
     placements = generate_lm1_search_placements(

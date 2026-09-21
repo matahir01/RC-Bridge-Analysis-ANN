@@ -3,7 +3,7 @@ from rc_bridge.research.acceptance_matrix import (
     AcceptanceState,
     eurocode_simple_span_v1_acceptance_matrix,
 )
-from rc_bridge.research.verification import SolverProfile
+from rc_bridge.research.verification import SolverProfile, VerificationScope
 
 
 def test_v1_acceptance_matrix_separates_structural_analysis_from_design_code() -> None:
@@ -42,6 +42,8 @@ def test_v1_acceptance_matrix_separates_structural_analysis_from_design_code() -
         "ec2_concrete_fatigue_reference_case",
         "ec2_crack_width_reference_case",
         "ec2_deflection_reference_case",
+        "ec2_msc_layered_flexure_design",
+        "flm3_longitudinal_search_reference_case",
     ):
         assert matrix.item(key).state is AcceptanceState.EXTERNALLY_ACCEPTED
         assert key not in matrix.pending_v1_gate_keys
@@ -115,6 +117,40 @@ def test_staad_acceptance_does_not_unlock_unverified_design_milestones() -> None
     assert verification.torsion_required is True
     assert verification.torsion is False
     assert verification.ann_ready is False
+
+
+
+def test_msc_manifest_is_ready_only_for_explicit_four_target_scope() -> None:
+    matrix = eurocode_simple_span_v1_acceptance_matrix()
+    msc = matrix.msc_research_verification_manifest()
+
+    assert msc.solver_profile is SolverProfile.EUROCODE_1G
+    assert msc.traffic_loading is True
+    assert msc.load_combinations is True
+    assert msc.flexure is True
+    assert msc.shear is True
+    assert msc.cracking is True
+    assert msc.deflection is True
+    assert msc.transverse_distribution is True
+    assert msc.independent_benchmark is True
+
+    # These remain outside the current four ANN targets and do not become
+    # generally accepted just because the MSc profile is narrower.
+    assert msc.fatigue is False
+    assert msc.detailing is False
+    assert msc.torsion_required is False
+    assert msc.torsion is False
+    assert msc.ann_ready is False
+    assert msc.ready_for(VerificationScope.MSC_SIMPLE_SPAN_ANN) is True
+    assert msc.missing_requirements_for(VerificationScope.MSC_SIMPLE_SPAN_ANN) == ()
+
+    general = matrix.research_verification_manifest(torsion_required=True)
+    assert general.ann_ready is False
+    assert general.flexure is False
+    assert general.load_combinations is False
+    assert general.fatigue is False
+    assert general.detailing is False
+    assert general.torsion is False
 
 
 def test_v1_matrix_keeps_stage_specific_and_local_deck_checks_pending() -> None:

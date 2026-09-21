@@ -962,6 +962,179 @@ def run_project_native_lm1_grillage_search(
     )
 
 
+
+@dataclass(frozen=True)
+class LM1SearchConvergenceStep:
+    """One refinement comparison for the native LM1 governing envelopes."""
+
+    coarse_step_m: float
+    fine_step_m: float
+    maximum_relative_change: float
+    governing_quantity: str
+    girder_index: int
+    coarse_value: float
+    fine_value: float
+
+
+@dataclass(frozen=True)
+class LM1SearchConvergenceResult:
+    """Convergence evidence for repeated production LM1 searches."""
+
+    result: ProjectNativeLM1GrillageSearchResult
+    refinements: tuple[LM1SearchConvergenceStep, ...]
+    relative_tolerance: float
+    minimum_step_m: float
+
+    @property
+    def converged(self) -> bool:
+        return bool(self.refinements) and (
+            self.refinements[-1].maximum_relative_change
+            <= self.relative_tolerance + 1.0e-12
+        )
+
+    @property
+    def final_step_m(self) -> float:
+        return self.result.longitudinal_step_m
+
+
+def _lm1_search_refinement_step(
+    coarse: ProjectNativeLM1GrillageSearchResult,
+    fine: ProjectNativeLM1GrillageSearchResult,
+) -> LM1SearchConvergenceStep:
+    if len(coarse.girders) != len(fine.girders):
+        raise RuntimeError("LM1 convergence comparison requires identical girder counts.")
+
+    worst: tuple[float, str, int, float, float] | None = None
+    for coarse_girder, fine_girder in zip(coarse.girders, fine.girders, strict=True):
+        if coarse_girder.girder_index != fine_girder.girder_index:
+            raise RuntimeError("LM1 convergence comparison requires matching girder indices.")
+        pairs = (
+            ("moment", coarse_girder.moment_knm.value, fine_girder.moment_knm.value),
+            ("shear", coarse_girder.shear_kn.value, fine_girder.shear_kn.value),
+            ("torsion", coarse_girder.torsion_knm.value, fine_girder.torsion_knm.value),
+            (
+                "deflection",
+                coarse.deflection_for_girder(coarse_girder.girder_index).value_mm,
+                fine.deflection_for_girder(fine_girder.girder_index).value_mm,
+            ),
+        )
+        for quantity, coarse_value, fine_value in pairs:
+            scale = max(abs(fine_value), 1.0e-9)
+            relative = abs(fine_value - coarse_value) / scale
+            candidate = (
+                relative,
+                quantity,
+                coarse_girder.girder_index,
+                coarse_value,
+                fine_value,
+            )
+            if worst is None or candidate[0] > worst[0]:
+                worst = candidate
+
+    if worst is None:
+        raise RuntimeError("LM1 convergence comparison found no governing quantities.")
+
+    return LM1SearchConvergenceStep(
+        coarse_step_m=coarse.longitudinal_step_m,
+        fine_step_m=fine.longitudinal_step_m,
+        maximum_relative_change=worst[0],
+        governing_quantity=worst[1],
+        girder_index=worst[2],
+        coarse_value=worst[3],
+        fine_value=worst[4],
+    )
+
+
+def run_project_native_lm1_grillage_search_converged(
+    project: ProjectInput,
+    *,
+    transverse_stations_m: tuple[float, ...],
+    longitudinal_sections_by_span: tuple[GrillageSectionProperties, ...] | None = None,
+    transverse_section: GrillageSectionProperties | None = None,
+    factors: LM1AdjustmentFactors | None = None,
+    stiffness_modifiers: GrillageStiffnessModifiers | None = None,
+    initial_longitudinal_step_m: float = 2.0,
+    minimum_longitudinal_step_m: float = 0.25,
+    relative_tolerance: float = 0.05,
+    max_refinements: int = 4,
+    max_exhaustive_tandem_combinations: int = 5000,
+    include_spanwise_udl_patterns: bool = True,
+    progress_callback: Callable[[int, int], None] | None = None,
+    cancel_check: Callable[[], bool] | None = None,
+    name: str = "EN 1991-2 LM1 convergence-controlled native grillage search",
+) -> LM1SearchConvergenceResult:
+    """Refine the production LM1 search until M/V/T/deflection envelopes stabilize.
+
+    Each refinement halves the longitudinal movement step and reruns the same
+    native production search. This verification mode requires exhaustive
+    independent tandem combinations at every level; it will not certify a
+    reduced-search result as converged.
+    """
+
+    if initial_longitudinal_step_m <= 0.0:
+        raise ValueError("Initial LM1 convergence step must be positive.")
+    if minimum_longitudinal_step_m <= 0.0:
+        raise ValueError("Minimum LM1 convergence step must be positive.")
+    if minimum_longitudinal_step_m >= initial_longitudinal_step_m:
+        raise ValueError("Minimum LM1 convergence step must be below the initial step.")
+    if not 0.0 < relative_tolerance < 1.0:
+        raise ValueError("LM1 convergence relative_tolerance must lie in (0, 1).")
+    if max_refinements < 1:
+        raise ValueError("LM1 convergence requires at least one refinement.")
+
+    def solve(step_m: float) -> ProjectNativeLM1GrillageSearchResult:
+        result = run_project_native_lm1_grillage_search(
+            project,
+            transverse_stations_m=transverse_stations_m,
+            longitudinal_sections_by_span=longitudinal_sections_by_span,
+            transverse_section=transverse_section,
+            factors=factors,
+            stiffness_modifiers=stiffness_modifiers,
+            longitudinal_step_m=step_m,
+            max_exhaustive_tandem_combinations=max_exhaustive_tandem_combinations,
+            include_spanwise_udl_patterns=include_spanwise_udl_patterns,
+            progress_callback=progress_callback,
+            cancel_check=cancel_check,
+            retain_all_cases=False,
+            name=f"{name} step {step_m:.6g} m",
+        )
+        if not result.tandem_combinations_exhaustive:
+            raise RuntimeError(
+                "LM1 convergence verification requires exhaustive independent tandem "
+                f"combinations; step {step_m:.6g} m used a reduced search."
+            )
+        return result
+
+    current = solve(initial_longitudinal_step_m)
+    refinements: list[LM1SearchConvergenceStep] = []
+
+    for _ in range(max_refinements):
+        next_step = max(current.longitudinal_step_m / 2.0, minimum_longitudinal_step_m)
+        if next_step >= current.longitudinal_step_m - 1.0e-12:
+            break
+        fine = solve(next_step)
+        comparison = _lm1_search_refinement_step(current, fine)
+        refinements.append(comparison)
+        current = fine
+        if comparison.maximum_relative_change <= relative_tolerance + 1.0e-12:
+            return LM1SearchConvergenceResult(
+                result=current,
+                refinements=tuple(refinements),
+                relative_tolerance=relative_tolerance,
+                minimum_step_m=minimum_longitudinal_step_m,
+            )
+        if current.longitudinal_step_m <= minimum_longitudinal_step_m + 1.0e-12:
+            break
+
+    last_change = (
+        refinements[-1].maximum_relative_change if refinements else float("inf")
+    )
+    raise RuntimeError(
+        "Native LM1 search did not converge within the configured refinement bounds: "
+        f"last envelope change={last_change:.3%}, tolerance={relative_tolerance:.3%}, "
+        f"final step={current.longitudinal_step_m:.6g} m."
+    )
+
 def build_consolidated_governing_lm1_verification_model(
     project: ProjectInput,
     result: ProjectNativeLM1GrillageSearchResult,

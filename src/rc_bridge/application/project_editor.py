@@ -30,6 +30,7 @@ class ProjectBasicFields:
     section_type: SectionType
     fck_mpa: float
     fyk_mpa: float
+    precast_girder_length_m: float | None = None
     rectangular_width_m: float | None = None
     rectangular_depth_m: float | None = None
     t_flange_width_m: float | None = None
@@ -99,6 +100,11 @@ class ProjectBasicFields:
             section_type=geometry.section_type,
             fck_mpa=float(project.materials.fck_mpa),
             fyk_mpa=float(project.materials.fyk_mpa),
+            precast_girder_length_m=(
+                None
+                if geometry.precast_girder_length_m is None
+                else float(geometry.precast_girder_length_m)
+            ),
             precast_false_slab_depth_m=float(
                 construction.precast_false_slab_depth_m
             ),
@@ -185,6 +191,7 @@ class ProjectBasicFields:
                 "girder_count": self.girder_count,
                 "girder_spacing_m": self.girder_spacing_m,
                 "girder_depth_m": profile.total_depth_m,
+                "precast_girder_length_m": self.precast_girder_length_m,
                 "deck_structural_depth_m": deck_construction.physical_depth_m,
                 "deck_construction": deck_construction.model_dump(mode="python"),
                 "support_system": self.support_system,
@@ -215,7 +222,7 @@ class ProjectBasicFields:
 
 
 def application_default_project() -> ProjectInput:
-    """Return an analysable physical T-girder starting project for the desktop app."""
+    """Return the 15 m rectangular-precast/composite-T starting project."""
 
     fields = ProjectBasicFields(
         name="15 m RC Girder Project",
@@ -230,6 +237,7 @@ def application_default_project() -> ProjectInput:
         section_type=SectionType.RECTANGULAR,
         fck_mpa=35.0,
         fyk_mpa=500.0,
+        precast_girder_length_m=14.95,
         rectangular_width_m=0.40,
         rectangular_depth_m=0.95,
         precast_false_slab_depth_m=0.075,

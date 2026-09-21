@@ -225,6 +225,7 @@ class BridgeGeometry(BaseModel):
     girder_count: PositiveInt = 7
     girder_spacing_m: PositiveFloat = 1.70
     girder_depth_m: PositiveFloat = 0.95
+    precast_girder_length_m: PositiveFloat | None = None
     deck_structural_depth_m: PositiveFloat = 0.25
     deck_construction: DeckConstruction = Field(default_factory=DeckConstruction)
     support_system: SupportSystem = SupportSystem.SIMPLY_SUPPORTED

@@ -58,6 +58,7 @@ class LayeredGirderDesignInput:
     bar_spacing_mm: float
     cover_mm: float
     provided_shear_asw_per_s_mm2_per_m: float | None = None
+    maximum_design_lever_arm_ratio: float = 0.95
 
     def __post_init__(self) -> None:
         values = (
@@ -75,6 +76,8 @@ class LayeredGirderDesignInput:
             and self.provided_shear_asw_per_s_mm2_per_m < 0.0
         ):
             raise ValueError("Provided shear A_sw/s cannot be negative.")
+        if not 0.0 < self.maximum_design_lever_arm_ratio <= 1.0:
+            raise ValueError("maximum_design_lever_arm_ratio must lie in (0, 1].")
 
 
 @dataclass(frozen=True)
@@ -168,6 +171,7 @@ def run_eurocode_layered_girder_case(
         effective_depth_m=section.effective_depth_m,
         fck_mpa=materials.fck_mpa,
         fyk_mpa=materials.fyk_mpa,
+        maximum_design_lever_arm_ratio=section.maximum_design_lever_arm_ratio,
     )
     resistance = layered_singly_reinforced_resistance(
         layers=layers,

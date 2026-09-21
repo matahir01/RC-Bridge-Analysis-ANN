@@ -2,6 +2,7 @@ import pytest
 
 from rc_bridge.design.eurocode_fatigue import concrete_compression_fatigue_check
 from rc_bridge.research.code_reference_benchmarks import (
+    CONCRETE_CENTRE_L_BEAM_FLEXURE,
     CONCRETE_CENTRE_LINK_SHEAR,
     CONCRETE_CENTRE_VRDMAX,
     ECP_CRACK_WIDTH_EXAMPLE_7_3,
@@ -12,6 +13,7 @@ from rc_bridge.research.code_reference_benchmarks import (
     JRC_BEAM_LINK_SPACING,
     JRC_CONCRETE_FATIGUE,
     JRC_EC2_SLAB_SHEAR,
+    JRC_FLM3_LONGITUDINAL_SEARCH,
     JRC_LM1_CHARACTERISTIC_VALUES,
     JRC_LM1_LANE_SUBDIVISION,
     JRC_LM1_RESEARCH_COMBINATION_CORE,
@@ -20,6 +22,7 @@ from rc_bridge.research.code_reference_benchmarks import (
     JRC_REINFORCEMENT_FATIGUE,
     JRC_ROAD_BRIDGE_COMBINATION_FACTORS,
     LM1_SIMPLE_SPAN_LONGITUDINAL_SEARCH,
+    concrete_centre_l_beam_flexure_benchmark,
     concrete_centre_link_shear_benchmark,
     concrete_centre_vrdmax_benchmark,
     ecp_crack_width_example_7_3_benchmark,
@@ -31,6 +34,7 @@ from rc_bridge.research.code_reference_benchmarks import (
     jrc_beam_link_spacing_benchmark,
     jrc_concrete_fatigue_benchmark,
     jrc_ec2_slab_shear_benchmark,
+    jrc_flm3_longitudinal_search_benchmark,
     jrc_lm1_characteristic_values_benchmark,
     jrc_lm1_lane_subdivision_benchmark,
     jrc_lm1_research_combination_core_benchmark,
@@ -293,6 +297,36 @@ def test_ecp_deflection_example_7_6_reference_case_passes() -> None:
     )
 
 
+
+def test_concrete_centre_l_beam_flexure_reference_case_passes() -> None:
+    report = concrete_centre_l_beam_flexure_benchmark()
+
+    assert report.source_name == CONCRETE_CENTRE_L_BEAM_FLEXURE.source_name
+    assert report.passes is True
+    assert report.failed_target_names == ()
+    values = {item.target.name: item.calculated_value for item in report.comparisons}
+    assert values["required flanged tension steel with z<=0.95d"] == pytest.approx(
+        4160.73,
+        abs=0.10,
+    )
+    assert values["provided six H32 reinforcement area"] == pytest.approx(
+        4825.486,
+        abs=0.01,
+    )
+    assert values["provided reinforcement flexural reserve"] == pytest.approx(1.0)
+
+
+def test_jrc_flm3_longitudinal_search_reference_case_passes() -> None:
+    report = jrc_flm3_longitudinal_search_benchmark()
+
+    assert report.source_name == JRC_FLM3_LONGITUDINAL_SEARCH.source_name
+    assert report.passes is True
+    assert report.failed_target_names == ()
+    values = {item.target.name: item.calculated_value for item in report.comparisons}
+    assert values["FLM3 15 m midspan maximum moment"] == pytest.approx(936.0, abs=0.10)
+    assert values["FLM3 15 m midspan moment range"] == pytest.approx(936.0, abs=0.10)
+
+
 def test_jrc_rectangular_flexure_reference_case_passes() -> None:
     report = jrc_rectangular_flexure_benchmark()
 
@@ -363,7 +397,7 @@ def test_published_reference_metadata_is_traceable_and_scope_limited() -> None:
 def test_published_reference_suite_contains_all_independent_reports() -> None:
     reports = eurocode_v1_published_reference_benchmarks()
 
-    assert len(reports) == 18
+    assert len(reports) == 20
     assert all(report.passes for report in reports)
     assert {report.source_name for report in reports} == {
         JRC_LM1_CHARACTERISTIC_VALUES.source_name,
@@ -382,6 +416,8 @@ def test_published_reference_suite_contains_all_independent_reports() -> None:
         ECP_TORSION_RESISTANCE_INTERACTION.source_name,
         ECP_CRACK_WIDTH_EXAMPLE_7_3.source_name,
         ECP_DEFLECTION_EXAMPLE_7_6.source_name,
+        CONCRETE_CENTRE_L_BEAM_FLEXURE.source_name,
+        JRC_FLM3_LONGITUDINAL_SEARCH.source_name,
         JRC_RECTANGULAR_FLEXURE.source_name,
         JRC_BEAM_LINK_SPACING.source_name,
     }

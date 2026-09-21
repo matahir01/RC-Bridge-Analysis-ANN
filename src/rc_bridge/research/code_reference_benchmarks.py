@@ -19,6 +19,9 @@ from rc_bridge.codes.eurocode.en1991_2 import (
     lm1_tandem_axle_spacing_m,
     notional_lane_layout,
 )
+from rc_bridge.codes.eurocode.fatigue_traffic import (
+    flm3_simple_span_section_moment_range,
+)
 from rc_bridge.codes.eurocode.lm1_effects import lm1_lane_simple_span_envelope
 from rc_bridge.design.eurocode_deflection import (
     SimpleSpanMomentDiagram,
@@ -38,6 +41,8 @@ from rc_bridge.design.eurocode_flexure import rectangular_singly_reinforced_resi
 from rc_bridge.design.eurocode_layered_section import (
     crack_width_layered_section,
     cracked_layered_section_sls,
+    layered_singly_reinforced_resistance,
+    required_tension_steel_layered,
     uncracked_layered_section_sls,
 )
 from rc_bridge.design.eurocode_shear import (
@@ -397,6 +402,46 @@ ECP_DEFLECTION_EXAMPLE_7_6 = ReferenceBenchmarkEvidence(
     scope=(
         "Independent verification of spatially varying EC2 state-I/state-II "
         "curvature interpolation for a simply supported distributed-load case."
+    ),
+)
+
+
+CONCRETE_CENTRE_L_BEAM_FLEXURE = ReferenceBenchmarkEvidence(
+    key="concrete_centre_heavy_l_beam_flexure",
+    source_name="The Concrete Centre - Worked Examples to Eurocode 2",
+    source_reference=(
+        "Section 4.2, heavily loaded L-beam, span AB: MEd=1148 kNm, "
+        "beff=1780 mm, bw=350 mm, h=750 mm, hf=300 mm, d=668 mm, "
+        "fck=30 MPa, fyk=500 MPa. The worked design limits z to 0.95d, "
+        "reports As,req=4158 mm2 and provides 4H32+2H32=4824 mm2."
+    ),
+    source_url=(
+        "https://www.concretecentre.com/TCC/media/TCCMediaLibrary/Events/"
+        "Online%20course/CCIP_Worked_Examples_EC2.pdf"
+    ),
+    scope=(
+        "Independent positive-bending flanged-section design reference only. "
+        "The published neutral axis is within the flange; it does not certify "
+        "negative bending, doubly reinforced sections or every web-compression case."
+    ),
+)
+
+JRC_FLM3_LONGITUDINAL_SEARCH = ReferenceBenchmarkEvidence(
+    key="jrc_flm3_simple_span_longitudinal_search",
+    source_name="JRC Bridge Design to Eurocodes - FLM3 vehicle plus independent influence-line check",
+    source_reference=(
+        "EN 1991-2 FLM3 four 120 kN axle lines at offsets 0, 1.2, 7.2 and 8.4 m. "
+        "For a 15 m simply supported beam at midspan, direct influence-line statics "
+        "give a maximum positive moment/range of 936 kNm when the vehicle straddles "
+        "midspan; no transverse distribution factor is applied in this longitudinal check."
+    ),
+    source_url=(
+        "https://eurocodes.jrc.ec.europa.eu/sites/default/files/2022-06/"
+        "Bridge_Design-Eurocodes-Worked_examples.pdf"
+    ),
+    scope=(
+        "Independent longitudinal FLM3 moving-vehicle search reference only. "
+        "It does not certify fatigue-specific transverse distribution or girder stress recovery."
     ),
 )
 
@@ -1467,6 +1512,112 @@ def ecp_deflection_example_7_6_benchmark() -> IndependentBenchmarkReport:
     )
 
 
+def concrete_centre_l_beam_flexure_benchmark() -> IndependentBenchmarkReport:
+    """Reproduce the Concrete Centre span-AB flanged flexure design."""
+
+    layers = (
+        ConcreteSectionLayer(1.780, 0.0, 0.300, "effective flange"),
+        ConcreteSectionLayer(0.350, 0.300, 0.750, "web"),
+    )
+    required = required_tension_steel_layered(
+        med_knm=1148.0,
+        layers=layers,
+        effective_depth_m=0.668,
+        fck_mpa=30.0,
+        fyk_mpa=500.0,
+        maximum_design_lever_arm_ratio=0.95,
+    )
+    provided_area = 6.0 * bar_area_mm2(32.0)
+    provided = layered_singly_reinforced_resistance(
+        layers=layers,
+        effective_depth_m=0.668,
+        steel_area_mm2=provided_area,
+        fck_mpa=30.0,
+        fyk_mpa=500.0,
+    )
+
+    return build_independent_benchmark_report(
+        solver_profile=SolverProfile.EUROCODE_1G,
+        source_name=CONCRETE_CENTRE_L_BEAM_FLEXURE.source_name,
+        source_reference=CONCRETE_CENTRE_L_BEAM_FLEXURE.source_reference,
+        observations=(
+            (
+                BenchmarkTarget(
+                    name="required flanged tension steel with z<=0.95d",
+                    reference_value=4158.0,
+                    unit="mm2",
+                    absolute_tolerance=5.0,
+                ),
+                required,
+            ),
+            (
+                BenchmarkTarget(
+                    name="provided six H32 reinforcement area",
+                    reference_value=4824.0,
+                    unit="mm2",
+                    absolute_tolerance=2.0,
+                ),
+                provided_area,
+            ),
+            (
+                BenchmarkTarget(
+                    name="provided reinforcement flexural reserve",
+                    reference_value=1.0,
+                    unit="pass=1",
+                    absolute_tolerance=0.0,
+                ),
+                1.0 if provided.resistance_knm >= 1148.0 else 0.0,
+            ),
+        ),
+        notes=(
+            "The source rounds z=0.95d=634.6 mm to 635 mm and fyd to 434.8 MPa; "
+            "the native required-steel solver retains unrounded values. The supplied "
+            "4824 mm2 source area is represented by exact circular H32 bar areas."
+        ),
+    )
+
+
+def jrc_flm3_longitudinal_search_benchmark() -> IndependentBenchmarkReport:
+    """Check the production FLM3 mover against independent simple-span statics."""
+
+    result = flm3_simple_span_section_moment_range(
+        span_m=15.0,
+        section_position_m=7.5,
+        longitudinal_distribution_factor=1.0,
+        movement_steps=1201,
+    )
+    return build_independent_benchmark_report(
+        solver_profile=SolverProfile.EUROCODE_1G,
+        source_name=JRC_FLM3_LONGITUDINAL_SEARCH.source_name,
+        source_reference=JRC_FLM3_LONGITUDINAL_SEARCH.source_reference,
+        observations=(
+            (
+                BenchmarkTarget(
+                    name="FLM3 15 m midspan maximum moment",
+                    reference_value=936.0,
+                    unit="kNm",
+                    absolute_tolerance=0.10,
+                ),
+                result.maximum_moment_knm,
+            ),
+            (
+                BenchmarkTarget(
+                    name="FLM3 15 m midspan moment range",
+                    reference_value=936.0,
+                    unit="kNm",
+                    absolute_tolerance=0.10,
+                ),
+                result.moment_range_knm,
+            ),
+        ),
+        notes=(
+            "The independent reference is obtained by summing the simply-supported "
+            "midspan influence ordinates for the four 120 kN axle lines. The load train "
+            "has a zero lower bound on this positive-bending simple-span section."
+        ),
+    )
+
+
 def jrc_rectangular_flexure_benchmark() -> IndependentBenchmarkReport:
     """Compare the rectangular flexure kernel with the JRC Annex-B worked example."""
 
@@ -1586,6 +1737,8 @@ def eurocode_v1_published_reference_benchmarks() -> tuple[IndependentBenchmarkRe
         ecp_torsion_resistance_interaction_benchmark(),
         ecp_crack_width_example_7_3_benchmark(),
         ecp_deflection_example_7_6_benchmark(),
+        concrete_centre_l_beam_flexure_benchmark(),
+        jrc_flm3_longitudinal_search_benchmark(),
         jrc_rectangular_flexure_benchmark(),
         jrc_beam_link_spacing_benchmark(),
         jrc_reinforcement_fatigue_benchmark(),
