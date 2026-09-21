@@ -690,12 +690,18 @@ def main() -> int:
     )
     add_entry(layout_frame, row=7, label="Girder count", key="girder_count")
     add_entry(layout_frame, row=8, label="Girder spacing", key="girder_spacing")
+    add_entry(
+        layout_frame,
+        row=9,
+        label="Precast girder physical length (optional)",
+        key="precast_girder_length",
+    )
 
     ttk.Label(layout_frame, text="Current length input unit").grid(
-        row=9, column=0, sticky="w", padx=(0, 8), pady=(8, 3)
+        row=10, column=0, sticky="w", padx=(0, 8), pady=(8, 3)
     )
     ttk.Label(layout_frame, textvariable=length_unit_var).grid(
-        row=9, column=1, sticky="w", pady=(8, 3)
+        row=10, column=1, sticky="w", pady=(8, 3)
     )
 
     add_entry(material_frame, row=0, label="Concrete fck (MPa)", key="fck")
@@ -2591,6 +2597,7 @@ def main() -> int:
             section_type=SectionType(string_vars["section_type"].get()),
             fck_mpa=float(string_vars["fck"].get()),
             fyk_mpa=float(string_vars["fyk"].get()),
+            precast_girder_length_m=optional_length_m("precast_girder_length"),
             rectangular_width_m=optional_length_m("rect_width"),
             rectangular_depth_m=optional_length_m("rect_depth"),
             t_flange_width_m=optional_length_m("t_flange_width"),
@@ -3144,6 +3151,10 @@ def main() -> int:
         string_vars["girder_count"].set(str(fields.girder_count))
         string_vars["girder_spacing"].set(
             f"{displayed_unit.from_metres(fields.girder_spacing_m):g}"
+        )
+        set_optional_length(
+            "precast_girder_length",
+            fields.precast_girder_length_m,
         )
         string_vars["section_type"].set(fields.section_type.value)
         string_vars["fck"].set(f"{fields.fck_mpa:g}")
@@ -4936,6 +4947,10 @@ def main() -> int:
                         RibbonField("carriageway_offset", "Carriageway offset"),
                         RibbonField("girder_count", "Girder count"),
                         RibbonField("girder_spacing", "Girder spacing"),
+                        RibbonField(
+                            "precast_girder_length",
+                            "Precast girder physical length",
+                        ),
                     ),
                 ),
             ),
