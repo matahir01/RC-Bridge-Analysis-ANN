@@ -342,11 +342,7 @@ def application_html_report(
             f"<td>{_number(row.design.shear_utilization)}</td>"
             f"<td>{_number(row.design.crack.crack_width_mm)}</td>"
             f"<td>{_number(row.design.deflection.interpolated_deflection_mm)}</td>"
-            f"<td>{
-                'REVIEW'
-                if row.design.deflection.passes is None
-                else ('PASS' if row.passes_current_checks else 'CHECK')
-            }</td>"
+            f"<td>{'REVIEW' if row.design.deflection.passes is None else ('PASS' if row.passes_current_checks else 'CHECK')}</td>"
             "</tr>"
             for row in design_interpretation.girders
         )
@@ -410,6 +406,11 @@ def application_html_report(
     project_name = escape(project.name)
     ec = prefs.eurocode
     analysis = prefs.analysis
+    deflection_criterion_text = (
+        "project/client limit not specified"
+        if ec.deflection_limit_span_ratio is None
+        else "L/" + _number(ec.deflection_limit_span_ratio, 0)
+    )
     composite_html = ""
     if composite is not None:
         false_slab_text = (
@@ -619,11 +620,7 @@ math.engineering-math[display="block"] {{ display: block; text-align: left; }}
 <div>Thermal &psi;0 ULS / SLS</div><div>{_number(ec.psi0_thermal_uls, 3)} / {_number(ec.psi0_thermal_sls, 3)}</div>
 <div>Thermal &psi;1 / &psi;2</div><div>{_number(ec.psi1_thermal, 3)} / {_number(ec.psi2_thermal, 3)}</div>
 <div>Crack-width criterion (mm)</div><div>{_number(ec.crack_limit_mm, 3)}</div>
-<div>Deflection criterion</div><div>{
-    "project/client limit not specified"
-    if ec.deflection_limit_span_ratio is None
-    else "L/" + _number(ec.deflection_limit_span_ratio, 0)
-}</div>
+<div>Deflection criterion</div><div>{escape(deflection_criterion_text)}</div>
 <div>Native grid spacing (m)</div><div>{_number(analysis.grid_spacing_m)}</div>
 <div>Traffic search step (m)</div><div>{_number(analysis.traffic_step_m)}</div>
 </div>
