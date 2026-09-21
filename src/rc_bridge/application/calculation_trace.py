@@ -729,8 +729,11 @@ def build_application_calculation_trace(
                 else 0.0
             )
             span_m = float(project.geometry.span_lengths_m[0])
+            deflection_ratio = preferences.eurocode.deflection_limit_span_ratio
             deflection_limit_mm = (
-                span_m * 1000.0 / preferences.eurocode.deflection_limit_span_ratio
+                None
+                if deflection_ratio is None
+                else span_m * 1000.0 / deflection_ratio
             )
             blocks.append(
                 CalculationBlock(
@@ -1201,29 +1204,70 @@ def build_application_calculation_trace(
                                 ),
                             ),
                         ),
-                        CalculationStep(
-                            label="Deflection check",
-                            expression="delta <= L / limit ratio",
-                            substitution=(
-                                f"{_f(row.design.deflection.interpolated_deflection_mm)} <= "
-                                f"{_f(deflection_limit_mm)} mm"
-                            ),
-                            result=f"{_f(row.design.deflection.utilization)} utilization",
-                            reference="Project serviceability deflection criterion",
-                            status="PASS" if row.design.deflection.utilization <= 1.0 + 1e-9 else "CHECK",
-                            equation=math_row(
-                                identifier("δ"),
-                                operator("≤"),
-                                fraction(identifier("L"), identifier("n")),
-                            ),
-                            substitution_equation=math_row(
-                                _num(row.design.deflection.interpolated_deflection_mm),
-                                operator("≤"),
-                                fraction(
-                                    _num(span_m * 1000.0, 0),
-                                    _num(preferences.eurocode.deflection_limit_span_ratio, 0),
+                        (
+                            CalculationStep(
+                                label="Deflection check",
+                                expression="delta <= L / project limit ratio",
+                                substitution=(
+                                    f"{_f(row.design.deflection.interpolated_deflection_mm)} <= "
+                                    f"{_f(deflection_limit_mm)} mm"
                                 ),
-                            ),
+                                result=(
+                                    f"{_f(row.design.deflection.utilization)} utilization"
+                                ),
+                                reference=(
+                                    "Project/client road-bridge deflection criterion; "
+                                    "frequent SLS combination used by default"
+                                ),
+                                status=(
+                                    "PASS"
+                                    if row.design.deflection.passes
+                                    else "CHECK"
+                                ),
+                                equation=math_row(
+                                    identifier("δ"),
+                                    operator("≤"),
+                                    fraction(identifier("L"), identifier("n")),
+                                ),
+                                substitution_equation=math_row(
+                                    _num(
+                                        row.design.deflection.interpolated_deflection_mm
+                                    ),
+                                    operator("≤"),
+                                    fraction(
+                                        _num(span_m * 1000.0, 0),
+                                        _num(deflection_ratio, 0),
+                                    ),
+                                ),
+                            )
+                            if deflection_limit_mm is not None
+                            else CalculationStep(
+                                label="Deflection acceptance criterion",
+                                expression=(
+                                    "delta calculated; project/client limit required "
+                                    "for acceptance"
+                                ),
+                                substitution=(
+                                    f"delta = "
+                                    f"{_f(row.design.deflection.interpolated_deflection_mm)} "
+                                    "mm under the selected frequent SLS path"
+                                ),
+                                result="NOT ASSESSED - project deflection limit not specified",
+                                reference=(
+                                    "EN 1990 Annex A2 road-bridge serviceability basis: "
+                                    "no universal span/deflection ratio is imposed; "
+                                    "frequent combination recommended where deformation "
+                                    "is assessed"
+                                ),
+                                status="REVIEW",
+                                equation=_eq(
+                                    identifier("δ"),
+                                    _num(
+                                        row.design.deflection.interpolated_deflection_mm
+                                    ),
+                                ),
+                                substitution_equation=None,
+                            )
                         ),
                     ),
                 )
