@@ -1,5 +1,5 @@
 {
-  "schema_version": 3,
+  "schema_version": 4,
   "evidence_type": "genuine_staad_stage5_external_benchmark",
   "source_file_name": "application_verification_final_service.ANL",
   "source_sha256": "e78193f7a51a5e725601d9857da8d014bfa32729c5ba97698eba1962baca30ca",
@@ -51,7 +51,8 @@
     "The uploaded STD was reviewed against the ANL input echo. It is a STAAD-resaved normalized copy rather than a byte-identical pre-analysis export; geometry, member connectivity, supports, load/combinations and result-output scope are equivalent, with only negligible save-rounding in some numerical fields.",
     "The ANL input echo is treated as the authoritative record of the higher-precision model actually analysed.",
     "The raw ANL and STD are not committed because of size/external-program provenance; their SHA-256 hashes identify the reviewed files.",
-    "The original import used the earlier provisional 2%/0.1-unit policy. Batch 6 finalizes a tighter v1 acceptance policy of 0.1% plus one STAAD print increment (0.01 kN, 0.01 kNm, 0.001 mm); the entire accepted benchmark remains within that tighter policy."
+    "The original import used the earlier provisional 2%/0.1-unit policy. Batch 6 finalizes a tighter v1 acceptance policy of 0.1% plus one STAAD print increment (0.01 kN, 0.01 kNm, 0.001 mm); the entire accepted benchmark remains within that tighter policy.",
+    "Batch 6I identified that this accepted STAAD run used gamma_Q,traffic=1.50 in its ULS traffic combinations. The v1 new-project default is corrected to the JRC road-bridge reference gamma_Q=1.35. Primary-case/model-response validation is unchanged; direct combination-result evidence remains scoped to the recorded 1.50 factor set rather than being presented as code-factor validation."
   ],
   "std_source_review": {
     "uploaded_file_name": "application_verification_final_service.std",
@@ -123,5 +124,11 @@
     "maximum_displacement_difference_mm": 0.0005015936165430473,
     "numerical_result_sets_passed": 204,
     "numerical_failed_rows": 0
+  },
+  "recorded_combination_basis": {
+    "gamma_g_unfavourable": 1.35,
+    "gamma_q_traffic": 1.5,
+    "provenance": "Reviewed uploaded STAAD STD: e.g. ULS_GR1A_01 = load 1 x 1.35 + LM1 load 2 x 1.50.",
+    "current_v1_default_note": "Batch 6I changes the new-project road-traffic default to gamma_Q=1.35 based on the JRC road-bridge reference. The genuine STAAD primary-case/model-response evidence remains valid; the 141 direct combination-result comparisons specifically document the historical 1.50 factor set used in this run."
   }
 }
