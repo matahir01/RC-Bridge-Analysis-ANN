@@ -73,8 +73,10 @@ from rc_bridge.application.verification_import import (
 )
 from rc_bridge.core.models import ProjectInput
 from rc_bridge.workflow.lm1_grillage_search import (
+    LM1SearchConvergenceResult,
     ProjectNativeLM1GrillageSearchResult,
     run_project_native_lm1_grillage_search,
+    run_project_native_lm1_grillage_search_converged,
 )
 
 
@@ -109,6 +111,7 @@ class BridgeApplicationSession:
     project_path: Path | None = None
     preferences: ApplicationPreferences = field(default_factory=ApplicationPreferences)
     last_lm1_search: ProjectNativeLM1GrillageSearchResult | None = None
+    last_lm1_convergence: LM1SearchConvergenceResult | None = None
     last_design_interpretation: ApplicationDesignInterpretationSuite | None = None
     last_extended_actions: ExtendedActionSuite | None = None
     last_action_combinations: IntegratedActionCombinationSuite | None = None
@@ -131,7 +134,7 @@ class BridgeApplicationSession:
         init=False,
         repr=False,
     )
-    _last_lm1_run_key: tuple[float, float, int] | None = field(
+    _last_lm1_run_key: tuple[float, float, int, float | None, float, int] | None = field(
         default=None,
         init=False,
         repr=False,
@@ -176,6 +179,7 @@ class BridgeApplicationSession:
     def replace_project(self, project: ProjectInput) -> None:
         self.project = project
         self.last_lm1_search = None
+        self.last_lm1_convergence = None
         self.last_design_interpretation = None
         self.last_extended_actions = None
         self.last_action_combinations = None
@@ -189,6 +193,7 @@ class BridgeApplicationSession:
     def set_preferences(self, preferences: ApplicationPreferences) -> None:
         if preferences.analysis != self.preferences.analysis:
             self.last_lm1_search = None
+            self.last_lm1_convergence = None
             self._last_lm1_run_key = None
             self.last_extended_actions = None
             self.last_local_deck_design = None
@@ -439,6 +444,9 @@ class BridgeApplicationSession:
         grid_spacing_m: float | None = None,
         longitudinal_step_m: float | None = None,
         max_exhaustive_tandem_combinations: int | None = None,
+        convergence_tolerance: float | None = None,
+        minimum_longitudinal_step_m: float = 0.25,
+        max_convergence_refinements: int = 4,
         progress_callback: Callable[[int, int], None] | None = None,
         cancel_check: Callable[[], bool] | None = None,
     ) -> ProjectNativeLM1GrillageSearchResult:
@@ -463,7 +471,21 @@ class BridgeApplicationSession:
         if max_tandem <= 0:
             raise ValueError("max_exhaustive_tandem_combinations must be positive.")
 
-        run_key = (float(grid_spacing), float(traffic_step), int(max_tandem))
+        if convergence_tolerance is not None and not 0.0 < convergence_tolerance < 1.0:
+            raise ValueError("convergence_tolerance must lie in (0, 1).")
+        if minimum_longitudinal_step_m <= 0.0:
+            raise ValueError("minimum_longitudinal_step_m must be positive.")
+        if max_convergence_refinements < 1:
+            raise ValueError("max_convergence_refinements must be at least one.")
+
+        run_key = (
+            float(grid_spacing),
+            float(traffic_step),
+            int(max_tandem),
+            None if convergence_tolerance is None else float(convergence_tolerance),
+            float(minimum_longitudinal_step_m),
+            int(max_convergence_refinements),
+        )
         if self.last_lm1_search is not None and self._last_lm1_run_key == run_key:
             self._record_performance(
                 cache_hit_record("native_lm1", detail="unchanged project/settings")
@@ -474,22 +496,43 @@ class BridgeApplicationSession:
             self.project,
             maximum_spacing_m=grid_spacing,
         )
-        result, record = timed_call(
-            "native_lm1",
-            lambda: run_project_native_lm1_grillage_search(
-                self.project,
-                transverse_stations_m=stations,
-                longitudinal_step_m=traffic_step,
-                max_exhaustive_tandem_combinations=max_tandem,
-                include_spanwise_udl_patterns=True,
-                progress_callback=progress_callback,
-                cancel_check=cancel_check,
-                retain_all_cases=False,
-                name=f"{self.project.name} - application native LM1",
-            ),
-        )
+        if convergence_tolerance is None:
+            result, record = timed_call(
+                "native_lm1",
+                lambda: run_project_native_lm1_grillage_search(
+                    self.project,
+                    transverse_stations_m=stations,
+                    longitudinal_step_m=traffic_step,
+                    max_exhaustive_tandem_combinations=max_tandem,
+                    include_spanwise_udl_patterns=True,
+                    progress_callback=progress_callback,
+                    cancel_check=cancel_check,
+                    retain_all_cases=False,
+                    name=f"{self.project.name} - application native LM1",
+                ),
+            )
+            convergence = None
+        else:
+            convergence, record = timed_call(
+                "native_lm1_converged",
+                lambda: run_project_native_lm1_grillage_search_converged(
+                    self.project,
+                    transverse_stations_m=stations,
+                    initial_longitudinal_step_m=traffic_step,
+                    minimum_longitudinal_step_m=minimum_longitudinal_step_m,
+                    relative_tolerance=convergence_tolerance,
+                    max_refinements=max_convergence_refinements,
+                    max_exhaustive_tandem_combinations=max_tandem,
+                    include_spanwise_udl_patterns=True,
+                    progress_callback=progress_callback,
+                    cancel_check=cancel_check,
+                    name=f"{self.project.name} - application native LM1",
+                ),
+            )
+            result = convergence.result
         self._record_performance(record)
         self.last_lm1_search = result
+        self.last_lm1_convergence = convergence
         self._last_lm1_run_key = run_key
         self.last_local_deck_design = None
         self.last_action_combinations = None
