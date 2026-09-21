@@ -1,0 +1,29 @@
+name: 20m I-girder design report
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - 'examples/bridge_20m_i_girder_design.py'
+      - '.github/workflows/bridge-20m-i-girder.yml'
+
+jobs:
+  design:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install deterministic engine
+        run: pip install -e .
+      - name: Run 20 m bridge analysis and design
+        run: python examples/bridge_20m_i_girder_design.py | tee artifacts/bridge_20m_i_girder/run_summary.txt
+      - name: Upload calculation report
+        uses: actions/upload-artifact@v4
+        with:
+          name: bridge-20m-i-girder-design-report
+          path: artifacts/bridge_20m_i_girder/
+          if-no-files-found: error
