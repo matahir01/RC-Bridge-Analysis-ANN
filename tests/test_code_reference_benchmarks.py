@@ -1,5 +1,6 @@
 import pytest
 
+from rc_bridge.design.eurocode_fatigue import concrete_compression_fatigue_check
 from rc_bridge.research.code_reference_benchmarks import (
     JRC_BEAM_LINK_SPACING,
     JRC_CONCRETE_FATIGUE,
@@ -19,7 +20,6 @@ from rc_bridge.research.code_reference_benchmarks import (
     jrc_reinforcement_fatigue_benchmark,
     jrc_road_bridge_combination_factors_benchmark,
 )
-from rc_bridge.design.eurocode_fatigue import concrete_compression_fatigue_check
 from rc_bridge.research.verification import SolverProfile
 
 
