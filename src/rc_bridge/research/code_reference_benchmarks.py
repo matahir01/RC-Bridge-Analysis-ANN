@@ -80,8 +80,8 @@ JRC_ROAD_BRIDGE_COMBINATION_FACTORS = ReferenceBenchmarkEvidence(
     ),
     scope=(
         "Independent published reference for the road-traffic ULS partial factor "
-        "and the split LM1 frequent TS/UDL factors. It does not by itself certify "
-        "the complete EN 1990 bridge group/leading/accompanying-action matrix."
+        "and the split LM1 frequent TS/UDL factors only. It does not by itself "
+        "certify the complete EN 1990 bridge group/leading/accompanying-action matrix."
     ),
 )
 
