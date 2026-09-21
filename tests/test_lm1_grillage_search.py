@@ -181,7 +181,7 @@ def test_native_lm1_search_refinement_is_monotonic_and_materially_converged() ->
         longitudinal_sections_by_span=(_longitudinal(),),
         transverse_section=_transverse(),
         transverse_stations_m=(7.5,),
-        longitudinal_step_m=7.5,
+        longitudinal_step_m=3.75,
         retain_all_cases=False,
     )
     fine = run_project_native_lm1_grillage_search(
@@ -189,7 +189,7 @@ def test_native_lm1_search_refinement_is_monotonic_and_materially_converged() ->
         longitudinal_sections_by_span=(_longitudinal(),),
         transverse_section=_transverse(),
         transverse_stations_m=(7.5,),
-        longitudinal_step_m=3.75,
+        longitudinal_step_m=1.875,
         retain_all_cases=False,
     )
 
