@@ -103,13 +103,16 @@ def test_step_by_step_trace_and_html_report_share_calculation_records(tmp_path) 
     assert "<msqrt>" in text
     assert "<msub>" in text
     assert "NUMERICAL SUBSTITUTION" not in text
+    assert "@page" in text
+    assert "size: A4 landscape" in text
+    assert "display: table-header-group" in text
+    assert "break-inside: avoid" in text
     assert "Summary tables later in the report do not replace these calculations" in text
 
     pdf = session.write_last_lm1_pdf_report(tmp_path / "worked_report.pdf")
     pdf_bytes = pdf.read_bytes()
     assert pdf_bytes.startswith(b"%PDF")
     assert len(pdf_bytes) > 10_000
-
     cached_trace = session.calculation_trace()
     assert cached_trace is trace
     assert session.last_performance_record is not None

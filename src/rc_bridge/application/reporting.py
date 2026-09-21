@@ -538,17 +538,47 @@ math.engineering-math {{
   margin: 2px 0;
 }}
 math.engineering-math[display="block"] {{ display: block; text-align: left; }}
+@page {{
+  size: A4 landscape;
+  margin: 12mm 10mm 14mm;
+}}
 @media print {{
   body {{
     max-width: none;
     margin: 0;
-    padding: 10mm;
+    padding: 0;
     box-shadow: none;
   }}
-  h2 {{ break-after: avoid; }}
-  h3 {{ break-after: avoid; }}
+  h1, h2, h3 {{
+    break-after: avoid-page;
+    page-break-after: avoid;
+  }}
+  thead {{
+    display: table-header-group;
+  }}
+  tfoot {{
+    display: table-footer-group;
+  }}
+  table {{
+    break-inside: auto;
+    page-break-inside: auto;
+  }}
+  tr {{
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }}
+  .calculation-sheet {{
+    break-inside: auto;
+    page-break-inside: auto;
+  }}
+  .calculation-sheet tr {{
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }}
+  .formula, .substitution {{
+    overflow: visible;
+  }}
   .screen-only {{ display: none; }}
-  .calculation-sheet tr {{ break-inside: avoid; }}
 }}
 </style>
 </head>
@@ -697,6 +727,8 @@ def write_native_lm1_pdf_report(
         from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
         from reportlab.lib.units import mm
         from reportlab.platypus import (
+            CondPageBreak,
+            LongTable,
             PageBreak,
             Paragraph,
             SimpleDocTemplate,
@@ -777,6 +809,7 @@ def write_native_lm1_pdf_report(
         leftIndent=0,
         spaceBefore=8,
         spaceAfter=6,
+        keepWithNext=True,
     )
     heading3 = ParagraphStyle(
         "EngineeringHeading3",
@@ -787,6 +820,7 @@ def write_native_lm1_pdf_report(
         textColor=navy_2,
         spaceBefore=7,
         spaceAfter=3,
+        keepWithNext=True,
     )
     small = ParagraphStyle(
         "Small",
@@ -794,6 +828,12 @@ def write_native_lm1_pdf_report(
         fontSize=7.5,
         leading=9,
         alignment=TA_LEFT,
+    )
+    calculation_scope_style = ParagraphStyle(
+        "CalculationScope",
+        parent=small,
+        textColor=colors.HexColor("#52606d"),
+        spaceAfter=3,
     )
     body = styles["BodyText"]
     body.fontSize = 9
@@ -921,8 +961,13 @@ def write_native_lm1_pdf_report(
             ]
         )
         for block in calculation_trace.blocks:
+            # Reserve enough space for the block heading, scope, repeated table
+            # header and at least the beginning of one worked-calculation row.
+            # This avoids orphaned headings without forcing an entire LongTable
+            # to the following page.
+            story.append(CondPageBreak(42 * mm))
             story.append(Paragraph(escape(block.title), heading3))
-            story.append(Paragraph(escape(block.scope), small))
+            story.append(Paragraph(escape(block.scope), calculation_scope_style))
             trace_rows = [["Reference", "Worked calculation", "Result / check"]]
             for step in block.steps:
                 calculation_cell: list = [
@@ -972,11 +1017,13 @@ def write_native_lm1_pdf_report(
                         result_cell,
                     ]
                 )
-            trace_table = Table(
+            trace_table = LongTable(
                 trace_rows,
                 colWidths=[35 * mm, 110 * mm, 35 * mm],
                 repeatRows=1,
                 hAlign="LEFT",
+                splitByRow=1,
+                splitInRow=1,
             )
             trace_table.setStyle(
                 TableStyle(
@@ -1028,7 +1075,7 @@ def write_native_lm1_pdf_report(
         ]
         for row in permanent_load_audit(project)
     )
-    permanent_table = Table(permanent_rows_pdf, repeatRows=1)
+    permanent_table = LongTable(permanent_rows_pdf, repeatRows=1)
     permanent_table.setStyle(
         TableStyle(
             [
@@ -1089,7 +1136,7 @@ def write_native_lm1_pdf_report(
             ]
             for row in combination_pdf
         )
-        combo_table = Table(combo_rows_pdf, repeatRows=1)
+        combo_table = LongTable(combo_rows_pdf, repeatRows=1)
         combo_table.setStyle(
             TableStyle(
                 [
@@ -1140,7 +1187,7 @@ def write_native_lm1_pdf_report(
         ]
         for item in result.girders
     )
-    effects_table = Table(effect_rows, repeatRows=1)
+    effects_table = LongTable(effect_rows, repeatRows=1)
     effects_table.setStyle(
         TableStyle(
             [
@@ -1166,7 +1213,7 @@ def write_native_lm1_pdf_report(
             ]
             for item in result.deflections
         )
-        deflection_table = Table(deflection_rows, repeatRows=1)
+        deflection_table = LongTable(deflection_rows, repeatRows=1)
         deflection_table.setStyle(
             TableStyle(
                 [
@@ -1262,7 +1309,7 @@ def write_native_lm1_pdf_report(
             ]
             for row in fatigue.girders
         )
-        fatigue_table = Table(fatigue_rows_pdf, repeatRows=1)
+        fatigue_table = LongTable(fatigue_rows_pdf, repeatRows=1)
         fatigue_table.setStyle(
             TableStyle(
                 [
@@ -1324,7 +1371,7 @@ def write_native_lm1_pdf_report(
             ]
             for row in design_interpretation.girders
         )
-        integrated_table = Table(integrated_rows, repeatRows=1)
+        integrated_table = LongTable(integrated_rows, repeatRows=1)
         integrated_table.setStyle(
             TableStyle(
                 [
@@ -1359,7 +1406,7 @@ def write_native_lm1_pdf_report(
         ]
         for item in dashboard.capabilities
     )
-    capability_table = Table(capability_rows, colWidths=[50 * mm, 35 * mm, 95 * mm], repeatRows=1)
+    capability_table = LongTable(capability_rows, colWidths=[50 * mm, 35 * mm, 95 * mm], repeatRows=1)
     capability_table.setStyle(
         TableStyle(
             [
