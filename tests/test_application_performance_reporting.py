@@ -95,6 +95,8 @@ def test_step_by_step_trace_and_html_report_share_calculation_records(tmp_path) 
     assert "Calculation / substitution" in text
     assert "Native grillage analysis - representative member formulation" in text
     assert "ULS bending moment" in text
+    assert "integrated action combinations" in text
+    assert "TS=0.75 and UDL=0.4" in text
     assert "Required longitudinal reinforcement" in text
     assert "<math" in text
     assert "<mfrac>" in text
