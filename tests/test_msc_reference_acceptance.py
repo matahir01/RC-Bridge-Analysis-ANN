@@ -63,7 +63,14 @@ def test_15m_application_acceptance_smoke_runs_end_to_end(tmp_path) -> None:
     assert len(search.girders) == 7
     assert len(design.girders) == 7
     assert design.girders
-    assert fatigue.girders
+    assert fatigue.search.cases
+    assert not fatigue.girders
+    assert fatigue.blockers
+    assert fatigue.passes is None
+    assert any(
+        "longitudinal reinforcement fatigue" in blocker
+        for blocker in fatigue.blockers
+    )
 
     for girder in design.girders:
         assert girder.design.uls_design.flexure.required_steel_area_mm2 > 0.0
