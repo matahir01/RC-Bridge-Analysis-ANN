@@ -565,28 +565,85 @@ def eurocode_simple_span_v1_acceptance_matrix() -> V1AcceptanceMatrix:
                 ),
             ),
             AcceptanceItem(
+                key="ec2_vrdmax_reference_case",
+                title="Published EC2 V_Rd,max concrete-strut reference case",
+                domain=AcceptanceDomain.DESIGN_RESISTANCE,
+                state=AcceptanceState.EXTERNALLY_ACCEPTED,
+                v1_gate=False,
+                evidence=(
+                    "The Concrete Centre fck=30 MPa, cot(theta)=2.5 case is reproduced "
+                    "with the JRC EN 1992-2 recommended nu1=0.6(1-fck/250)=0.528: "
+                    "native v_Rd,max≈3.641 MPa versus published 3.64 MPa."
+                ),
+                boundary=(
+                    "This verifies the recommended non-prestressed concrete-strut "
+                    "V_Rd,max equation/factor basis used by deterministic v1."
+                ),
+                next_evidence="No further equation-level v1 evidence required for V_Rd,max.",
+            ),
+            AcceptanceItem(
                 key="ec2_shear_design",
                 title="EN 1992 shear resistance and link design",
                 domain=AcceptanceDomain.DESIGN_RESISTANCE,
-                state=AcceptanceState.INTERNAL_ONLY,
+                state=AcceptanceState.EXTERNALLY_ACCEPTED,
                 v1_gate=True,
                 evidence=(
-                    "Concrete V_Rd,c, required links, provided-link V_Rd,s/V_Rd,max and detailing "
-                    "limits are internally tested. Independent published examples now cover "
-                    "concrete-only V_Rd,c, required A_sw/s, minimum links, maximum spacing, "
-                    "provided H8@200 reinforcement and provided-link V_Rd,s."
+                    "Independent published examples now cover V_Rd,c, required A_sw/s, "
+                    "minimum links, maximum spacing, provided H8@200 reinforcement, "
+                    "provided-link V_Rd,s and the recommended V_Rd,max concrete-strut basis."
                 ),
                 boundary=(
-                    "Stage-5 member shear agreement does not validate EC2 shear resistance. "
-                    "The remaining independent code-basis gap is V_Rd,max: published examples "
-                    "use different explicit concrete-strut reduction conventions, so the software "
-                    "must not promote the broad shear milestone until the intended EN 1992-2 "
-                    "bridge convention is fixed and benchmarked."
+                    "The deterministic shear resistance/design equations are independently "
+                    "benchmarked for the simple-span Eurocode research profile. Drawing-level "
+                    "link zoning/curtailment remains part of the separate detailing milestone."
                 ),
                 next_evidence=(
-                    "Independently verify V_Rd,max using the intended EN 1992-2 bridge "
-                    "nu/nu1 and alpha_cc basis; then review link zoning before promoting "
-                    "the broad shear milestone."
+                    "No further equation-level shear evidence is required for the MSc "
+                    "simple-span profile; retain detailing/zoning under the detailing gate."
+                ),
+            ),
+            AcceptanceItem(
+                key="ec2_torsion_reinforcement_reference_case",
+                title="Published EC2 torsion-reinforcement reference case",
+                domain=AcceptanceDomain.DESIGN_RESISTANCE,
+                state=AcceptanceState.EXTERNALLY_ACCEPTED,
+                v1_gate=False,
+                evidence=(
+                    "European Concrete Platform Example 6.6 is reproduced for TEd=700 kNm, "
+                    "Ak=1.08 m2, uk=4.30 m, fyk=500 MPa and cot(theta)=2.14: "
+                    "native transverse Asw/s≈0.34830 mm2/mm versus published 0.348, "
+                    "and longitudinal Asl≈6858.9 mm2 versus published 6855 mm2."
+                ),
+                boundary=(
+                    "This verifies the torsion reinforcement equations for explicit verified "
+                    "thin-wall properties Ak and uk; it does not infer those properties from "
+                    "an arbitrary bridge girder."
+                ),
+                next_evidence=(
+                    "Verify the project torsion-cell geometry input/derivation before "
+                    "promoting the broad torsion milestone."
+                ),
+            ),
+            AcceptanceItem(
+                key="ec2_torsion_resistance_interaction_reference_case",
+                title="Published EC2 torsion resistance/interaction reference case",
+                domain=AcceptanceDomain.DESIGN_RESISTANCE,
+                state=AcceptanceState.EXTERNALLY_ACCEPTED,
+                v1_gate=False,
+                evidence=(
+                    "European Concrete Platform Example 6.7 is reproduced for "
+                    "Ak=83636 mm2, tef=94 mm, fcd=17 MPa, nu=0.616 and cot(theta)=2.0: "
+                    "native T_Rd,max≈65.86 kNm versus published 66 kNm. The published "
+                    "VEd=350 kN / TEd≈20 kNm point also lies on the native linear "
+                    "V-T interaction boundary within rounding."
+                ),
+                boundary=(
+                    "This verifies T_Rd,max and the high-stress linear shear-torsion "
+                    "interaction for explicitly supplied equivalent-section geometry."
+                ),
+                next_evidence=(
+                    "Verify the actual bridge torsion-cell Ak/uk/tef basis before "
+                    "promoting the broad torsion milestone."
                 ),
             ),
             AcceptanceItem(
@@ -596,14 +653,20 @@ def eurocode_simple_span_v1_acceptance_matrix() -> V1AcceptanceMatrix:
                 state=AcceptanceState.INTERNAL_ONLY,
                 v1_gate=True,
                 evidence=(
-                    "Native torsion demand is externally compared in Stage-5 and EC2 torsion kernels have "
-                    "deterministic unit tests."
+                    "Native torsion demand is externally compared in Stage-5. Published European "
+                    "Concrete Platform worked examples now independently reproduce the torsion "
+                    "transverse/longitudinal reinforcement equations, T_Rd,max and V-T interaction."
                 ),
                 boundary=(
-                    "External agreement of member torsional actions does not independently validate TRd,max, "
-                    "torsion reinforcement or the shear-torsion interaction design equations."
+                    "The remaining broad-profile gap is not the torsion equations themselves: "
+                    "Ak, uk and tef are intentionally explicit verified torsion-cell inputs. "
+                    "The actual bridge/profile geometry used for research must therefore carry "
+                    "a traceable torsion-cell basis before the broad milestone is promoted."
                 ),
-                next_evidence="Independent EC2 torsion worked-example verification.",
+                next_evidence=(
+                    "Close the actual simple-span bridge torsion-cell geometry basis "
+                    "(Ak, uk, tef), or mark torsion not required for the research limit state."
+                ),
             ),
             AcceptanceItem(
                 key="ec2_crack_width",

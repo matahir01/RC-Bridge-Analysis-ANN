@@ -3,7 +3,10 @@ import pytest
 from rc_bridge.design.eurocode_fatigue import concrete_compression_fatigue_check
 from rc_bridge.research.code_reference_benchmarks import (
     CONCRETE_CENTRE_LINK_SHEAR,
+    CONCRETE_CENTRE_VRDMAX,
     ECP_PROVIDED_LINK_SHEAR,
+    ECP_TORSION_REINFORCEMENT,
+    ECP_TORSION_RESISTANCE_INTERACTION,
     JRC_BEAM_LINK_SPACING,
     JRC_CONCRETE_FATIGUE,
     JRC_EC2_SLAB_SHEAR,
@@ -15,7 +18,10 @@ from rc_bridge.research.code_reference_benchmarks import (
     JRC_REINFORCEMENT_FATIGUE,
     JRC_ROAD_BRIDGE_COMBINATION_FACTORS,
     concrete_centre_link_shear_benchmark,
+    concrete_centre_vrdmax_benchmark,
     ecp_provided_link_shear_benchmark,
+    ecp_torsion_reinforcement_benchmark,
+    ecp_torsion_resistance_interaction_benchmark,
     eurocode_v1_published_reference_benchmarks,
     jrc_beam_link_spacing_benchmark,
     jrc_concrete_fatigue_benchmark,
@@ -200,6 +206,46 @@ def test_ecp_provided_link_shear_reference_case_passes() -> None:
     assert comparison.calculated_value == pytest.approx(380.269565, abs=1e-6)
 
 
+def test_concrete_centre_vrdmax_reference_case_passes() -> None:
+    report = concrete_centre_vrdmax_benchmark()
+
+    assert report.source_name == CONCRETE_CENTRE_VRDMAX.source_name
+    assert report.passes is True
+    assert report.failed_target_names == ()
+    comparison = report.comparisons[0]
+    assert comparison.calculated_value == pytest.approx(3.64137931, abs=1e-8)
+
+
+def test_ecp_torsion_reinforcement_reference_case_passes() -> None:
+    report = ecp_torsion_reinforcement_benchmark()
+
+    assert report.source_name == ECP_TORSION_REINFORCEMENT.source_name
+    assert report.passes is True
+    assert report.failed_target_names == ()
+    values = {item.target.name: item.calculated_value for item in report.comparisons}
+    assert values["torsion transverse reinforcement Asw/s"] == pytest.approx(
+        0.348303911
+    )
+    assert values["torsion longitudinal reinforcement Asl"] == pytest.approx(
+        6858.898148
+    )
+
+
+def test_ecp_torsion_resistance_interaction_reference_case_passes() -> None:
+    report = ecp_torsion_resistance_interaction_benchmark()
+
+    assert report.source_name == ECP_TORSION_RESISTANCE_INTERACTION.source_name
+    assert report.passes is True
+    assert report.failed_target_names == ()
+    values = {item.target.name: item.calculated_value for item in report.comparisons}
+    assert values["torsion concrete-strut resistance T_Rd,max"] == pytest.approx(
+        65.8628816
+    )
+    assert values[
+        "published V=350 kN, T=20 kNm interaction utilization"
+    ] == pytest.approx(0.998105619)
+
+
 def test_jrc_rectangular_flexure_reference_case_passes() -> None:
     report = jrc_rectangular_flexure_benchmark()
 
@@ -251,6 +297,9 @@ def test_published_reference_metadata_is_traceable_and_scope_limited() -> None:
         JRC_EC2_SLAB_SHEAR,
         CONCRETE_CENTRE_LINK_SHEAR,
         ECP_PROVIDED_LINK_SHEAR,
+        CONCRETE_CENTRE_VRDMAX,
+        ECP_TORSION_REINFORCEMENT,
+        ECP_TORSION_RESISTANCE_INTERACTION,
         JRC_RECTANGULAR_FLEXURE,
         JRC_BEAM_LINK_SPACING,
     ):
@@ -266,7 +315,7 @@ def test_published_reference_metadata_is_traceable_and_scope_limited() -> None:
 def test_published_reference_suite_contains_all_independent_reports() -> None:
     reports = eurocode_v1_published_reference_benchmarks()
 
-    assert len(reports) == 12
+    assert len(reports) == 15
     assert all(report.passes for report in reports)
     assert {report.source_name for report in reports} == {
         JRC_LM1_CHARACTERISTIC_VALUES.source_name,
@@ -279,6 +328,9 @@ def test_published_reference_suite_contains_all_independent_reports() -> None:
         JRC_EC2_SLAB_SHEAR.source_name,
         CONCRETE_CENTRE_LINK_SHEAR.source_name,
         ECP_PROVIDED_LINK_SHEAR.source_name,
+        CONCRETE_CENTRE_VRDMAX.source_name,
+        ECP_TORSION_REINFORCEMENT.source_name,
+        ECP_TORSION_RESISTANCE_INTERACTION.source_name,
         JRC_RECTANGULAR_FLEXURE.source_name,
         JRC_BEAM_LINK_SPACING.source_name,
     }

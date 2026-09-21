@@ -33,6 +33,10 @@ from rc_bridge.design.eurocode_shear import (
     provided_vertical_shear_resistance,
     required_vertical_shear_reinforcement,
 )
+from rc_bridge.design.eurocode_torsion import (
+    shear_torsion_interaction,
+    torsion_reinforcement_and_resistance,
+)
 from rc_bridge.research.benchmarking import (
     BenchmarkTarget,
     IndependentBenchmarkReport,
@@ -264,6 +268,62 @@ ECP_PROVIDED_LINK_SHEAR = ReferenceBenchmarkEvidence(
         "Independent EC2 verification of the provided vertical-link V_Rd,s equation "
         "only. The example's V_Rd,max/nu convention is not used to certify the current "
         "bridge strut-capacity implementation."
+    ),
+)
+
+
+CONCRETE_CENTRE_VRDMAX = ReferenceBenchmarkEvidence(
+    key="concrete_centre_vrdmax",
+    source_name="The Concrete Centre - Worked Examples to Eurocode 2, Volume 1",
+    source_reference=(
+        "Section 4.1.6 / Table C7 basis for fck=30 MPa and cot(theta)=2.5: "
+        "nu1=0.6(1-fck/250)=0.528 and v_Rd,max=3.64 MPa. The JRC bridge "
+        "worked examples state the same recommended nu1 expression for EN 1992-2 shear."
+    ),
+    source_url=(
+        "https://www.concretecentre.com/TCC/media/TCCMediaLibrary/Events/"
+        "Online%20course/CCIP_Worked_Examples_EC2.pdf"
+    ),
+    scope=(
+        "Independent verification of the recommended concrete-strut V_Rd,max "
+        "reduction-factor/equation used by the non-prestressed v1 shear kernel only."
+    ),
+)
+
+ECP_TORSION_REINFORCEMENT = ReferenceBenchmarkEvidence(
+    key="ecp_torsion_reinforcement",
+    source_name="European Concrete Platform - Eurocode 2 Worked Examples",
+    source_reference=(
+        "Example 6.6: ring section with TEd=700 kNm, Ak=1.08e6 mm2, "
+        "uk=4300 mm, fyd=435 MPa and cot(theta)=2.14. Published torsion-only "
+        "Asw/s=0.348 mm2/mm and longitudinal Asl=6855 mm2."
+    ),
+    source_url=(
+        "https://www.theconcreteinitiative.eu/images/ECP_Documents/"
+        "Eurocode2_WorkedExamples.pdf"
+    ),
+    scope=(
+        "Independent verification of the thin-walled torsion transverse and "
+        "longitudinal reinforcement equations only, for explicitly supplied Ak, uk and theta."
+    ),
+)
+
+ECP_TORSION_RESISTANCE_INTERACTION = ReferenceBenchmarkEvidence(
+    key="ecp_torsion_resistance_interaction",
+    source_name="European Concrete Platform - Eurocode 2 Worked Examples",
+    source_reference=(
+        "Example 6.7: b=300 mm, h=500 mm, z=400 mm, tef=94 mm, "
+        "Ak=83636 mm2, fcd=17 MPa, nu=0.616 and cot(theta)=2.0. "
+        "Published V_Rd,max=504 kN and T_Rd,max=66 kNm; for VEd=350 kN "
+        "the maximum compatible torsion is about 20 kNm."
+    ),
+    source_url=(
+        "https://www.theconcreteinitiative.eu/images/ECP_Documents/"
+        "Eurocode2_WorkedExamples.pdf"
+    ),
+    scope=(
+        "Independent verification of T_Rd,max and the linear high-stress "
+        "shear-torsion interaction only, for explicitly supplied equivalent-section geometry."
     ),
 )
 
@@ -972,6 +1032,152 @@ def ecp_provided_link_shear_benchmark() -> IndependentBenchmarkReport:
     )
 
 
+def concrete_centre_vrdmax_benchmark() -> IndependentBenchmarkReport:
+    """Reproduce the Concrete Centre fck=30, cot(theta)=2.5 strut limit."""
+
+    result = required_vertical_shear_reinforcement(
+        164.5,
+        0.300,
+        0.392,
+        30.0,
+        500.0,
+        gamma_c=1.50,
+        gamma_s=1.15,
+        alpha_cc=1.0,
+        cot_theta=2.5,
+        z_factor=0.9,
+    )
+    bw_mm = 300.0
+    z_mm = 0.9 * 392.0
+    stress_mpa = result.vrdmax_kn * 1000.0 / (bw_mm * z_mm)
+
+    return build_independent_benchmark_report(
+        solver_profile=SolverProfile.EUROCODE_1G,
+        source_name=CONCRETE_CENTRE_VRDMAX.source_name,
+        source_reference=CONCRETE_CENTRE_VRDMAX.source_reference,
+        observations=(
+            (
+                BenchmarkTarget(
+                    name="EC2 concrete strut stress v_Rd,max",
+                    reference_value=3.64,
+                    unit="MPa",
+                    absolute_tolerance=0.01,
+                ),
+                stress_mpa,
+            ),
+        ),
+        notes=(
+            "The native recommended nu1 is 0.6(1-fck/250)=0.528, giving "
+            "v_Rd,max=3.6414 MPa. This closes the convention intentionally left "
+            "open by the earlier ECP shear example."
+        ),
+    )
+
+
+def ecp_torsion_reinforcement_benchmark() -> IndependentBenchmarkReport:
+    """Reproduce ECP Example 6.6 torsion reinforcement."""
+
+    result = torsion_reinforcement_and_resistance(
+        ted_knm=700.0,
+        ak_m2=1.08,
+        uk_m=4.30,
+        tef_m=0.150,
+        fck_mpa=30.0,
+        fyk_mpa=500.0,
+        gamma_c=1.50,
+        gamma_s=1.15,
+        alpha_cc=0.85,
+        cot_theta=2.14,
+        nu1=0.616,
+    )
+
+    return build_independent_benchmark_report(
+        solver_profile=SolverProfile.EUROCODE_1G,
+        source_name=ECP_TORSION_REINFORCEMENT.source_name,
+        source_reference=ECP_TORSION_REINFORCEMENT.source_reference,
+        observations=(
+            (
+                BenchmarkTarget(
+                    name="torsion transverse reinforcement Asw/s",
+                    reference_value=0.348,
+                    unit="mm2/mm",
+                    absolute_tolerance=0.001,
+                ),
+                result.transverse_asw_per_s_mm2_per_mm,
+            ),
+            (
+                BenchmarkTarget(
+                    name="torsion longitudinal reinforcement Asl",
+                    reference_value=6855.0,
+                    unit="mm2",
+                    absolute_tolerance=5.0,
+                ),
+                result.longitudinal_asl_mm2,
+            ),
+        ),
+        notes=(
+            "The source rounds fyd to 435 MPa; using 500/1.15 gives native "
+            "Asw/s=0.34830 mm2/mm and Asl=6858.90 mm2."
+        ),
+    )
+
+
+def ecp_torsion_resistance_interaction_benchmark() -> IndependentBenchmarkReport:
+    """Reproduce ECP Example 6.7 T_Rd,max and its published interaction point."""
+
+    torsion = torsion_reinforcement_and_resistance(
+        ted_knm=20.0,
+        ak_m2=0.083636,
+        uk_m=1.600,
+        tef_m=0.094,
+        fck_mpa=30.0,
+        fyk_mpa=450.0,
+        gamma_c=1.50,
+        gamma_s=1.15,
+        alpha_cc=0.85,
+        alpha_cw=1.0,
+        cot_theta=2.0,
+        nu1=0.616,
+    )
+    interaction = shear_torsion_interaction(
+        ted_knm=20.0,
+        trdmax_knm=torsion.trdmax_knm,
+        ved_kn=350.0,
+        vrdmax_kn=504.0,
+    )
+
+    return build_independent_benchmark_report(
+        solver_profile=SolverProfile.EUROCODE_1G,
+        source_name=ECP_TORSION_RESISTANCE_INTERACTION.source_name,
+        source_reference=ECP_TORSION_RESISTANCE_INTERACTION.source_reference,
+        observations=(
+            (
+                BenchmarkTarget(
+                    name="torsion concrete-strut resistance T_Rd,max",
+                    reference_value=66.0,
+                    unit="kNm",
+                    absolute_tolerance=0.2,
+                ),
+                torsion.trdmax_knm,
+            ),
+            (
+                BenchmarkTarget(
+                    name="published V=350 kN, T=20 kNm interaction utilization",
+                    reference_value=1.0,
+                    unit="-",
+                    absolute_tolerance=0.005,
+                ),
+                interaction.utilization,
+            ),
+        ),
+        notes=(
+            "The published interaction point is rounded: with native T_Rd,max="
+            f"{torsion.trdmax_knm:.3f} kNm and published V_Rd,max=504 kN, "
+            "V=350 kN plus T=20 kNm gives utilization about 0.998."
+        ),
+    )
+
+
 def jrc_rectangular_flexure_benchmark() -> IndependentBenchmarkReport:
     """Compare the rectangular flexure kernel with the JRC Annex-B worked example."""
 
@@ -1085,6 +1291,9 @@ def eurocode_v1_published_reference_benchmarks() -> tuple[IndependentBenchmarkRe
         jrc_ec2_slab_shear_benchmark(),
         concrete_centre_link_shear_benchmark(),
         ecp_provided_link_shear_benchmark(),
+        concrete_centre_vrdmax_benchmark(),
+        ecp_torsion_reinforcement_benchmark(),
+        ecp_torsion_resistance_interaction_benchmark(),
         jrc_rectangular_flexure_benchmark(),
         jrc_beam_link_spacing_benchmark(),
         jrc_reinforcement_fatigue_benchmark(),
