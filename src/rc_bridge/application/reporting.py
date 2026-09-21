@@ -656,7 +656,7 @@ actions retain their actual extents in the deterministic permanent-load routines
 
 <h2>Verification boundary</h2>
 <p class="warn">
-Independent structural validation for the deterministic Stage-5 solver profile now
+The current independent structural validation for the deterministic Stage-5 solver profile
 includes genuine STAAD external evidence and an accepted source/model review. MIDAS
 cross-verification is deferred to V2 and is not a deterministic-v1 release gate.
 ANN/reliability/RBDO ground-truth generation remains locked until the current v1
