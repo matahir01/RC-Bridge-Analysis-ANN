@@ -11,6 +11,7 @@ from rc_bridge.research.acceptance_matrix import (
     AcceptanceState,
     eurocode_simple_span_v1_acceptance_matrix,
 )
+from rc_bridge.research.msc_input_space import MSC_DEFLECTION_LIMIT_SPAN_RATIO
 from rc_bridge.research.msc_profile import evaluate_msc_deterministic_gate
 
 
@@ -18,9 +19,11 @@ def _msc_acceptance_session() -> BridgeApplicationSession:
     project = application_default_project()
     preferences = ApplicationPreferences(
         eurocode=EurocodeApplicationBasis(
-            # Project-defined numerical criterion for g_deflection. This is
-            # intentionally not presented as a universal Eurocode bridge limit.
-            deflection_limit_span_ratio=1000.0,
+            # MSc serviceability criterion: L/250, following the JRC Eurocode
+            # worked-example/training basis adopted for this research profile.
+            # It is recorded as the research criterion rather than represented
+            # as a universal normative EN 1992-2 bridge requirement.
+            deflection_limit_span_ratio=MSC_DEFLECTION_LIMIT_SPAN_RATIO,
         ),
         analysis=AnalysisApplicationSettings(
             grid_spacing_m=15.0,
@@ -46,6 +49,8 @@ def test_15m_application_acceptance_smoke_runs_end_to_end(tmp_path) -> None:
     assert float(geometry.girder_profile.width_m) == 0.40
     assert float(geometry.girder_profile.depth_m) == 0.95
     assert float(geometry.precast_girder_length_m) == 14.95
+    assert session.preferences.eurocode.deflection_limit_span_ratio == 250.0
+    assert 15000.0 / session.preferences.eurocode.deflection_limit_span_ratio == 60.0
     composite = composite_section_description(
         geometry,
         slab_width_m=1.70,
