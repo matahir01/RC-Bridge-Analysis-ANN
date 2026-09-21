@@ -509,11 +509,14 @@ def eurocode_simple_span_v1_acceptance_matrix() -> V1AcceptanceMatrix:
                 ),
                 boundary=(
                     "STAAD validates the elastic structural response only, not EC2 cracking, effective modulus, "
-                    "creep assumptions or tension-stiffening interpolation used for the design check."
+                    "creep assumptions or tension-stiffening interpolation. EN 1990 Annex A2 does not impose a "
+                    "single universal road-bridge span/deflection ratio, so acceptance also requires an explicit "
+                    "client/project criterion rather than a hardcoded software default."
                 ),
                 next_evidence=(
                     "Independent EC2 deflection worked examples including cracked state, creep/effective modulus "
-                    "and interpolation."
+                    "and interpolation, plus a traceable project/client deflection acceptance criterion where the "
+                    "road-bridge deformation check is required."
                 ),
             ),
             AcceptanceItem(
