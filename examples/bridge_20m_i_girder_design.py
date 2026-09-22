@@ -1,11 +1,20 @@
 from __future__ import annotations
 
-"""Preliminary 20 m I-girder bridge case requested 21 Sep 2026.
+"""Preliminary 20 m I-girder bridge design using the agreed 1200 mm section.
 
-The physical sketch contains tapered haunches.  The current engine's
-IGirderProfile is prismatic, so this case deliberately uses the agreed
-engine-compatible equivalent rectangular I-profile.  Do not interpret it as
-as-built geometry without checking the final girder drawing.
+Physical target section:
+- equal top/bottom flange width = 400 mm
+- top rectangular flange = 150 mm
+- top haunch = 150 mm
+- clear web = 500 mm
+- bottom haunch = 200 mm
+- bottom rectangular flange = 200 mm
+- physical web = 250 mm
+
+The current IGirderProfile is rectangular-component based and has no tapered
+haunch primitives. The analysis therefore uses a 400/250/400 mm prismatic
+I-profile with the haunch depths absorbed into the 850 mm web zone. This is a
+preliminary engine idealisation, not a fabrication drawing.
 """
 
 from rc_bridge.application.preferences import (
@@ -32,7 +41,7 @@ from rc_bridge.core.models import (
 )
 
 PROJECT = ProjectInput(
-    name="20 m Preliminary RC I-Girder Bridge",
+    name="20 m Preliminary RC I-Girder Bridge - 400 mm Equal Flanges",
     design_code=DesignCode.EUROCODE,
     geometry=BridgeGeometry(
         span_lengths_m=[20.0],
@@ -52,11 +61,11 @@ PROJECT = ProjectInput(
         support_system=SupportSystem.SIMPLY_SUPPORTED,
         section_type=SectionType.I,
         girder_profile=IGirderProfile(
-            top_flange_width_m=0.50,
+            top_flange_width_m=0.40,
             top_flange_thickness_m=0.15,
-            web_width_m=0.225,
+            web_width_m=0.25,
             web_depth_m=0.85,
-            bottom_flange_width_m=0.55,
+            bottom_flange_width_m=0.40,
             bottom_flange_thickness_m=0.20,
         ),
     ),
@@ -96,7 +105,6 @@ PROJECT = ProjectInput(
 PREFERENCES = ApplicationPreferences(
     eurocode=EurocodeApplicationBasis(
         crack_limit_mm=0.30,
-        # Preliminary project criterion, explicitly user-reviewable.
         deflection_limit_span_ratio=1000.0,
     ),
     analysis=AnalysisApplicationSettings(
@@ -117,17 +125,18 @@ def main() -> None:
     design = session.run_design_interpretation()
     session.write_last_lm1_report(out / "analysis_design_report.html")
     session.write_last_lm1_pdf_report(out / "analysis_design_report.pdf")
+
+    critical = max(design.girders, key=lambda g: g.uls.effects.moment_knm)
     print(f"LM1 cases evaluated: {lm1.evaluated_case_count}")
-    print(f"Design status: {design.status}")
-    for g in design.girders:
-        print(
-            f"G{g.girder_index}: MEd={g.uls.effects.moment_knm:.3f} kNm; "
-            f"VEd={g.uls.effects.shear_kn:.3f} kN; "
-            f"As_req={g.design.uls_design.flexure.required_steel_area_mm2:.1f} mm2; "
-            f"As_prov={g.selected_bars.provided_area_mm2:.1f} mm2; "
-            f"bars={g.selected_bars}; links={g.selected_links}; "
-            f"status={g.status}"
-        )
+    print("Detailed output: governing girder only")
+    print(f"Critical girder: G{critical.girder_index}")
+    print(f"MEd={critical.uls.effects.moment_knm:.3f} kNm")
+    print(f"VEd={critical.uls.effects.shear_kn:.3f} kN")
+    print(f"As_req={critical.design.uls_design.flexure.required_steel_area_mm2:.1f} mm2")
+    print(f"As_prov={critical.selected_bars.provided_area_mm2:.1f} mm2")
+    print(f"bars={critical.selected_bars}")
+    print(f"links={critical.selected_links}")
+    print(f"status={critical.status}")
 
 
 if __name__ == "__main__":
